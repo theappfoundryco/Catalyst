@@ -2,8 +2,18 @@
   "app_name": "Catalyst",
   "developer": "The App Foundry",
   "copyright": "The App Foundry",
-  "latest": "1.0",
+  "latest": "1.1",
   "versions": {
+    "1.1": {
+      "release_date": "2026-07-21",
+      "tagline": "Smoother updates.",
+      "highlights": [
+        "Automatic updates are now verified end to end, so future versions arrive in the background and install with a single click.",
+        "The update badge in the sidebar is quieter — it tells you what's happening and asks nothing of you until an update is ready to install.",
+        "Small fixes and polish throughout."
+      ],
+      "requirements": "macOS 14.6 or later"
+    },
     "1.0": {
       "release_date": "2026-07-21",
       "tagline": "Free, open source, and yours to keep.",
