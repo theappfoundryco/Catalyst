@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question or general feedback
+    url: https://theappfoundry.co/catalyst/feedback
+    about: Not a bug and not a feature request — tell us how Catalyst is working out for you.
+  - name: Support
+    url: https://theappfoundry.co/catalyst/support
+    about: Stuck on something and not sure it's a bug? Start here.
+  - name: Security issue
+    url: https://theappfoundry.co/catalyst/support
+    about: Please report privately here rather than opening a public issue.

@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>LSMinimumSystemVersion</key>
+	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
+
+	<!-- Shown in the one-time system prompt when Catalyst first sends an Apple event to
+	     Terminal (TerminalService "Run command"). Required for the prompt to appear at all;
+	     without it, sends fail silently with -1743 under Hardened Runtime. -->
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Catalyst runs your selected commands by opening them in Terminal.</string>
+
+	<!-- Sparkle auto-update (P9). Feed is served by the Worker (proxies the latest GitHub
+	     Release's appcast.xml). SUPublicEDKey MUST be replaced with the base64 public key printed
+	     by `./scripts/generate_keys` (RELEASING.md §B) — the placeholder below will not verify. -->
+	<key>SUFeedURL</key>
+	<string>https://updates.theappfoundry.co/catalyst/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>b2IZqqZ1lr/x+E+ZhVG8sbEfi3zU8/U49Ze4DXw6oEI=</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<!-- Download updates silently in the background by default; our custom UI (UpdateController)
+	     then shows a "Relaunch to update" badge instead of Sparkle's window. -->
+	<key>SUAutomaticallyUpdate</key>
+	<true/>
+	<key>SUScheduledCheckInterval</key>
+	<integer>3600</integer>
+
+	<!-- Declare the .catalystsnapshot type so Finder shows a Catalyst-branded
+	     document icon and routes double-clicks to this app. -->
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>com.shivanggulati.catalyst.snapshot</string>
+			<key>UTTypeDescription</key>
+			<string>Catalyst Snapshot</string>
+			<!-- It's a zip on disk, but we treat it as an opaque app document
+			     (public.data) so double-click opens Catalyst, not Archive Utility. -->
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>catalystsnapshot</string>
+				</array>
+			</dict>
+		</dict>
+	</array>
+
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>Catalyst Snapshot</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Owner</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>com.shivanggulati.catalyst.snapshot</string>
+			</array>
+			<!-- Full custom icon (the Catalyst app icon), bundled as an .icns. -->
+			<key>CFBundleTypeIconFile</key>
+			<string>CatalystSnapshotDoc</string>
+		</dict>
+	</array>
+</dict>
+</plist>

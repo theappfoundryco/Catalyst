@@ -1,0 +1,57 @@
+name: Feature request
+description: Suggest something Catalyst should do.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Catalyst tries to stay small and opinionated, so not every good idea gets built. The
+        requests that land are the ones that describe a real problem rather than a solution —
+        tell us what you were trying to do and where Catalyst got in the way.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: The task, not the feature. What are you doing today instead?
+      placeholder: >
+        I keep several Python versions around for different projects and I can't tell from
+        Catalyst which one a given venv was built against without opening a terminal.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like Catalyst to do?
+      placeholder: Show the interpreter version on each row in Virtual Environments.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you've tried
+      description: Existing workarounds, other tools, or why the current behaviour falls short.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: contributing
+    attributes:
+      label: Would you be up for implementing this?
+      description: Not at all required — it just helps us know whether to leave it open for you.
+      options:
+        - "Just suggesting"
+        - "Maybe, with some pointers"
+        - "Yes, I'd like to work on it"
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and this isn't already requested.
+          required: true

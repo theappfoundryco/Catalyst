@@ -1,0 +1,31 @@
+# Code owners for Catalyst.
+#
+# Listed owners are requested for review automatically on any PR touching a matching path.
+# Later rules override earlier ones, so the catch-all goes first.
+#
+# NOTE: a CODEOWNERS entry only takes effect for accounts with WRITE access to this repo.
+# An owner without write access is silently ignored — no error, no review request. If reviews
+# stop being requested, check collaborator permissions before suspecting this file.
+
+* @theappfoundryco @imsg8
+
+# Anything that decides what ships, or what the app reports about its users, gets looked at
+# regardless of who wrote it.
+
+/.github/                       @theappfoundryco @imsg8
+/Scripts/                       @theappfoundryco @imsg8
+/Telemetry/                     @theappfoundryco @imsg8
+/Catalyst/Info.plist            @theappfoundryco @imsg8
+/Catalyst/about.json            @theappfoundryco @imsg8
+/Utilities/NetworkConfig.swift  @theappfoundryco @imsg8
+/LICENSE                        @theappfoundryco @imsg8
+/docs/RELEASING.md              @theappfoundryco @imsg8
+
+# Privileged execution and destructive file operations — the code that can damage a machine.
+
+/PrivilegedHelper/                    @theappfoundryco @imsg8
+/Services/PrivilegesService.swift     @theappfoundryco @imsg8
+/Services/SnapshotSecretsService.swift @theappfoundryco @imsg8
+/Services/CruftScanner.swift          @theappfoundryco @imsg8
+/Utilities/AsyncProcessRunner.swift   @theappfoundryco @imsg8
+/Utilities/InputSanitizer.swift       @theappfoundryco @imsg8
