@@ -73,11 +73,16 @@ done
 # doing anything expensive: discovering a missing one after notarization means a published
 # GitHub Release with no appcast beside it, which is the exact half-published state that is
 # invisible to users (Sparkle reads an unreachable feed as "no update available").
-[ -d "$UPDATES_DIR/.git" ] || {
+# Ask git, don't probe the filesystem. `[ -d "$dir/.git" ]` looks obvious and is wrong: `.git` is
+# a FILE (a gitdir pointer) for worktrees and submodules, and some mounts don't expose it at all —
+# so the directory test rejects a perfectly good clone. Comparing `--show-toplevel` to the path
+# also rules out the opposite mistake: a bare `rev-parse` inside a non-repo walks UP and happily
+# finds the app repo's own .git, reporting success for a directory that isn't a clone at all.
+if [ "$(git -C "$UPDATES_DIR" rev-parse --show-toplevel 2>/dev/null)" != "$UPDATES_DIR" ]; then
   echo "✗ missing sibling repo: $UPDATES_DIR"
   echo "  git clone git@github.com:theappfoundryco/updates.git  (beside the app repo)"
   exit 1
-}
+fi
 
 echo "▸ Debug guard: verifying the Release config has no DEBUG…"
 DBG_SETTINGS=$(xcodebuild -scheme Catalyst -configuration Release -showBuildSettings 2>/dev/null) \
