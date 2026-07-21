@@ -1,0 +1,43 @@
+# Xcode
+build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+*.xcscmblueprint
+*.xccheckout
+
+# Swift Package Manager
+.swiftpm/
+.build/
+
+# Secrets — NEVER commit
+*.pem
+*.p12
+.dev.vars
+.dev.vars.*
+.env
+.env.*
+
+# Sibling repos (each its own git repo — never tracked here)
+theappfoundryco/
+data/
+updates/
+
+# Local release artifacts
+releases/
+Scripts/
+
+# Tooling
+.claude
+.wrangler
+
+# macOS
+.DS_Store
+
+# Sister repos
+data/
+updates/
+
+# for contributors
+idea/
+cache/

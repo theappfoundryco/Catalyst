@@ -1,0 +1,77 @@
+name: Bug report
+description: Something in Catalyst doesn't work the way it should.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time. The single most useful thing you can give us is the exact
+        steps that reproduce it — a bug we can trigger locally is usually a bug we can fix.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What did you see? If Catalyst showed an error message, paste it exactly.
+      placeholder: Clicking "Upgrade" on an outdated pip package left the row spinning forever.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected instead
+      placeholder: The package upgrades and the row updates to show the new version.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Number them. Include which screen you started on.
+      placeholder: |
+        1. Open pip Updates
+        2. Click Upgrade on any package
+        3. Wait ~30s
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Catalyst version
+      description: Find it under About in the sidebar.
+      placeholder: "1.0"
+    validations:
+      required: true
+
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version and chip
+      placeholder: "macOS 15.2, Apple Silicon"
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: |
+        Open **Logs** in the sidebar, reproduce the problem, then copy anything from around
+        the failure. Please skim it before pasting — logs can contain file paths from your
+        machine. This is optional, but it turns most guesses into answers.
+      render: text
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I'm on the latest version, or I've said above which version I'm on.
+          required: true
+        - label: I searched existing issues and this isn't already reported.
+          required: true

@@ -1,0 +1,23 @@
+{
+  "app_name": "Catalyst",
+  "developer": "The App Foundry",
+  "copyright": "The App Foundry",
+  "latest": "1.0",
+  "versions": {
+    "1.0": {
+      "release_date": "2026-07-21",
+      "tagline": "Free, open source, and yours to keep.",
+      "highlights": [
+        "Catalyst is now free. Every feature, with no licence to buy, no trial to run out, and nothing held back behind an upgrade screen.",
+        "No account and no sign-in. Open the app and it works — there's nothing to register, nothing to verify, and no email address for us to hold.",
+        "The source is public under the GPLv3. You can read exactly what Catalyst does on your machine, change it, or build it yourself.",
+        "Everything the app fetches over the network is a plain file you can open in a browser: the package catalogs and the update feed. That's the whole list.",
+        "Manage pip packages, Homebrew formulae and casks, and virtual environments from one place.",
+        "Keep an eye on the machine — disk and battery vitals, cruft cleanup, network diagnostics, startup items, and SSH keys.",
+        "Developer tools built in: SmartShortcuts, aliases, a PATH editor, a readable Git graph, and searchable terminal history.",
+        "Snapshot your entire setup and rebuild it on another Mac."
+      ],
+      "requirements": "macOS 14.6 or later"
+    }
+  }
+}

@@ -1,0 +1,74 @@
+import Foundation
+
+/// A single entry in the `$PATH` list, with health flags.
+struct PathEntry: Identifiable, Sendable, Equatable {
+    let id: UUID
+    let path: String
+    /// The directory exists on disk.
+    let exists: Bool
+    /// A directory (not a file) — PATH entries should be directories.
+    let isDirectory: Bool
+    /// An earlier entry already pointed at the same resolved path.
+    let isDuplicate: Bool
+
+    /// Dead = missing or not a directory. Safe to drop.
+    var isDead: Bool { !exists || !isDirectory }
+
+    init(id: UUID = UUID(), path: String, exists: Bool, isDirectory: Bool, isDuplicate: Bool) {
+        self.id = id
+        self.path = path
+        self.exists = exists
+        self.isDirectory = isDirectory
+        self.isDuplicate = isDuplicate
+    }
+}
+
+struct PathReport: Sendable {
+    let entries: [PathEntry]
+    var duplicateCount: Int { entries.filter { $0.isDuplicate }.count }
+    var deadCount: Int { entries.filter { $0.isDead }.count }
+}
+
+/// Reads and analyzes the user's effective `$PATH`. Reading uses a login shell
+/// so it reflects what the user's terminals actually see; analysis is pure
+/// FileManager. Persistence (writing a curated PATH) is handled by the VM via
+/// `ShellConfigManager`, keeping shell-config mutation on the main actor.
+final class PathEditorService: Sendable {
+
+    static let shared = PathEditorService()
+    private init() {}
+
+    private let runner = AsyncProcessRunner.shared
+
+    /// The block id used for the Catalyst-managed PATH override.
+    static let managedBlockID = "path-order"
+
+    func scan() async -> PathReport {
+        PathReport(entries: analyze(await readPath()))
+    }
+
+    /// Reads the effective `$PATH` from a login shell, split into entries.
+    func readPath() async -> [String] {
+        do {
+            let r = try await runner.run(command: "printf '%s' \"$PATH\"", useLoginShell: true)
+            let raw = r.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+            return raw.split(separator: ":").map(String.init).filter { !$0.isEmpty }
+        } catch {
+            return []
+        }
+    }
+
+    /// Flags each entry: existence, directory-ness, and duplicates (by resolved path).
+    func analyze(_ paths: [String]) -> [PathEntry] {
+        var seen = Set<String>()
+        return paths.map { p in
+            let normalized = (p as NSString).standardizingPath
+            let isDuplicate = seen.contains(normalized)
+            seen.insert(normalized)
+
+            var isDir: ObjCBool = false
+            let exists = FileManager.default.fileExists(atPath: p, isDirectory: &isDir)
+            return PathEntry(path: p, exists: exists, isDirectory: isDir.boolValue, isDuplicate: isDuplicate)
+        }
+    }
+}

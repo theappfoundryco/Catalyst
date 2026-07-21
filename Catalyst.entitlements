@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>com.apple.security.app-sandbox</key>
+    <false/>
+    <key>com.apple.security.network.client</key>
+    <true/>
+    <!-- Hardened Runtime blocks outgoing Apple events unless this is present. TerminalService
+         sends "do script" to Terminal.app to run commands; without it macOS returns -1743
+         ("Not authorized to send Apple events"). Paired with NSAppleEventsUsageDescription
+         (Info.plist), which triggers the one-time "Catalyst wants to control Terminal" prompt. -->
+    <key>com.apple.security.automation.apple-events</key>
+    <true/>
+</dict>
+</plist>
