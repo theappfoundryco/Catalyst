@@ -8,6 +8,11 @@ import Combine
 /// ```
 struct PIPPackagesInstallView: View {
     @ObservedObject var vm: PIPPackagesInstallViewModel
+    /// Global install-mode preference (PEP 668). Observed so rows flip between
+    /// the Install button and the "Protected Mode" badge the moment the user
+    /// changes the mode — without this, the badge would lag until the next
+    /// unrelated re-render.
+    @ObservedObject private var installPrefs = InstallPreferences.shared
     
     var body: some View {
         SmoothPageScroll {
@@ -70,6 +75,10 @@ struct PIPPackagesInstallView: View {
                                             isInstalling: vm.installingPackage == package,
                                             isInstalled: vm.installedPackages.contains(package.lowercased()),
                                             canInstall: vm.isPythonWithPipAvailable,
+                                            /// PEP 668: on an externally-managed Python (3.12+) with the
+                                            /// Protected install mode active, pip will refuse the write —
+                                            /// show the honest badge instead of a button that silently fails.
+                                            isProtectedMode: installPrefs.mode == .protected && vm.requiresBreakSystemPackages,
                                             onInstall: {
                                                 Task { await vm.installPackage(package) }
                                             }

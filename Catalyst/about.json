@@ -2,8 +2,20 @@
   "app_name": "Catalyst",
   "developer": "The App Foundry",
   "copyright": "The App Foundry",
-  "latest": "1.2",
+  "latest": "1.3",
   "versions": {
+    "1.3": {
+      "release_date": "2026-07-22",
+      "tagline": "Make it yours.",
+      "highlights": [
+        "A personal touch: pick a name and an avatar from a gallery of 100, right from the new profile row at the bottom of the sidebar.",
+        "Launch is steadier — fixed a race that could intermittently leave the dashboard loading forever until the app was reopened.",
+        "The dashboard fills in faster: Python detection now checks all interpreters at once instead of one at a time.",
+        "Package updates no longer stall silently — long installs stream their progress live, and anything that would sit waiting forever is stopped and reported.",
+        "On Python 3.12+ with Protected mode on, package lists now say \"Protected Mode\" instead of offering an Install button that couldn't work."
+      ],
+      "requirements": "macOS 14.6 or later"
+    },
     "1.2": {
       "release_date": "2026-07-22",
       "tagline": "Faster, and steadier.",

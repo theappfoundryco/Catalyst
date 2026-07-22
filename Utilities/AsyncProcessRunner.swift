@@ -187,6 +187,10 @@ actor AsyncProcessRunner {
         let stderrPipe = Pipe()
         process.standardOutput = stdoutPipe
         process.standardError = stderrPipe
+        /// EOF instead of a tty: a child that decides to prompt (pip keyring, brew sudo, git
+        /// credential helper) must fail fast, not sit waiting forever on input that a GUI app
+        /// can never provide. Every hang here holds its caller's whole update flow hostage.
+        process.standardInput = FileHandle.nullDevice
 
         var stdoutData = Data()
         var stderrData = Data()
@@ -287,6 +291,8 @@ actor AsyncProcessRunner {
         let stderrPipe = Pipe()
         process.standardOutput = stdoutPipe
         process.standardError = stderrPipe
+        /// EOF instead of a tty (see `executeProcess`): interactive prompts must fail, not hang.
+        process.standardInput = FileHandle.nullDevice
 
         try process.run()
         Logger.shared.debugLog("🐛 sh SPAWN   | pid=\(process.processIdentifier) | \(dbg)")
@@ -405,7 +411,11 @@ actor AsyncProcessRunner {
             let pipe = Pipe()
             process.standardOutput = pipe
             process.standardError = pipe
-            
+            /// EOF instead of a tty (see `executeProcess`): interactive prompts must fail, not
+            /// hang. Privileged flows don't rely on stdin here — sudo goes through SUDO_ASKPASS
+            /// (BrewMaintenanceManager) or PrivilegesService's own Process with an explicit pipe.
+            process.standardInput = FileHandle.nullDevice
+
             var outputBuffer = ""
             let bufferLock = NSLock()
             var flushTimer: Timer?

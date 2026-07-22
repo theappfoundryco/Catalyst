@@ -158,6 +158,14 @@ struct ContentView: View {
                     StatusIndicatorView(networkMonitor: appVM.networkMonitor)
                         .padding(.horizontal, 8)
                         .padding(.top, 6)
+
+                    /// Local user profile row (avatar + name) below the status
+                    /// row; opens ``UserProfileSheet``. Groundwork for the
+                    /// identity area from the paid era (licence/invoice details
+                    /// return here in future releases).
+                    UserProfileRow()
+                        .padding(.horizontal, 8)
+                        .padding(.top, 6)
                         .padding(.bottom, 6)
                 }
                 .navigationTitle("Catalyst")

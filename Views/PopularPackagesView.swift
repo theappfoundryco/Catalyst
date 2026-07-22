@@ -6,6 +6,10 @@ import SwiftUI
 /// ```
 struct PopularPackagesView: View {
     @ObservedObject var vm: PopularPackagesViewModel
+    /// Global install-mode preference (PEP 668). Observed so pip rows flip between
+    /// the Install button and the "Protected Mode" badge the moment the user
+    /// changes the mode (see `PopularPackageRow.isProtectedMode`).
+    @ObservedObject private var installPrefs = InstallPreferences.shared
     @State private var selectedTab = 0
 
     
@@ -72,6 +76,9 @@ struct PopularPackagesView: View {
                                         isInstalled: vm.isInstalled(package.name, type: currentType()),
                                         isInstalling: vm.installingPackage == package.name,
                                         canInstall: currentType() == .pip ? vm.isPythonWithPipAvailable : vm.isBrewInstalled,
+                                        /// PEP 668 applies only to pip — brew formulae/casks always
+                                        /// keep their Install button regardless of the install mode.
+                                        isProtectedMode: currentType() == .pip && installPrefs.mode == .protected && vm.requiresBreakSystemPackages,
                                         onInstall: {
                                             Task { await vm.installPackage(package.name, type: currentType()) }
                                         }

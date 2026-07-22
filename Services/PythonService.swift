@@ -170,10 +170,23 @@ final class PythonService {
         return result
     }
 
-    /// Synchronously maps the active Homebrew binaries into structured `PythonInstallation` payloads.
+    /// Maps the active Homebrew binaries into structured `PythonInstallation` payloads.
     ///
+    /// Runs in three phases (2026-07-22 rework, see CODING_STANDARDS 12.52):
+    /// 1. **Claim** (no subprocesses): resolve symlinks; versioned names (`python3.12`) claim
+    ///    their binary from the filename alone, dropping bare duplicates before they cost a probe.
+    /// 2. **Probe** (concurrent): the surviving candidates run their `--version`/`pip --version`
+    ///    subprocesses in a task group, so scan latency is the slowest single interpreter — not
+    ///    the sum of every 10s timeout, which is what let one wedged probe stall the launch.
+    /// 3. **Assemble**: results re-sort into candidate order and dedup by resolved binary.
+    ///
+    /// - Important: The phase-2 fan-out is bounded by the candidate count (~5–6). It is NOT the
+    ///   unbounded cross-scan stampede that `inFlightScan` coalescing exists to prevent (12.18),
+    ///   and it must not be re-serialized or wrapped in a permit-throttle (12.17).
     /// - Parameter logger: The instantiated logging channel to report parsing heuristics.
-    /// - Returns: A tuple bearing the list of verified versions and a boolean marking scan completeness.
+    /// - Returns: A tuple bearing the list of verified versions and a boolean marking scan
+    ///   completeness (`complete == false` when any version probe failed transiently, so the
+    ///   result is served but never cache-locked for the 5-minute window).
     nonisolated private static func scanForPythons(logger: Logger) async -> (installs: [PythonInstallation], complete: Bool) {
         let homebrewPrefix = BrewPathManager.shared.homebrewPrefix
         let binDir = URL(fileURLWithPath: "\(homebrewPrefix)/bin")
@@ -201,63 +214,107 @@ final class PythonService {
 
         logger.debugLog("🐛 py scanForPythons: \(candidates.count) candidates → \(candidates.joined(separator: ", "))")
 
-        var results: [PythonInstallation] = []
-        var seenResolvedPaths: Set<String> = []
-        var complete = true
+        /// Phase 1 (no subprocesses): resolve symlinks and claim binaries. Versioned names come
+        /// first (see the sort above) and claim their resolved binary without a subprocess, so a
+        /// bare `python3`/`python` pointing at the same binary is dropped before it costs a probe.
+        struct ProbeCandidate {
+            let name: String
+            let url: URL
+            let resolvedPath: String
+            let filenameVersion: String?
+        }
 
+        var claimedPaths: Set<String> = []
+        var probeList: [ProbeCandidate] = []
         for name in candidates {
             logger.debugLog("🐛 py scan → candidate \(name)")
             let url = binDir.appendingPathComponent(name)
             guard FileManager.default.isExecutableFile(atPath: url.path) else { continue }
 
             let resolvedPath = url.resolvingSymlinksInPath().path
-            if seenResolvedPaths.contains(resolvedPath) { continue }
+            if claimedPaths.contains(resolvedPath) { continue }
 
             /// Prefer the version encoded in the filename (reliable, no subprocess).
             /// Fall back to `--version` only for an unversioned name (bare `python3`).
             ///
             /// **Gotchas:** Attempting to infer version strictly via string-parsing `python` inevitably fails; fallback is required for standard macOS system symlinks.
-            var ver: String? = versionFromFilename(name)
-            if ver == nil {
-                do {
-                    let res = try await AsyncProcessRunner.shared.run(command: "\(InputSanitizer.singleQuote(url.path)) --version", timeoutSeconds: 10)
-                    let stdout = res.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
-                    let parts = stdout.split(separator: " ")
-                    if stdout.lowercased().hasPrefix("python"), parts.count >= 2 {
-                        ver = String(parts[1])
+            let filenameVersion = versionFromFilename(name)
+            if filenameVersion != nil { claimedPaths.insert(resolvedPath) }
+            probeList.append(ProbeCandidate(name: name, url: url, resolvedPath: resolvedPath, filenameVersion: filenameVersion))
+        }
+
+        /// Phase 2: probe the surviving candidates CONCURRENTLY. The probes were serial — up to
+        /// two subprocesses per interpreter at a 10s timeout each, so a contended launch could
+        /// hold the dashboard for the SUM of the timeouts. Concurrency here is bounded by the
+        /// candidate count (~5-6, ≤2 sequential subprocesses each) — a fixed small fan-out per
+        /// scan, NOT the unbounded cross-scan stampede that single-flight coalescing prevents
+        /// (12.18), and no permit-throttle over the spawns (12.17). `AsyncProcessRunner` drains
+        /// pipes on libdispatch, so these children only await; the cooperative pool stays free.
+        ///
+        /// Each child returns (index, install?, probeFailed) — index restores deterministic
+        /// order, probeFailed marks a version-probe failure that must flag the scan incomplete.
+        var probed: [(index: Int, install: PythonInstallation?, probeFailed: Bool, resolvedPath: String)] = []
+        await withTaskGroup(of: (Int, PythonInstallation?, Bool, String).self) { group in
+            for (index, cand) in probeList.enumerated() {
+                group.addTask {
+                    var ver: String? = cand.filenameVersion
+                    if ver == nil {
+                        do {
+                            let res = try await AsyncProcessRunner.shared.run(command: "\(InputSanitizer.singleQuote(cand.url.path)) --version", timeoutSeconds: 10)
+                            let stdout = res.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+                            let parts = stdout.split(separator: " ")
+                            if stdout.lowercased().hasPrefix("python"), parts.count >= 2 {
+                                ver = String(parts[1])
+                            }
+                        } catch {
+                            /// Transient failure — don't drop it silently AND cache the gap.
+                            /// Mark the scan incomplete so the result isn't treated as final.
+                            ///
+                            /// **Rationale:** Ensures that if `python --version` times out due to disk I/O, the interpreter isn't permanently erased from the dashboard.
+                            return (index, nil, true, cand.resolvedPath)
+                        }
                     }
-                } catch {
-                    /// Transient failure — don't drop it silently AND cache the gap.
-                    /// Mark the scan incomplete so the result isn't treated as final.
+                    guard let version = ver else { return (index, nil, false, cand.resolvedPath) }
+
+                    /// pip status is best-effort enrichment; its failure never drops the python.
                     ///
-                    /// **Rationale:** Ensures that if `python --version` times out due to disk I/O, the interpreter isn't permanently erased from the dashboard.
-                    complete = false
-                    continue
+                    /// **Rationale:** Some minimalist virtual environments intentionally omit `pip` to save space; dropping the parent interpreter would hide legitimate sandboxes.
+                    var pipOK = false
+                    var pipVer: String? = nil
+                    logger.debugLog("🐛 py scan   \(cand.name): pip-probe start")
+                    do {
+                        let pipCheck = try await AsyncProcessRunner.shared.run(command: "\(InputSanitizer.singleQuote(cand.url.path)) -m pip --version", timeoutSeconds: 10)
+                        if !pipCheck.stdout.isEmpty && pipCheck.stdout.contains("pip") {
+                            pipOK = true
+                            let pipParts = pipCheck.stdout.split(separator: " ")
+                            if pipParts.count >= 2 { pipVer = String(pipParts[1]) }
+                        }
+                    } catch {
+                        pipOK = false
+                    }
+                    logger.debugLog("🐛 py scan   \(cand.name): pip-probe done pip=\(pipOK)")
+
+                    let formula = "python@\((version.split(separator: ".").prefix(2).joined(separator: ".")))"
+                    let install = PythonInstallation(version: version, path: cand.url, pipAvailable: pipOK, pipVersion: pipVer, formula: formula)
+                    return (index, install, false, cand.resolvedPath)
                 }
             }
-            guard let version = ver else { continue }
-            seenResolvedPaths.insert(resolvedPath)
+            for await result in group { probed.append(result) }
+        }
 
-            /// pip status is best-effort enrichment; its failure never drops the python.
-            ///
-            /// **Rationale:** Some minimalist virtual environments intentionally omit `pip` to save space; dropping the parent interpreter would hide legitimate sandboxes.
-            var pipOK = false
-            var pipVer: String? = nil
-            logger.debugLog("🐛 py scan   \(name): pip-probe start")
-            do {
-                let pipCheck = try await AsyncProcessRunner.shared.run(command: "\(InputSanitizer.singleQuote(url.path)) -m pip --version", timeoutSeconds: 10)
-                if !pipCheck.stdout.isEmpty && pipCheck.stdout.contains("pip") {
-                    pipOK = true
-                    let pipParts = pipCheck.stdout.split(separator: " ")
-                    if pipParts.count >= 2 { pipVer = String(pipParts[1]) }
-                }
-            } catch {
-                pipOK = false
-            }
-            logger.debugLog("🐛 py scan   \(name): pip-probe done pip=\(pipOK)")
-
-            let formula = "python@\((version.split(separator: ".").prefix(2).joined(separator: ".")))"
-            results.append(PythonInstallation(version: version, path: url, pipAvailable: pipOK, pipVersion: pipVer, formula: formula))
+        /// Phase 3: reassemble in candidate order and dedup bare names whose probed binary turned
+        /// out to be one we already have (two bare names resolving to the same binary can both
+        /// reach phase 2 — the versioned-first claims in phase 1 only cover known versions).
+        probed.sort { $0.index < $1.index }
+        var results: [PythonInstallation] = []
+        var seenResolvedPaths: Set<String> = []
+        var complete = true
+        for entry in probed {
+            if entry.probeFailed { complete = false; continue }
+            guard let install = entry.install else { continue }
+            if seenResolvedPaths.contains(entry.resolvedPath) { continue }
+            seenResolvedPaths.insert(entry.resolvedPath)
+            results.append(install)
         }
         logger.debugLog("🐛 py scanForPythons: finished — \(results.count) installs, complete=\(complete)")
         return (results, complete)

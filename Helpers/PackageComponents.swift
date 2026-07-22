@@ -154,7 +154,8 @@ struct InstalledPackageRow: View, Equatable {
 /// A row for search results that can be installed (pip packages, Homebrew formulae, or casks).
 ///
 /// Displays the package name, an "Installed" badge if already installed,
-/// a spinner while installing, or an install button.
+/// a spinner while installing, an install button — or a passive "Protected Mode"
+/// badge when ``isProtectedMode`` is `true` (see below).
 ///
 /// ## Usage
 ///
@@ -165,41 +166,59 @@ struct InstalledPackageRow: View, Equatable {
 ///     isInstalling: vm.installingPackage == "numpy",
 ///     isInstalled: vm.installedPackages.contains("numpy"),
 ///     canInstall: vm.isPythonAvailable,
+///     isProtectedMode: prefs.mode == .protected && vm.requiresBreakSystemPackages,
 ///     onInstall: { Task { await vm.install("numpy") } }
 /// )
 /// ```
+///
+/// - Important: `isProtectedMode` defaults to `false` so Homebrew call sites
+///   (formulae/casks, where PEP 668 does not apply) compile and behave unchanged.
+///   Only pip call sites should compute it.
 struct InstallablePackageRow: View {
     /// The package name.
     let name: String
-    
+
     /// Whether to use the alternate row background color.
     let isAlternate: Bool
-    
+
     /// Whether an install operation is in progress for this package.
     let isInstalling: Bool
-    
+
     /// Whether this package is already installed.
     let isInstalled: Bool
-    
+
     /// Whether the prerequisite tool is available for installation.
     let canInstall: Bool
-    
+
+    /// Whether installs are blocked by PEP 668 Protected mode.
+    ///
+    /// `true` when the selected interpreter is externally managed (Python 3.12+)
+    /// AND the global ``PipInstallMode`` is ``PipInstallMode/protected``. The row
+    /// then swaps the Install button for a passive "Protected Mode" badge — the
+    /// same visual treatment as the "Installed" badge — because a tap could only
+    /// fail: pip refuses to write into an externally-managed environment without
+    /// an override flag, and previously that failure was silent.
+    ///
+    /// - Note: In ``PipInstallMode/userSpace`` or ``PipInstallMode/systemWide``
+    ///   the flags make the install legal again, so the normal button returns.
+    var isProtectedMode: Bool = false
+
     /// Called when the Install button is tapped.
     let onInstall: () -> Void
-    
+
     var body: some View {
         HStack(spacing: 12) {
             Text(name)
                 .font(.body)
-            
+
             Spacer()
-            
+
             if isInstalled {
                 HStack(spacing: 4) {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundColor(.green)
                         .font(.caption)
-                    
+
                     Text("Installed")
                         .font(.caption)
                         .foregroundColor(.secondary)
@@ -208,6 +227,8 @@ struct InstallablePackageRow: View {
             } else if isInstalling {
                 ProgressView()
                     .controlSize(.small)
+            } else if isProtectedMode {
+                ProtectedModeBadge()
             } else {
                 Button {
                     onInstall()
@@ -223,6 +244,35 @@ struct InstallablePackageRow: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
         .background(isAlternate ? Color(NSColor.controlAlternatingRowBackgroundColors[1]) : Color(NSColor.controlBackgroundColor))
+    }
+}
+
+// MARK: - Protected Mode Badge
+
+/// Passive badge shown in place of an Install button when PEP 668 Protected
+/// mode blocks pip installs on an externally-managed (Python 3.12+) interpreter.
+///
+/// Mirrors the layout of the "Installed" badge so rows stay visually consistent,
+/// using ``PipInstallMode/protected``'s own icon and tint. Hovering explains the
+/// state and how to lift it (the install-mode picker).
+///
+/// - Important: This badge is deliberately NOT a disabled button. A disabled
+///   button reads as "temporarily unavailable"; this state is a deliberate,
+///   user-chosen policy, presented the same way as "Installed": a fact about
+///   the row, not a control.
+struct ProtectedModeBadge: View {
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: PipInstallMode.protected.icon)
+                .foregroundColor(.secondary)
+                .font(.caption)
+
+            Text("Protected Mode")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .padding(.horizontal, 5)
+        .help("PEP 668: this Python is externally managed, and Protected mode blocks pip installs. Switch the install mode to User space or System-wide to enable installing.")
     }
 }
 
@@ -263,7 +313,13 @@ struct PopularPackageRow: View, Equatable {
     
     /// Whether the prerequisite tool is available for installation.
     let canInstall: Bool
-    
+
+    /// Whether installs are blocked by PEP 668 Protected mode.
+    ///
+    /// See ``InstallablePackageRow/isProtectedMode`` — same semantics, same
+    /// default. Only meaningful on the pip tab; brew tabs must leave it `false`.
+    var isProtectedMode: Bool = false
+
     /// Called when the Install button is tapped.
     let onInstall: () -> Void
 
@@ -271,13 +327,18 @@ struct PopularPackageRow: View, Equatable {
     /// body when an unrelated @Published on the parent VM changes.
     ///
     /// **Gotchas:** Including closures in `Equatable` compliance forces SwiftUI to re-render the row on every parent state change, tanking scrolling performance on large lists.
+    /// - Important: `isProtectedMode` MUST participate here — it is derived from
+    ///   an external observable (`InstallPreferences.shared.mode`), and omitting
+    ///   it would freeze rows on their first-render badge state after the user
+    ///   changes the install mode.
     static func == (lhs: PopularPackageRow, rhs: PopularPackageRow) -> Bool {
         lhs.package == rhs.package &&
         lhs.rank == rhs.rank &&
         lhs.isAlternate == rhs.isAlternate &&
         lhs.isInstalled == rhs.isInstalled &&
         lhs.isInstalling == rhs.isInstalling &&
-        lhs.canInstall == rhs.canInstall
+        lhs.canInstall == rhs.canInstall &&
+        lhs.isProtectedMode == rhs.isProtectedMode
     }
 
     var body: some View {
@@ -314,6 +375,8 @@ struct PopularPackageRow: View, Equatable {
             } else if isInstalling {
                 ProgressView()
                     .controlSize(.small)
+            } else if isProtectedMode {
+                ProtectedModeBadge()
             } else {
                 Button {
                     onInstall()

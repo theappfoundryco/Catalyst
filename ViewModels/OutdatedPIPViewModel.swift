@@ -38,6 +38,16 @@ protocol OutdatedUpdating: AnyObject {
     func rescanAfterUpdates() async
 }
 
+/// Accumulates streamed process output on the main actor. Lets the update flows both stream
+/// chunks live to the terminal log AND keep the full transcript for post-hoc classification
+/// (held-back vs failed parsing needs the complete output).
+@MainActor
+final class OutputCollector {
+    private(set) var text = ""
+    /// Appends a streamed chunk onto the retained transcript.
+    func append(_ chunk: String) { text += chunk }
+}
+
 /// Cached formatter for `formattedLastScanDate`. Allocating a `DateFormatter`
 /// per access (it was read from `body`) is notoriously expensive (R4).
 private enum OutdatedScanDateFormat {
@@ -401,11 +411,14 @@ final class OutdatedPIPViewModel: ObservableObject, OutdatedUpdating {
         }
 
         let flags = InstallPreferences.pipFlags(forPythonVersion: originalPackage.pythonVersion)
-        let command = "\(InputSanitizer.singleQuote(pythonPath)) -m pip install --upgrade \(InputSanitizer.singleQuote(sanitizedName)) \(flags)"
+        /// `--no-input`: pip must never wait on an interactive prompt (keyring/credentials) —
+        /// stdin is /dev/null in a GUI app, and before it was forced closed a prompting pip
+        /// hung the whole update flow forever with zero output ("update taking forever").
+        let command = "\(InputSanitizer.singleQuote(pythonPath)) -m pip install --upgrade --no-input \(InputSanitizer.singleQuote(sanitizedName)) \(flags)"
         let (exitOK, output) = await runUpgradeCapturing(command)
 
-        // Source of truth: does pip still report it outdated afterwards?
-        let upgraded = await verifyUpdate(name, pythonPath: pythonPath)
+        // Source of truth: did the installed version actually move to the target?
+        let upgraded = await verifyUpdate(originalPackage)
 
         if upgraded {
             outdatedPackages.removeAll { $0.name == name }
@@ -473,54 +486,52 @@ final class OutdatedPIPViewModel: ObservableObject, OutdatedUpdating {
         return "A newer version exists but isn't installable on this Python (dependency constraint or Requires-Python)."
     }
 
-    /// Verifies if a package successfully dropped off the `pip list --outdated` array post-upgrade.
+    /// Verifies an upgrade by reading the installed version LOCALLY (`pip show`) and comparing
+    /// it against the version the outdated scan said was installable.
+    ///
+    /// This replaces the old full `pip list --outdated` sweep, which hit the network and took
+    /// 10-30s PER PACKAGE — in a batch update that was most of the "taking forever". `pip show`
+    /// reads on-disk `.dist-info` only, so it's instant, and it answers the same question:
+    /// success ⇒ the installed version reached `newVersion`; a held-back/failed install leaves
+    /// it older. (`newVersion` came from `pip list --outdated` on this same interpreter, so it
+    /// is by construction the installable target, not a global PyPI latest.)
     ///
     /// **Gotchas:**
     /// - Forces a 500ms delay to allow pip to stabilize its internal `.dist-info` structures.
-    /// - Fail-closed: If the verification command crashes, we assume the upgrade failed.
+    /// - Fail-closed: If the verification command crashes or parses to nothing, assume failure.
     ///
-    /// - Parameters:
-    ///   - name: The package name.
-    ///   - pythonPath: The absolute path to the Python environment.
-    /// - Returns: `true` if the package is **NO LONGER** outdated.
-    private func verifyUpdate(_ name: String, pythonPath: String?) async -> Bool {
-        logger.log("🔍 Verifying update for \(name)...")
-        
+    /// - Parameter package: The outdated entry being upgraded (name + target version + interpreter).
+    /// - Returns: `true` if the installed version is now at (or past) the target version.
+    private func verifyUpdate(_ package: OutdatedPackage) async -> Bool {
+        logger.log("🔍 Verifying update for \(package.name)...")
+
         // Give pip a moment to update its internal state
         try? await Task.sleep(for: .milliseconds(500))
-        
-        guard let path = pythonPath else {
-            logger.log("❌ No Python path for verification")
+
+        guard let path = package.pythonPath,
+              let sanitizedName = InputSanitizer.sanitizePackageName(package.name) else {
+            logger.log("❌ No Python path / valid name for verification")
             return false
         }
-        
-        // Check if package is still in outdated list using the SAME Python
-        let command = "\(InputSanitizer.singleQuote(path)) -m pip list --outdated --format=json 2>/dev/null"
-        
+
+        let command = "\(InputSanitizer.singleQuote(path)) -m pip show \(InputSanitizer.singleQuote(sanitizedName)) 2>/dev/null"
+
         do {
-            let result = try await AsyncProcessRunner.shared.run(command: command)
-            
-            /// A minimal package definition used for internal PyPI resolution lookups.
-            struct PipPackage: Codable {
-                let name: String
-            }
-            
-            if let data = result.stdout.data(using: .utf8),
-               let packages = try? JSONDecoder().decode([PipPackage].self, from: data) {
-                let stillOutdated = packages.contains { InputSanitizer.normalizePipPackageName($0.name) == InputSanitizer.normalizePipPackageName(name) }
-                
-                if stillOutdated {
-                    logger.log("⚠️ \(name) still appears in outdated list")
-                    return false
-                } else {
-                    logger.log("✅ \(name) no longer in outdated list - upgrade successful")
-                    return true
-                }
-            } else {
-                // If we can't parse the list, assume failure (fail-closed for safety)
-                logger.log("⚠️ Could not verify \(name), assuming update may have failed")
+            let result = try await AsyncProcessRunner.shared.run(command: command, timeoutSeconds: 30)
+            guard let versionLine = result.stdout
+                .split(separator: "\n")
+                .first(where: { $0.lowercased().hasPrefix("version:") }) else {
+                logger.log("⚠️ Could not verify \(package.name), assuming update may have failed")
                 return false
             }
+            let installed = versionLine.dropFirst("version:".count).trimmingCharacters(in: .whitespaces)
+
+            if VersionComparator.isOlder(installed, than: package.newVersion) {
+                logger.log("⚠️ \(package.name) still at \(installed) (target \(package.newVersion))")
+                return false
+            }
+            logger.log("✅ \(package.name) now at \(installed) - upgrade successful")
+            return true
         } catch {
             logger.log("❌ Verification failed: \(error.localizedDescription)")
             // Fail-closed: assume failure if verification fails
@@ -528,20 +539,26 @@ final class OutdatedPIPViewModel: ObservableObject, OutdatedUpdating {
         }
     }
 
-    /// Runs an upgrade command, capturing and logging output.
+    /// Runs an upgrade command, streaming output LIVE to the terminal log while capturing it.
+    ///
+    /// Streaming matters: the old `run(command:)` path returned output only after the process
+    /// exited, so a slow (or wedged) `pip install` showed a spinner and NOTHING else — the
+    /// "nothing is happening" experience. Now every chunk lands in the Logs screen as pip
+    /// produces it, so a long dependency resolve or wheel build is visibly alive.
     ///
     /// - Parameter command: The pip execution string.
     /// - Returns: A tuple containing the exit status and the raw output stream.
     private func runUpgradeCapturing(_ command: String) async -> (ok: Bool, output: String) {
+        let collector = OutputCollector()
         do {
-            let result = try await AsyncProcessRunner.shared.run(command: command)
-            if !result.combinedOutput.isEmpty {
-                logger.log(result.combinedOutput, category: .terminal)
+            let exitCode = try await AsyncProcessRunner.shared.runWithStreaming(command: command) { chunk in
+                Logger.shared.log(chunk, category: .terminal)
+                collector.append(chunk)
             }
-            return (result.succeeded, result.combinedOutput)
+            return (exitCode == 0, collector.text)
         } catch {
             logger.log("❌ Error: \(error.localizedDescription)")
-            return (false, "")
+            return (false, collector.text)
         }
     }
     

@@ -50,15 +50,17 @@ final class PIPPackagesInstallViewModel: ObservableObject {
     /// Short, user-facing error surfaced as a banner when an install fails (P3).
     @Published var installError: String?
     
-    /// Returns true if selected Python version is 3.12+ which requires --break-system-packages
+    /// Whether the selected interpreter is externally managed under PEP 668 (Python 3.12+),
+    /// meaning pip needs `--break-system-packages` (an install-mode override) to write to it.
+    ///
+    /// Delegates to ``VersionComparator/requiresBreakSystemPackages(pythonVersion:)`` — the
+    /// single version-parsing implementation — instead of a local reparse. (The old inline
+    /// check compared `major >= 3 && minor >= 12`, which would misclassify a future 4.x.)
+    ///
+    /// - Returns: `false` when no interpreter is selected (nothing to protect yet).
     var requiresBreakSystemPackages: Bool {
         guard let python = selectedPythonVersion else { return false }
-        let versionParts = python.version.split(separator: ".")
-        guard versionParts.count >= 2,
-              let major = Int(versionParts[0]),
-              let minor = Int(versionParts[1]) else { return false }
-        // Python 3.12+ requires --break-system-packages due to PEP 668
-        return major >= 3 && minor >= 12
+        return VersionComparator.requiresBreakSystemPackages(pythonVersion: python.version)
     }
     
     private let pythonService: PythonService

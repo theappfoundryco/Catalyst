@@ -64,6 +64,19 @@ final class PopularPackagesViewModel: ObservableObject {
     /// The user-selected Python interpreter for pip package operations.
     @Published var selectedPythonVersion: PythonInstallation?
 
+    /// Whether the selected interpreter is externally managed under PEP 668 (Python 3.12+).
+    ///
+    /// Drives the pip tab's "Protected Mode" badge: combined with
+    /// ``PipInstallMode/protected`` in the view, it swaps the Install button for a
+    /// passive badge, because pip would refuse the write and the failure used to be
+    /// silent. Mirrors `PIPPackagesInstallViewModel.requiresBreakSystemPackages`.
+    ///
+    /// - Note: Only consulted for the pip tab — PEP 668 has no Homebrew analogue.
+    var requiresBreakSystemPackages: Bool {
+        guard let python = selectedPythonVersion else { return false }
+        return VersionComparator.requiresBreakSystemPackages(pythonVersion: python.version)
+    }
+
     private let pythonService: PythonService
     private let logger: Logger
     /// Builds + runs the install command (extracted out of this VM, R1).

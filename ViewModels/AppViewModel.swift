@@ -273,11 +273,27 @@ final class AppViewModel: ObservableObject {
     /// **Rationale:**
     /// This is fired globally whenever a package or Python is installed/uninstalled, guaranteeing
     /// that all tabs (Pip, Brew, Envs, Dashboard) reflect the updated filesystem truth seamlessly without requiring app restarts.
+    ///
+    /// - Important: The Python cache invalidation happens HERE, synchronously, before the task
+    ///   group — never inside one of the group's children. See the inline comment and
+    ///   CODING_STANDARDS 12.52 for the launch-race postmortem behind this ordering.
+    /// - Note: `runDetection(force:)` still owns its own invalidation for the Dashboard's manual
+    ///   refresh button, where no sibling tasks race it.
     func fullRefresh() async {
         isPerformingFullRefresh = true
-        
+
+        /// Invalidate the Python cache HERE, synchronously, before any child task is spawned —
+        /// not inside `runDetection(force:)` where it raced the other children. The group's
+        /// tasks start in nondeterministic order, so when the invalidate landed after another
+        /// VM's `detectPythons()`, that scan was retired at birth (12.18b): every caller then
+        /// queued behind a doomed gen-0 sweep whose result was discarded, and under launch
+        /// subprocess contention that sweep alone stalled the dashboard for tens of seconds
+        /// (the intermittent "hung launch"). This is @MainActor code with no suspension before
+        /// the group, so no scan can start ahead of the generation bump. (12.52)
+        pythonService.invalidateCache()
+
         await withTaskGroup(of: Void.self) { group in
-            group.addTask { await self.dashboardViewModel.runDetection(force: true) }
+            group.addTask { await self.dashboardViewModel.runDetection() }
             group.addTask { await self.drCatalystViewModel.scan() }
             group.addTask { await self.virtualEnvViewModel.startup() }
             group.addTask { await self.pipPackagesViewModel.startup() }

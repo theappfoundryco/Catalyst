@@ -265,14 +265,17 @@ final class OutdatedBrewViewModel: ObservableObject, OutdatedUpdating {
     ///   - type: The specific type (Formula/Cask) to narrow the `brew outdated` query.
     /// - Returns: `true` if the package is **NO LONGER** present in the outdated list.
     private func verifyUpdate(_ name: String, type: PackageType) async -> Bool {
-        guard let _ = InputSanitizer.sanitizePackageName(name) else { return false }
+        guard let sanitizedName = InputSanitizer.sanitizePackageName(name) else { return false }
         let isCask = type == .brewCask
-        
-        // Check if still listed in outdated
+
+        // Check ONLY this package. `brew outdated` accepts name arguments, and the scoped query
+        // returns in well under a second — the old full-tree sweep took several seconds PER
+        // PACKAGE, which in a batch update was a large share of the "taking forever".
+        let pkg = InputSanitizer.singleQuote(sanitizedName)
         let command = isCask ?
-            "export PATH=\"\(BrewPathManager.shared.homebrewPrefix)/bin:$PATH\" && \(BrewPathManager.shared.brewPath) outdated --cask --json" :
-            "export PATH=\"\(BrewPathManager.shared.homebrewPrefix)/bin:$PATH\" && \(BrewPathManager.shared.brewPath) outdated --formula --json"
-            
+            "export PATH=\"\(BrewPathManager.shared.homebrewPrefix)/bin:$PATH\" && \(BrewPathManager.shared.brewPath) outdated --cask --json \(pkg)" :
+            "export PATH=\"\(BrewPathManager.shared.homebrewPrefix)/bin:$PATH\" && \(BrewPathManager.shared.brewPath) outdated --formula --json \(pkg)"
+
         do {
             let result = try await AsyncProcessRunner.shared.run(command: command)
             if result.succeeded {
@@ -299,11 +302,23 @@ final class OutdatedBrewViewModel: ObservableObject, OutdatedUpdating {
     private func runCommand(_ command: String) async -> Bool {
         guard await hasNetworkConnection() else { return false }
         do {
-            let result = try await AsyncProcessRunner.shared.run(command: command)
-            if !result.combinedOutput.isEmpty {
-                logger.log(result.combinedOutput, category: .terminal)
+            /// Streamed, not buffered: `brew upgrade` can legitimately run for minutes
+            /// (downloads, pouring, cask installers), and the old buffered path showed
+            /// NOTHING until it finished — indistinguishable from a hang.
+            ///
+            /// `NONINTERACTIVE=1`: brew must fail fast instead of prompting (cask sudo,
+            /// tap confirmations) — stdin is /dev/null in a GUI app, so any prompt is a
+            /// permanent hang. `HOMEBREW_NO_AUTO_UPDATE=1`: don't run a full `brew update`
+            /// as a side effect of each per-package upgrade; the outdated list was computed
+            /// against the current taps, and the implicit update added tens of seconds to
+            /// the FIRST package while looking like a stall.
+            let exitCode = try await AsyncProcessRunner.shared.runWithStreaming(
+                command: command,
+                environment: ["NONINTERACTIVE": "1", "HOMEBREW_NO_AUTO_UPDATE": "1"]
+            ) { chunk in
+                Logger.shared.log(chunk, category: .terminal)
             }
-            return result.succeeded
+            return exitCode == 0
         } catch {
             logger.log("❌ Error: \(error.localizedDescription)")
             return false
