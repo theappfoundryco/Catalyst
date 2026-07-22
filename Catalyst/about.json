@@ -2,8 +2,19 @@
   "app_name": "Catalyst",
   "developer": "The App Foundry",
   "copyright": "The App Foundry",
-  "latest": "1.1",
+  "latest": "1.2",
   "versions": {
+    "1.2": {
+      "release_date": "2026-07-22",
+      "tagline": "Faster, and steadier.",
+      "highlights": [
+        "Noticeably faster — screens open quicker and long package lists scroll smoothly, even while the machine is busy.",
+        "A leaner backend: catalog and update requests do less work and recover cleanly when the network is slow or drops out.",
+        "Fixed a batch of bugs from the last release, so more actions succeed on the first try.",
+        "Groundwork under the hood for what's coming next."
+      ],
+      "requirements": "macOS 14.6 or later"
+    },
     "1.1": {
       "release_date": "2026-07-21",
       "tagline": "Smoother updates.",
