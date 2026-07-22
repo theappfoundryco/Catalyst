@@ -1,0 +1,16 @@
+# Dependabot — keep dependencies patched.
+# Swift Package Manager covers Sparkle (the update framework — the one dependency whose
+# vulnerabilities would matter most). github-actions is a no-op until a workflow is added,
+# and then keeps any pinned actions current.
+version: 2
+updates:
+  - package-ecosystem: "swift"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"

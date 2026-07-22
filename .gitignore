@@ -13,6 +13,11 @@ xcuserdata/
 # Secrets — NEVER commit
 *.pem
 *.p12
+*.p8
+*.mobileprovision
+sparkle_private.key
+codes-*.txt
+codes-*.sql
 .dev.vars
 .dev.vars.*
 .env
@@ -24,8 +29,9 @@ data/
 updates/
 
 # Local release artifacts
+# NOTE: do NOT ignore Scripts/ — the release pipeline lives there and must be tracked.
+# A blanket `Scripts/` ignore silently drops any NEW helper script from commits.
 releases/
-Scripts/
 
 # Tooling
 .claude
