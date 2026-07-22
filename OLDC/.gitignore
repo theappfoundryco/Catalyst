@@ -1,0 +1,13 @@
+jwt_private.pem
+jwt_public.pem
+catalyst_website/
+catalyst_pages/
+catalyst_worker/
+.claude
+.wrangler
+releases
+build/
+.DS_Store
+# Sibling PUBLIC releases repo (its own git repo — never tracked by the app repo)
+Catalyst_Releases/
+theappfoundryco/

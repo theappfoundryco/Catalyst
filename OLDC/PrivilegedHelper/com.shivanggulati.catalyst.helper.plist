@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- launchd label; must equal the Mach service name. -->
+    <key>Label</key>
+    <string>com.shivanggulati.catalyst.helper</string>
+
+    <!-- Path to the helper executable inside the app bundle. -->
+    <key>BundleProgram</key>
+    <string>Contents/MacOS/CatalystHelper</string>
+
+    <!-- The Mach service the app connects to. -->
+    <key>MachServices</key>
+    <dict>
+        <key>com.shivanggulati.catalyst.helper</key>
+        <true/>
+    </dict>
+
+    <!-- Ties this daemon to the app for SMAppService management. -->
+    <key>AssociatedBundleIdentifiers</key>
+    <array>
+        <string>com.shivanggulati.catalyst</string>
+    </array>
+</dict>
+</plist>

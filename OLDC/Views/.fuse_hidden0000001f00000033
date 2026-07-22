@@ -1,0 +1,123 @@
+import SwiftUI
+
+struct ShortcutCard: View {
+    let shortcut: ShortcutItem
+    let isInstalled: Bool
+    let customName: String?
+    
+    var colorGradient: LinearGradient {
+        let colors: [Color] = {
+            switch shortcut.color {
+            case "orange": return [.orange, .red]
+            case "blue": return [.blue, .cyan]
+            case "purple": return [.purple, .pink]
+            case "green": return [.green, .mint]
+            case "red": return [.red, .pink]
+            case "yellow": return [.yellow, .orange]
+            case "cyan": return [.cyan, .blue]
+            default: return [.gray, .secondary]
+            }
+        }()
+        
+        return LinearGradient(
+            colors: colors,
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            // Top section with icon and category
+            HStack {
+                Image(systemName: shortcut.icon)
+                    .font(.system(size: 32))
+                    .foregroundStyle(colorGradient)
+                    .frame(width: 50, height: 50)
+                    .background(
+                        Circle()
+                            .fill(colorGradient.opacity(0.15))
+                    )
+                
+                Spacer()
+                
+                // Category badge
+                Text(shortcut.category)
+                    .font(.caption2.weight(.semibold))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(
+                        Capsule()
+                            .fill(colorGradient.opacity(0.2))
+                    )
+                    .foregroundStyle(colorGradient)
+            }
+            .padding(16)
+            
+            // Title and tagline
+            VStack(alignment: .leading, spacing: 6) {
+                Text(shortcut.title)
+                    .font(.headline)
+                    .foregroundColor(.primary)
+                    .multilineTextAlignment(.leading)
+                
+                Text(shortcut.tagline)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 16)
+            .padding(.bottom, 16)
+            
+            SectionDivider()
+            
+            // Bottom section with status
+            HStack(spacing: 8) {
+                if isInstalled {
+                    Image(systemName: "checkmark.circle.fill")
+                        .foregroundColor(.green)
+                        .font(.caption)
+                    
+                    if let name = customName {
+                        Text("Installed as \(name)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    } else {
+                        Text("Installed")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                } else {
+                    Image(systemName: "arrow.down.circle")
+                        .foregroundColor(.blue)
+                        .font(.caption)
+                    
+                    Text("Tap to install")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                
+                Spacer()
+                
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .padding(12)
+            .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color(NSColor.controlBackgroundColor))
+                .shadow(color: .black.opacity(0.1), radius: 4, x: 0, y: 2)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .strokeBorder(Color.secondary.opacity(0.1), lineWidth: 1)
+        )
+        .contentShape(Rectangle())
+        .contentShape(Rectangle())
+    }
+}

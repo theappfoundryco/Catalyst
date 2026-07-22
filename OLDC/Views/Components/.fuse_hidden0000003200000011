@@ -1,0 +1,375 @@
+//
+//  DrCatalystCards.swift
+//  Catalyst
+//
+//  Subview components extracted from DrCatalystView for better modularity.
+//
+
+import SwiftUI
+
+// MARK: - Diagnostic Grid
+
+struct DiagnosticGrid: View {
+    let statuses: [DoctorStatus]
+    let issues: [HealthIssue]
+    let onRefresh: () async -> Void
+    @State private var isRefreshing = false
+    
+    let columns = [
+        GridItem(.flexible(), spacing: 12),
+        GridItem(.flexible(), spacing: 12),
+        GridItem(.flexible(), spacing: 12),
+        GridItem(.flexible(), spacing: 12)
+    ]
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Diagnostic Log")
+                        .font(.headline)
+                    Text("System Health Checks")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                
+                Spacer()
+                
+                if isRefreshing {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    Button {
+                        Task {
+                            isRefreshing = true
+                            // Wait 1.5s first, THEN refresh
+                            try? await Task.sleep(for: .seconds(1.5))
+                            await onRefresh()
+                            isRefreshing = false
+                        }
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundColor(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Refresh Diagnostics")
+                }
+            }
+            
+            LazyVGrid(columns: columns, spacing: 12) {
+                ForEach(statuses) { status in
+                    DiagnosticStatusCard(status: status, issues: issues.filter { $0.category == status.category })
+                        .zIndex(status.status.isPassed ? 0 : 1)
+                }
+            }
+        }
+        .cardStyle(padded: false)
+    }
+}
+
+// MARK: - Diagnostic Status Card
+
+struct DiagnosticStatusCard: View {
+    let status: DoctorStatus
+    let issues: [HealthIssue]
+    @State private var isHovering = false
+    
+    var tooltipText: String {
+        switch status.status {
+        case .passed:
+            return "✅ All \(status.category.rawValue) checks passed."
+        case .failed(let count):
+            let titles = issues.prefix(3).map { "• \($0.title)" }.joined(separator: "\n")
+            let suffix = issues.count > 3 ? "\n...and \(issues.count - 3) more" : ""
+            return "❌ \(count) Issues Found:\n\(titles)\(suffix)"
+        case .skipped:
+            return "Skipped"
+        case .notInstalled:
+            return "Not Installed"
+        }
+    }
+    
+    var icon: String {
+        switch status.category {
+        case .shell: return "terminal.fill"
+        case .path: return "signpost.right.and.left"
+        case .tools: return "hammer.fill"
+        case .permissions: return "hand.raised.fill"
+        case .network: return "network"
+        case .container: return "shippingbox.fill"
+        case .disk: return "internaldrive.fill"
+        case .security: return "lock.shield.fill"
+        case .architecture: return "cpu"
+        case .java: return "cup.and.saucer.fill"
+        case .firewall: return "flame.fill"
+        case .startup: return "clock.arrow.circlepath"
+        case .node: return "hexagon.fill"
+        case .memory: return "memorychip"
+        }
+    }
+    
+    var body: some View {
+        HStack {
+            Image(systemName: icon)
+                .foregroundColor(.secondary)
+            
+            Text(status.category.rawValue)
+                .font(.caption)
+                .lineLimit(1)
+            
+            Spacer()
+            
+            switch status.status {
+            case .passed:
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundColor(.green)
+            case .failed(let count):
+                Text("\(count)")
+                    .font(.caption.bold())
+                    .padding(4)
+                    .background(Color.red.opacity(0.1))
+                    .foregroundColor(.red)
+                    .cornerRadius(4)
+            case .skipped:
+                Image(systemName: "minus.circle")
+                    .foregroundColor(.secondary)
+            case .notInstalled:
+                Image(systemName: "circle.fill")
+                    .font(.caption2)
+                    .foregroundColor(.secondary.opacity(0.5))
+            }
+        }
+        .padding(8)
+        .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
+        .cornerRadius(6)
+        .overlay(
+            RoundedRectangle(cornerRadius: 6)
+                .stroke(Color.secondary.opacity(0.1), lineWidth: 1)
+        )
+        // Custom Instant Tooltip
+        .overlay(alignment: .top) {
+            if isHovering {
+                Text(tooltipText)
+                    .font(.callout)
+                    .multilineTextAlignment(.leading)
+                    .padding(12)
+                    .background(Material.thickMaterial)
+                    .cornerRadius(8)
+                    .shadow(radius: 10)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(width: 280)
+                    .offset(y: -25)
+                    .transition(.opacity.animation(.easeInOut(duration: 0.1)))
+            }
+        }
+        .zIndex(isHovering ? 100 : 0)
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.1)) {
+                isHovering = hovering
+            }
+        }
+    }
+}
+
+// MARK: - Enhanced Healthy State View
+
+struct EnhancedHealthyStateView: View {
+    @State private var pulse = false
+    
+    var body: some View {
+        VStack(spacing: 24) {
+            ZStack {
+                Circle()
+                    .fill(Color.green.opacity(0.2))
+                    .frame(width: 120, height: 120)
+                    .scaleEffect(pulse ? 1.2 : 1.0)
+                    .opacity(pulse ? 0.0 : 0.5)
+                    .animation(Animation.easeOut(duration: 2.5).repeatForever(autoreverses: false), value: pulse)
+                
+                Circle()
+                    .fill(Color.green.opacity(0.1))
+                    .frame(width: 100, height: 100)
+                
+                Image(systemName: "checkmark.shield.fill")
+                    .font(.system(size: 50))
+                    .foregroundColor(.green)
+                    .symbolEffect(.bounce, value: pulse)
+            }
+            .onAppear { pulse = true }
+            
+            VStack(spacing: 8) {
+                Text("All Systems Operational")
+                    .font(.title2.bold())
+                
+                Text("Your core development environment is secure.")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 60)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(LinearGradient(colors: [Color.green.opacity(0.05), Color.clear], startPoint: .top, endPoint: .bottom))
+        )
+    }
+}
+
+// MARK: - Ghost Buster View
+
+struct GhostBusterView: View {
+    @ObservedObject var vm: GhostBusterViewModel
+    @State private var isRefreshing = false
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                        Text("Ghost Buster")
+                            .font(.headline)
+                            .foregroundColor(.primary)
+                        Text("Active Port & Process Monitor")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                }
+                
+                Spacer()
+                
+                if !vm.ghosts.isEmpty {
+                    Button {
+                        Task {
+                            await vm.killAllGhosts()
+                        }
+                    } label: {
+                        Label("Kill All", systemImage: "flame.fill")
+                            .font(.caption.bold())
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 4)
+                            .background(Color.red)
+                            .cornerRadius(6)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.trailing, 8)
+                }
+                
+                if vm.isScanning || isRefreshing {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    Button {
+                        Task {
+                            isRefreshing = true
+                            // Wait 1.5s first, THEN scan
+                            try? await Task.sleep(for: .seconds(1.5))
+                            await vm.scan()
+                            isRefreshing = false
+                        }
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundColor(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Rescan Ports")
+                }
+            }
+            
+            if vm.ghosts.isEmpty {
+                // Empty State
+                EmptyStateView(
+                    icon: "checkmark.shield",
+                    message: "No ghosts found",
+                    detail: "All common ports are clear",
+                    iconColor: .green.opacity(0.8)
+                )
+            } else {
+                // Ghost List
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 12)], spacing: 12) {
+                    ForEach(vm.ghosts) { ghost in
+                        GhostProcessCard(ghost: ghost) {
+                            Task {
+                                await vm.killProcess(ghost)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .cardStyle(padded: false)
+        .onAppear {
+            Task {
+                await vm.scan()
+            }
+        }
+    }
+}
+
+// MARK: - Ghost Process Card
+
+struct GhostProcessCard: View {
+    let ghost: GhostProcess
+    let onKill: () -> Void
+    @State private var isHovering = false
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: ghost.icon)
+                    .font(.title2)
+                    .foregroundColor(.secondary)
+                    .frame(width: 32, height: 32)
+                    .background(Color(NSColor.controlBackgroundColor))
+                    .clipShape(Circle())
+                    .shadow(color: .black.opacity(0.1), radius: 1, x: 0, y: 1)
+                
+                Spacer()
+                
+                Text(String(ghost.port))
+                    .font(.caption.monospaced())
+                    .fontWeight(.bold)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.blue.opacity(0.1))
+                    .foregroundColor(.blue)
+                    .cornerRadius(4)
+            }
+            
+            VStack(alignment: .leading, spacing: 2) {
+                Text(ghost.displayName)
+                    .font(.system(size: 13, weight: .medium))
+                    .lineLimit(1)
+                    .help(ghost.name) // Full name in tooltip
+                
+                Text("PID: \(ghost.pid)")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+            
+            Button(action: onKill) {
+                HStack {
+                    Image(systemName: "xmark.circle.fill")
+                    Text("Kill")
+                }
+                .font(.caption.bold())
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 6)
+            }
+            .buttonStyle(.plain)
+            .background(isHovering ? Color.red : Color.red.opacity(0.1))
+            .foregroundColor(isHovering ? .white : .red)
+            .cornerRadius(6)
+            .animation(.easeInOut(duration: 0.1), value: isHovering)
+            .onHover { isHovering = $0 }
+        }
+        .padding(12)
+        .background(Color(NSColor.controlBackgroundColor).opacity(0.6))
+        .cornerRadius(12)
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Color.secondary.opacity(0.1), lineWidth: 1)
+        )
+    }
+}

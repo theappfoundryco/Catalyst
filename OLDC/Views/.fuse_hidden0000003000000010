@@ -1,0 +1,151 @@
+import SwiftUI
+
+struct TerminalTimeTravelView: View {
+    @ObservedObject var vm: TerminalTimeTravelViewModel
+    @State private var searchText = ""
+    
+    var filteredCommands: [TerminalTimeTravelViewModel.HistoryCommand] {
+        if searchText.isEmpty {
+            return vm.commands
+        }
+        return vm.commands.filter { $0.command.localizedCaseInsensitiveContains(searchText) }
+    }
+    
+    var body: some View {
+        GeometryReader { geometry in
+            ScrollView {
+                VStack(spacing: 24) {
+                    
+                MasterHeaderView(
+                    title: "Terminal Time Travel",
+                    subtitle: "Restore your terminal history",
+                    image: "clock.arrow.circlepath",
+                    color: .orange
+                )
+                    
+                    tipBanner
+                    
+                    // Command History List
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("Command History")
+                            .font(.headline)
+                        
+                        Divider()
+                        
+                        VStack(spacing: 8) {
+                            SearchBarView(placeholder: "Search commands...", text: $searchText)
+                            
+                            Divider()
+                        }
+                        
+                        if let error = vm.errorMessage {
+                            // Error State
+                            EmptyStateView(
+                                icon: "exclamationmark.triangle",
+                                message: error,
+                                iconColor: .orange,
+                                verticalPadding: 30
+                            )
+                        } else if filteredCommands.isEmpty {
+                            // Empty State
+                            EmptyStateView(
+                                icon: "clock",
+                                message: searchText.isEmpty ? "No commands found" : "No matching commands",
+                                verticalPadding: 30
+                            )
+                        } else {
+                            // Commands List
+                            LazyVStack(spacing: 0) {
+                                ForEach(Array(filteredCommands.enumerated()), id: \.element.id) { index, command in
+                                    CommandRow(
+                                        command: command,
+                                        onCopy: { vm.copyToClipboard(command.command) },
+                                        onRun: { vm.runInTerminal(command.command) }
+                                    )
+                                    
+                                    if index < filteredCommands.count - 1 {
+                                        Divider()
+                                            .padding(.leading, 40)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    .cardStyle()
+                    
+                    Spacer()
+                }
+                .padding(.vertical)
+                .frame(minHeight: geometry.size.height)
+            }
+        }
+        .navigationTitle("Terminal Time Travel")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                RefreshToolbarContent(
+                    isLoading: vm.isRefreshing,
+                    action: { await vm.refresh(forceRefresh: true) }
+                )
+            }
+        }
+    }
+    
+    private var tipBanner: some View {
+        BannerView(
+            .tip,
+            message: "Your terminal history may contain sensitive commands, passwords, or API keys. Be discreet when sharing this information!"
+        )
+    }
+
+
+    // MARK: - Command Row
+    
+    struct CommandRow: View {
+        let command: TerminalTimeTravelViewModel.HistoryCommand
+        let onCopy: () -> Void
+        let onRun: () -> Void
+        
+        var body: some View {
+            HStack(spacing: 12) {
+                // Index badge
+                Text("#\(command.index)")
+                    .font(.caption.monospacedDigit())
+                    .foregroundColor(.secondary)
+                    .frame(width: 40, alignment: .leading)
+                
+                // Command text
+                Text(command.command)
+                    .font(.system(.caption, design: .monospaced))
+                    .lineLimit(2)
+                    .truncationMode(.tail)
+                    .foregroundColor(.primary)
+                
+                Spacer()
+                
+                // Action buttons
+                HStack(spacing: 6) {
+                    Button {
+                        onCopy()
+                    } label: {
+                        Label("Copy", systemImage: "doc.on.doc")
+                            .font(.caption)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    
+                    Button {
+                        onRun()
+                    } label: {
+                        Label("Run", systemImage: "terminal")
+                            .font(.caption)
+                    }
+                    .buttonStyle(.bordered)
+                    .tint(.green)
+                    .controlSize(.small)
+                }
+            }
+            .padding(.vertical, 8)
+        }
+    }
+}
+

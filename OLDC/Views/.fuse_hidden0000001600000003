@@ -1,0 +1,170 @@
+import SwiftUI
+import Combine
+
+struct AboutView: View {
+    @ObservedObject var vm: AboutViewModel
+    @State private var isHovering = false
+    
+    private var currentYear: String {
+        String(Calendar.current.component(.year, from: Date()))
+    }
+    
+    var body: some View {
+            VStack(spacing: 24) {
+                // App Icon & Name
+                
+                VStack {
+                    Image(nsImage: NSApp.applicationIconImage)
+                        .resizable()
+                        .frame(width: 128, height: 128)
+                        .clipShape(RoundedRectangle(cornerRadius: 24))
+                        .shadow(color: .black.opacity(0.2), radius: 10, y: 5)
+                    
+                    MasterHeaderView(
+                        title: vm.appInfo?.appName ?? "Catalyst",
+                        subtitle: "Version \(vm.appVersion) (\(vm.buildNumber))",
+                        image: "",
+                        color: .primary
+                    )
+                    .padding(.top, -30)
+                }
+                
+                // Version Highlights Card
+                if let info = vm.currentVersionInfo {
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("What's New in \(vm.appVersion)")
+                            .font(.headline)
+                        
+                        Divider()
+                        
+                        ScrollView {
+                            VStack(alignment: .leading, spacing: 12) {
+                                ForEach(info.highlights, id: \.self) { highlight in
+                                    HStack(alignment: .top, spacing: 12) {
+                                        Image(systemName: "checkmark.circle.fill")
+                                            .foregroundColor(.green)
+                                            .font(.subheadline)
+                                        
+                                        Text(highlight)
+                                            .font(.subheadline)
+                                    }
+                                }
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .scrollIndicators(.visible)
+
+                        Divider()
+
+                        HStack {
+                            Image(systemName: "calendar")
+                                .foregroundColor(.blue)
+                            Text("Released: \(info.releaseDate)")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(.top, 4)
+                    }
+                    .cardStyle()
+                }
+                
+                // Info Card
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("About")
+                        .font(.headline)
+                    
+                    Divider()
+                    
+                    InfoRow(icon: "person.fill", label: "Developer", value: vm.appInfo?.developer ?? "Shivang Gulati")
+                    InfoRow(icon: "desktopcomputer", label: "Requires", value: vm.currentVersionInfo?.requirements ?? "macOS 14+")
+                    InfoRow(icon: "cpu.fill", label: "Architecture", value: "Universal (Intel + Apple Silicon)")
+                    
+                    if hasAnyLinks {
+                        Divider()
+                        
+                        let availableLinks: [(String, String, String)] = [
+                            ("Website", "globe", vm.appInfo?.website), 
+                            ("Email Support", "envelope.fill", vm.appInfo?.email),
+                            ("Feedback", "exclamationmark.bubble.fill", vm.appInfo?.feedback),
+                            ("Report Bug", "ladybug.fill", vm.appInfo?.bugReport),
+                            ("Request Feature", "lightbulb.fill", vm.appInfo?.featureRequest),
+                            ("Connect with Developer", "person.2.fill", vm.appInfo?.connectWithDeveloper)
+                        ].compactMap { title, icon, urlString in
+                            if let urlString = urlString {
+                                return (title, icon, urlString)
+                            }
+                            return nil
+                        }
+                        
+                        HStack(spacing: 16) {
+                            ForEach(Array(availableLinks.enumerated()), id: \.offset) { index, link in
+                                if let url = URL(string: link.2) {
+                                    Link(destination: url) {
+                                        Label(link.0, systemImage: link.1)
+                                            .font(.subheadline)
+                                    }
+                                    
+                                    // Add a divider after every element except the very last one
+                                    if index < availableLinks.count - 1 {
+                                        Divider()
+                                    }
+                                }
+                            }
+                        }
+                        .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .cardStyle()
+                
+                // Copyright
+                Text("© \(currentYear) \(vm.appInfo?.copyright ?? "Shivang Gulati"). All rights reserved.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                
+                Spacer() // Keeps things pushed up if small, but allows highlights to grow?
+            }
+            .padding()
+        .navigationTitle("About")
+        .task {
+            await vm.loadAboutInfo()
+        }
+        .overlay {
+            if vm.isLoading {
+                ProgressView()
+            }
+        }
+    }
+
+    private var hasAnyLinks: Bool {
+        guard let info = vm.appInfo else { return false }
+        return info.website != nil
+            || info.email != nil
+            || info.feedback != nil
+            || info.bugReport != nil
+            || info.featureRequest != nil
+            || info.connectWithDeveloper != nil
+    }
+}
+
+struct InfoRow: View {
+    let icon: String
+    let label: String
+    let value: String
+    
+    var body: some View {
+        HStack {
+            Image(systemName: icon)
+                .foregroundColor(.secondary)
+                .frame(width: 20)
+            
+            Text(label)
+                .foregroundColor(.secondary)
+            
+            Spacer()
+            
+            Text(value)
+                .fontWeight(.medium)
+        }
+        .font(.subheadline)
+    }
+}

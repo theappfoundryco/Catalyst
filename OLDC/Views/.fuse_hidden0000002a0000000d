@@ -1,0 +1,166 @@
+import SwiftUI
+import Combine
+
+/// Status indicator bar shown at the bottom of the sidebar
+struct StatusIndicatorView: View {
+    @ObservedObject var networkMonitor: NetworkMonitor
+    @State private var showingPopover = false
+    
+    var body: some View {
+        Button {
+            showingPopover.toggle()
+        } label: {
+            HStack(spacing: 8) {
+                // Status dot
+                Circle()
+                    .fill(networkMonitor.status.color)
+                    .frame(width: 8, height: 8)
+                
+                Text(networkMonitor.status.label)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                
+                Spacer()
+                
+                Image(systemName: "info.circle")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color(NSColor.controlBackgroundColor))
+            )
+        }
+        .buttonStyle(.plain)
+        .help(networkMonitor.status.tooltip)
+        .popover(isPresented: $showingPopover, arrowEdge: .top) {
+            StatusPopoverView(networkMonitor: networkMonitor)
+        }
+    }
+}
+
+/// Expanded status popover with detailed system information
+struct StatusPopoverView: View {
+    @ObservedObject var networkMonitor: NetworkMonitor
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("System Status")
+                .font(.headline)
+            
+            Divider()
+            
+            // Network
+            StatusRow(
+                icon: "network",
+                label: "Network",
+                status: networkMonitor.status.label,
+                color: networkMonitor.status.color
+            )
+            
+            // Homebrew
+            StatusRow(
+                icon: "mug.fill",
+                label: "Homebrew",
+                status: networkMonitor.isBrewInstalled ? "Installed" : "Not Installed",
+                color: networkMonitor.isBrewInstalled ? .green : .red
+            )
+            
+            // Python
+            StatusRow(
+                icon: "terminal.fill",
+                label: "Python",
+                status: "\(networkMonitor.pythonVersionCount) version\(networkMonitor.pythonVersionCount == 1 ? "" : "s")",
+                color: networkMonitor.pythonVersionCount > 0 ? .green : .secondary
+            )
+            
+            // Background Tasks
+            if let task = networkMonitor.activeBackgroundTask {
+                StatusRow(
+                    icon: "arrow.triangle.2.circlepath",
+                    label: "Background",
+                    status: task,
+                    color: .blue,
+                    isAnimating: true
+                )
+            } else {
+                StatusRow(
+                    icon: "checkmark.circle",
+                    label: "Background",
+                    status: "No active tasks",
+                    color: .secondary
+                )
+            }
+            
+            Divider()
+            
+            // Refresh button
+            Button {
+                Task {
+                    await networkMonitor.forceCheck()
+                }
+            } label: {
+                Label("Refresh Status", systemImage: "arrow.clockwise")
+                    .font(.caption)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+        }
+        .padding()
+        .frame(width: 250)
+    }
+}
+
+/// Individual status row in the popover
+struct StatusRow: View {
+    let icon: String
+    let label: String
+    let status: String
+    let color: Color
+    var isAnimating: Bool = false
+    
+    @State private var rotation: Double = 0
+    
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .foregroundColor(color)
+                .frame(width: 16)
+                .rotationEffect(.degrees(rotation))
+                .animation(
+                    isAnimating
+                        ? .linear(duration: 1).repeatForever(autoreverses: false)
+                        : .default,
+                    value: rotation
+                )
+            
+            Text(label)
+                .font(.subheadline)
+            
+            Spacer()
+            
+            HStack(spacing: 4) {
+                Circle()
+                    .fill(color)
+                    .frame(width: 6, height: 6)
+                
+                Text(status)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .onAppear {
+            if isAnimating {
+                rotation = 360
+            }
+        }
+    }
+}
+
+#Preview {
+    StatusIndicatorView(networkMonitor: NetworkMonitor())
+        .frame(width: 200)
+        .padding()
+}

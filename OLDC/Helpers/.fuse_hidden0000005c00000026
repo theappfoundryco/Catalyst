@@ -1,0 +1,113 @@
+//
+//  UpdateResultsSummaryCard.swift
+//  Catalyst
+//
+//  Shared card displayed after batch package updates, showing successful
+//  and failed packages with a retry option for failures.
+//
+
+import SwiftUI
+
+/// A card summarising the results of a batch package update.
+///
+/// Accepts pre-filtered arrays of successful and failed packages so each
+/// consumer can decide which subset to display (pip-only, brew-only, etc.).
+///
+/// ## Usage
+///
+/// ```swift
+/// UpdateResultsSummaryCard(
+///     successfulPackages: pipSuccessful,
+///     failedPackages: pipFailed,
+///     onDismiss: { vm.showUpdateResults = false },
+///     onRetry: { name, pkg in
+///         Task { await vm.updatePackage(pkg.name, type: pkg.type) }
+///     }
+/// )
+/// ```
+struct UpdateResultsSummaryCard: View {
+    /// Packages that were updated successfully.
+    let successfulPackages: [OutdatedPackage]
+    
+    /// Packages that failed to update.
+    let failedPackages: [OutdatedPackage]
+    
+    /// Called when the user taps the dismiss (×) button.
+    let onDismiss: () -> Void
+    
+    /// Called when the user taps "Retry" on a failed package.
+    /// Receives the package name and the full `OutdatedPackage` for context.
+    let onRetry: (String, OutdatedPackage) -> Void
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            
+            HStack {
+                Image(systemName: failedPackages.isEmpty ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                    .font(.title2)
+                    .foregroundColor(failedPackages.isEmpty ? .green : .orange)
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(failedPackages.isEmpty ? "Update Successful" : "Update Partially Completed")
+                        .font(.headline)
+                    
+                    HStack(spacing: 16) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(.green)
+                                .font(.caption)
+                            Text("\(successfulPackages.count) updated")
+                                .font(.caption)
+                        }
+                        
+                        if !failedPackages.isEmpty {
+                            HStack(spacing: 4) {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundColor(.red)
+                                    .font(.caption)
+                                Text("\(failedPackages.count) failed")
+                                    .font(.caption)
+                            }
+                        }
+                    }
+                }
+                
+                Spacer()
+                
+                Button {
+                    onDismiss()
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+            
+            Divider()
+            
+            // Failed packages with retry
+            if !failedPackages.isEmpty {
+                ResultDisclosureGroup(
+                    title: "Failed Updates (\(failedPackages.count))",
+                    packages: failedPackages.map(\.name),
+                    status: .failed,
+                    onRetry: { name in
+                        if let pkg = failedPackages.first(where: { $0.name == name }) {
+                            onRetry(name, pkg)
+                        }
+                    }
+                )
+            }
+            
+            // Successful packages
+            if !successfulPackages.isEmpty {
+                ResultDisclosureGroup(
+                    title: "Successfully Updated (\(successfulPackages.count))",
+                    packages: successfulPackages.map(\.name),
+                    status: .success
+                )
+            }
+        }
+        .cardStyle()
+    }
+}

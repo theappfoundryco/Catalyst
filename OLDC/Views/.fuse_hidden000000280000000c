@@ -1,0 +1,321 @@
+import SwiftUI
+import MarkdownUI  // Added via SPM: https://github.com/gonzalezreal/swift-markdown-ui
+
+struct ShortcutDetailView: View {
+    let shortcutId: String
+    @ObservedObject var viewModel: SmartShortcutsViewModel
+    
+    @State private var customName = ""
+    
+    var isInstalled: Bool {
+        viewModel.isInstalled(shortcutId)
+    }
+    
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 24) {
+                if viewModel.isLoadingDetail {
+                    LoadingStateView("Loading...", verticalPadding: 60)
+                        .cardStyle()
+                } else if let detail = viewModel.detail {
+                    
+                    // Installation Status
+                    if isInstalled {
+                        installedStatusCard
+                    }
+                    
+                    // Custom Name Input
+                    if !isInstalled {
+                        customNameCard(detail)
+                    }
+                    
+                    // Dependencies Card
+                    if !detail.dependencies.brew.isEmpty || !detail.dependencies.pip.isEmpty {
+                        dependenciesCard(detail)
+                    }
+                    
+                    // Markdown Content
+                    markdownCard(detail)
+                    
+                    if viewModel.isInstalling {
+                        VStack(spacing: 8) {
+                            ProgressView("Installing...")
+                            Text("Configuring shell...")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .cardStyle()
+                    }
+                    
+                    // Installation Output
+                    if !viewModel.installationOutput.isEmpty {
+                        installationOutputCard
+                    }
+                }
+                
+                Spacer()
+            }
+            .padding(.vertical)
+        }
+        .navigationTitle(viewModel.detail?.original_name ?? "Loading...")
+        .task {
+            await viewModel.loadDetail(shortcutId: shortcutId)
+        }
+        .onDisappear {
+            viewModel.resetDetail()
+        }
+        .alert("Name Conflict", isPresented: $viewModel.showingNameConflict) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text("A function with this name already exists in your .zshrc. Please choose a different name.")
+        }
+    }
+    
+    // MARK: - Header Card
+    
+    private func headerCard(_ detail: ShortcutDetail) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            if let shortcut = viewModel.shortcuts.first(where: { $0.id == shortcutId }) {
+                Text(shortcut.title)
+                    .font(.headline)
+                
+                Divider()
+                
+                Text(shortcut.tagline)
+                    .font(.body)
+                    .foregroundColor(.secondary)
+                
+                HStack {
+                    CategoryPill(title: shortcut.category, isSelected: true, action: {})
+                    Spacer()
+                }
+            }
+        }
+        .cardStyle()
+    }
+    
+    // MARK: - Installed Status Card
+    
+    private var installedStatusCard: some View {
+        VStack(spacing: 12) {
+            HStack(spacing: 12) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.title2)
+                    .foregroundColor(.green)
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Installed Successfully")
+                        .font(.headline)
+                    
+                    if let name = viewModel.getCustomName(shortcutId) {
+                        Text("Custom function name: \(name)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                
+                Spacer()
+                
+                Button {
+                    Task { await viewModel.uninstallShortcut(shortcutId) }
+                } label: {
+                    Text(viewModel.isInstalling ? "Uninstalling..." : "Uninstall")
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.red)
+                .disabled(viewModel.isInstalling)
+            }
+            .padding()
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color.green.opacity(0.1))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .strokeBorder(Color.green.opacity(0.3), lineWidth: 1)
+                    )
+            )
+            
+            // ADD FRIENDLY TIP BOX HERE
+            HStack(spacing: 12) {
+                Image(systemName: "lightbulb.fill")
+                    .font(.title3)
+                    .foregroundColor(.blue)
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("💡 Quick Tip")
+                        .font(.subheadline.weight(.semibold))
+                    
+                    Text("Close and reopen Terminal to start using '\(viewModel.getCustomName(shortcutId) ?? "this function")' right away!")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.blue.opacity(0.08))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .strokeBorder(Color.blue.opacity(0.2), lineWidth: 1)
+                    )
+            )
+        }
+        .padding(.horizontal)
+    }
+    
+    // MARK: - Custom Name Card
+    
+    private func customNameCard(_ detail: ShortcutDetail) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Custom Function Name")
+                .font(.headline)
+            
+            Divider()
+            
+            HStack(spacing: 12) {
+                HStack(spacing: 8) {
+                    Image(systemName: "terminal")
+                        .foregroundColor(.secondary)
+                    
+                    TextField("Enter function name", text: $customName)
+                        .textFieldStyle(.plain)
+                }
+                .padding(12)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color(NSColor.controlBackgroundColor))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .strokeBorder(Color.secondary.opacity(0.2), lineWidth: 1)
+                        )
+                )
+                
+                Button {
+                    Task { await viewModel.installShortcut(detail, shortcutId: shortcutId, customName: customName) }
+                } label: {
+                    Text("Install Shortcut")
+                        .font(.subheadline.weight(.medium))
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(customName.isEmpty || viewModel.isInstalling)
+                .fixedSize(horizontal: true, vertical: false)
+            }
+            
+            HStack(spacing: 6) {
+                Image(systemName: "info.circle")
+                    .font(.caption)
+                    .foregroundColor(.blue)
+                
+                Text("Default: \(detail.original_name) • Use letters, numbers, dashes, underscores")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .cardStyle()
+        .onAppear {
+            if customName.isEmpty {
+                customName = detail.original_name
+            }
+        }
+    }
+    
+    // MARK: - Dependencies Card
+    
+    private func dependenciesCard(_ detail: ShortcutDetail) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Dependencies")
+                .font(.headline)
+            
+            Divider()
+            
+            if !detail.dependencies.brew.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Homebrew")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(.orange)
+                    
+                    ForEach(detail.dependencies.brew, id: \.self) { pkg in
+                        HStack {
+                            Image(systemName: "mug.fill")
+                                .foregroundColor(.orange)
+                                .font(.caption)
+                            Text(pkg)
+                                .font(.caption.monospaced())
+                        }
+                    }
+                }
+            }
+            
+            if !detail.dependencies.pip.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("pip")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(.blue)
+                    
+                    ForEach(detail.dependencies.pip, id: \.self) { pkg in
+                        HStack {
+                            Image(systemName: "shippingbox.fill")
+                                .foregroundColor(.blue)
+                                .font(.caption)
+                            Text(pkg)
+                                .font(.caption.monospaced())
+                        }
+                    }
+                }
+            }
+            
+            Text("Dependencies will be installed automatically")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .cardStyle()
+    }
+    
+    // MARK: - Markdown Card
+    
+    private func markdownCard(_ detail: ShortcutDetail) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Markdown(detail.markdown_content)
+                .markdownTheme(.gitHub)
+        }
+        .cardStyle()
+    }
+    
+    // MARK: - Installation Output Card
+    
+    private var installationOutputCard: some View {
+        OutputConsoleView(
+            output: viewModel.installationOutput,
+            onClear: { viewModel.installationOutput = "" },
+            title: "Installation Log"
+        )
+    }
+    
+    // MARK: - Helper Functions
+    
+    private func colorGradient(for color: String) -> LinearGradient {
+        let colors: [Color] = {
+            switch color {
+            case "orange": return [.orange, .red]
+            case "blue": return [.blue, .cyan]
+            case "purple": return [.purple, .pink]
+            case "green": return [.green, .mint]
+            case "red": return [.red, .pink]
+            case "yellow": return [.yellow, .orange]
+            case "cyan": return [.cyan, .blue]
+            default: return [.gray, .secondary]
+            }
+        }()
+        
+        return LinearGradient(
+            colors: colors,
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+}

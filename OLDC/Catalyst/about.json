@@ -1,0 +1,35 @@
+{
+  "app_name": "Catalyst",
+  "developer": "Shivang Gulati",
+  "copyright": "Shivang Gulati",
+  "latest": "1.18",
+  "versions": {
+    "1.18": {
+      "release_date": "2026-07-20",
+      "tagline": "Proper invoices, gift codes, and a smoother way to buy.",
+      "highlights": [
+        "Every purchase now comes with a real invoice. Download it as a PDF straight from your profile — it carries your billing details, the licence ID, how you paid, and the date, all laid out properly for your records or your accountant.",
+        "Bought at the student rate? Your invoice shows your verified learner email and the date it was verified, so the discount is documented rather than just applied.",
+        "New: gift codes. If you've been given a code, redeem it from the upgrade screen for either a lifetime licence or a set stretch of complimentary access — and Catalyst tells you plainly how long you have and warns you well before it runs out.",
+        "We now ask for your billing details before checkout instead of after, so your invoice is ready the moment your payment goes through and nothing has to be chased up later.",
+        "Fixed a rare checkout issue where leaving a payment part-way and starting again could open a second payment for the same licence.",
+        "Every sign-in and account screen now scrolls properly on smaller displays and shorter windows, so nothing is left off the bottom edge.",
+        "Waiting on a sign-in code? We'll now remind you to check your spam folder — that's where it usually is, at times."
+      ],
+      "requirements": "macOS 14.6 or later"
+    },
+    "1.17": {
+      "release_date": "2026-07-19",
+      "tagline": "Pay once, yours for good — and set up a fresh Mac in one click.",
+      "highlights": [
+        "Catalyst is now a one-time purchase. No subscription, no renewals, no expiry — buy it once and every future update is included, forever.",
+        "Students get the same lifetime licence at a reduced price. Verify your school email from the upgrade screen; your verification is good for a year, and the app tells you exactly when it lapses.",
+        "New: bring your API keys with you. Catalyst can now seal the keys and tokens from your shell profile inside a snapshot, encrypted with a passphrase only you know. Nothing is stored or recoverable by Catalyst — and if the passphrase is ever lost, everything else in the snapshot still restores normally.",
+        "Check your passphrase before you restore: a Validate button tells you straight away whether it's correct, so you never find out halfway through.",
+        "Skipped the passphrase, or remembered it later? Unlock your secrets any time from the Snapshot screen — no need to run the whole migration again. Catalyst will even remind you while any secrets are still locked.",
+        "Bug fixes and performance improvements."
+      ],
+      "requirements": "macOS 14.6 or later"
+    }
+  }
+}

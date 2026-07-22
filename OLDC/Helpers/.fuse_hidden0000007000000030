@@ -1,0 +1,144 @@
+//
+//  SelectPythonVersionDropdown.swift
+//  Catalyst
+//
+//  Created by Shivang Gulati on 15/02/26.
+//
+
+import SwiftUI
+
+/// A card-styled Python version picker with optional info, warning, and PEP 668 banners.
+///
+/// Displays a dropdown of available Python installations and contextual banners based on options.
+///
+/// ## Usage
+///
+/// ```swift
+/// SelectPythonVersionDropdown(
+///     selection: $selectedPython,
+///     availableVersions: vm.pythonVersions,
+///     onSelectionChange: { await vm.reload() }
+/// )
+/// ```
+struct SelectPythonVersionDropdown: View {
+    /// Binding to the currently selected Python installation.
+    @Binding var selection: PythonInstallation?
+    
+    /// The list of Python installations available on the system.
+    let availableVersions: [PythonInstallation]
+    
+    /// Async callback invoked when the selection changes.
+    let onSelectionChange: () async -> Void
+    
+    /// Optional pip command template, e.g. `"pip install -r requirements.txt"`.
+    let installCommandTemplate: String?
+    
+    /// The system Python version string, used for conflict warnings.
+    let systemPythonVersion: String?
+    
+    /// Callback to check whether a given installation is the system Python.
+    let isSystemPython: ((PythonInstallation) -> Bool)?
+    
+    /// Optional title for a general info banner shown below the picker.
+    let infoBannerTitle: String?
+    
+    /// Optional message for the general info banner.
+    let infoBannerMessage: String?
+    
+    /// Optional array of warning banners shown below the info banner.
+    let warningBanners: [(title: String?, message: String)]?
+    
+    init(
+        selection: Binding<PythonInstallation?>,
+        availableVersions: [PythonInstallation],
+        onSelectionChange: @escaping () async -> Void,
+        installCommandTemplate: String? = nil,
+        systemPythonVersion: String? = nil,
+        isSystemPython: ((PythonInstallation) -> Bool)? = nil,
+        infoBannerTitle: String? = nil,
+        infoBannerMessage: String? = nil,
+        warningBanners: [(title: String?, message: String)]? = nil
+    ) {
+        self._selection = selection
+        self.availableVersions = availableVersions
+        self.onSelectionChange = onSelectionChange
+        self.installCommandTemplate = installCommandTemplate
+        self.systemPythonVersion = systemPythonVersion
+        self.isSystemPython = isSystemPython
+        self.infoBannerTitle = infoBannerTitle
+        self.infoBannerMessage = infoBannerMessage
+        self.warningBanners = warningBanners
+    }
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Select Python Version")
+                .font(.headline)
+            
+            Divider()
+            
+            Picker("Python Version", selection: $selection) {
+                ForEach(availableVersions.sorted { VersionComparator.compare($0.version, $1.version) < 0 }, id: \.version) { python in
+                    Text("Python \(python.version)").tag(python as PythonInstallation?)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .onChange(of: selection) { _, _ in
+                Task {
+                    await onSelectionChange()
+                }
+            }
+            
+            if let title = infoBannerTitle, let message = infoBannerMessage {
+                BannerView(
+                    .info,
+                    title: title,
+                    message: message,
+                    size: .compact
+                )
+            }
+            
+            if let warnings = warningBanners {
+                ForEach(Array(warnings.enumerated()), id: \.offset) { index, warning in
+                    BannerView(
+                        .warning,
+                        title: warning.title,
+                        message: warning.message,
+                        size: .compact
+                    )
+                }
+            }
+            
+            if let selected = selection, let commandTemplate = installCommandTemplate {
+                BannerView(
+                    .info,
+                    title: "Will install to user directory",
+                    message: "Command: \(selected.path.path) -m \(commandTemplate)",
+                    size: .compact
+                )
+            }
+            
+            if let selected = selection,
+               let systemVersion = systemPythonVersion,
+               let checker = isSystemPython,
+               checker(selected) {
+                BannerView(
+                    .warning,
+                    message: "Caution: Matches System Python (\(systemVersion)). Ensure you are targeting the correct environment.",
+                    size: .compact
+                )
+            }
+            
+            if let selected = selection,
+               VersionComparator.requiresBreakSystemPackages(pythonVersion: selected.version) {
+                BannerView(
+                    .critical,
+                    title: "Externally Managed Environment Detected",
+                    message: "• Python 3.12+ implements PEP 668 (externally-managed environment)\n• Catalyst respects system integrity and does not override this protection\n• Package updates will be performed in user space where permitted",
+                    size: .compact
+                )
+            }
+        }
+        .cardStyle()
+    }
+}

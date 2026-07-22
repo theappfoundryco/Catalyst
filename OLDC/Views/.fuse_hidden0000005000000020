@@ -1,0 +1,209 @@
+import SwiftUI
+
+struct ContentView: View {
+    @EnvironmentObject var appVM: AppViewModel
+    @State private var showLaunchScreen = true
+    
+    var body: some View {
+        ZStack {
+            NavigationSplitView {
+                // Sidebar
+                VStack(spacing: 0) {
+                    List(selection: $appVM.currentScreen) {
+                        Section("Project Management") {
+                            NavigationLink(value: AppViewModel.Screen.dashboard) {
+                                Label("Dashboard", systemImage: "chart.bar.fill")
+                            }
+                            NavigationLink(value: AppViewModel.Screen.projects) {
+                                Label("Virtual Environments", systemImage: "cube.fill")
+                            }
+                        }
+                        
+                        Section("Manage Existing Packages") {
+                            NavigationLink(value: AppViewModel.Screen.installedPip) {
+                                Label("pip Packages", systemImage: "shippingbox.fill")
+                            }
+                            
+                            NavigationLink(value: AppViewModel.Screen.installedBrew) {
+                                Label("Formulae / Casks Packages", systemImage: "mug.fill")
+                            }
+                        }
+                        
+                        Section("Update Existing Packages") {
+                            NavigationLink(value: AppViewModel.Screen.updates) {
+                                Label("pip Updates", systemImage: "shippingbox.fill")
+                            }
+                            
+                            NavigationLink(value: AppViewModel.Screen.brewUpdates) {
+                                Label("Formulae / Casks Updates", systemImage: "mug.fill")
+                            }
+                        }
+                        
+                        Section("Install New Packages") {
+                            NavigationLink(value: AppViewModel.Screen.pipPackages) {
+                                Label("Install pip Packages", systemImage: "shippingbox.fill")
+                            }
+                            
+                            NavigationLink(value: AppViewModel.Screen.brewPackages) {
+                                Label("Install Formulae / Casks", systemImage: "mug.fill")
+                            }
+                            
+                            NavigationLink(value: AppViewModel.Screen.requirements) {
+                                Label("requirements.txt Installer", systemImage: "doc.text.fill")
+                            }
+                        }
+                        
+                        
+                        Section("Discover New") {
+                            NavigationLink(value: AppViewModel.Screen.popular) {
+                                Label("Popular Packages", systemImage: "star.fill")
+                            }
+                        }
+                        
+                        
+                        Section("Developer Workflow") {
+                            NavigationLink(value: AppViewModel.Screen.shortcuts) {
+                                Label("SmartShortcuts", systemImage: "bolt.fill")
+                            }
+                            
+                            NavigationLink(value: AppViewModel.Screen.aliases) {
+                                Label("Aliases", systemImage: "command.circle.fill")
+                            }
+                            
+                            NavigationLink(value: AppViewModel.Screen.terminalTimeTravel) {
+                                Label("Terminal Time Travel", systemImage: "clock.arrow.circlepath")
+                            }
+                        }
+                        
+                        Section("Health & Maintenance") {
+                            NavigationLink(value: AppViewModel.Screen.drCatalyst) {
+                                Label("Dr. Catalyst", systemImage: "stethoscope")
+                            }
+                            
+                            NavigationLink(value: AppViewModel.Screen.ssdHealth) {
+                                Label("Disk Vitals", systemImage: "internaldrive.fill")
+                            }
+                            
+                            NavigationLink(value: AppViewModel.Screen.cruftSweeper) {
+                                Label("Cruft Sweeper", systemImage: "trash.slash.fill")
+                            }
+                            
+                            NavigationLink(value: AppViewModel.Screen.logs) {
+                                Label("Logs", systemImage: "list.clipboard.fill")
+                            }
+                        }
+                        
+                        
+                        Section("Help & Info"){
+                            NavigationLink(value: AppViewModel.Screen.about) {
+                                Label("About", systemImage: "info.circle.fill")
+                            }
+                        }
+                    }
+                    .listStyle(.sidebar)
+                    
+                    // Status indicator at bottom of sidebar
+                    StatusIndicatorView(networkMonitor: appVM.networkMonitor)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 6)
+                }
+                .navigationTitle("Catalyst")
+                .navigationSplitViewColumnWidth(min: 235, ideal: 235)
+            } detail: {
+                NavigationStack {
+                    // Main content
+                    Group {
+                        switch appVM.currentScreen {
+                        case .dashboard:
+                            DashboardView(vm: appVM.dashboardViewModel)
+                            
+                        case .projects:
+                            VirtualEnvironmentsView(viewModel: appVM.virtualEnvViewModel)
+                            
+                        case .requirements:
+                            RequirementsView(vm: appVM.requirementsViewModel)
+                            
+                        case .installedPip:
+                            PIPPackagesView(viewModel: appVM.pipPackagesViewModel)
+                            
+                        case .installedBrew:
+                            BrewFormulaeCaskView(viewModel: appVM.brewPackagesViewModel)
+                            
+                        case .updates:
+                            OutdatedPIPView(vm: appVM.outdatedPIPViewModel)
+                            
+                        case .brewUpdates:
+                            OutdatedBrewView(vm: appVM.outdatedBrewViewModel)
+                            
+                        case .popular:
+                            PopularPackagesView(vm: appVM.popularPackagesViewModel)
+                            
+                        case .pipPackages:
+                            PIPPackagesInstallView(vm: appVM.pipPackagesInstallViewModel)
+                            
+                        case .brewPackages:
+                            FormulaeCaskInstallView(viewModel: appVM.formulaeCaskInstallViewModel)
+                            
+                        case .shortcuts:
+                            SmartShortcutsView(vm: appVM.smartShortcutsViewModel)
+                            
+                        case .aliases:
+                            AliasView(vm: appVM.aliasViewModel)
+                            
+                        case .drCatalyst:
+                            DrCatalystView(vm: appVM.drCatalystViewModel)
+                            
+                        case .terminalTimeTravel:
+                            TerminalTimeTravelView(vm: appVM.terminalTimeTravelViewModel)
+                            
+                        case .ssdHealth:
+                            SSDHealthView(
+                                vm: appVM.ssdHealthViewModel,
+                                onNavigateToDashboard: { appVM.currentScreen = .dashboard }
+                            )
+                            
+                        case .cruftSweeper:
+                            CruftSweeperView(vm: appVM.cruftSweeperViewModel)
+                            
+                        case .logs:
+                            LogsView(vm: appVM.logsViewModel)
+                            
+                        case .about:
+                            AboutView(vm: appVM.aboutViewModel)
+                        }
+                    }
+                }
+            }
+            .toolbar(showLaunchScreen ? .hidden : .visible, for: .windowToolbar)
+            .onChange(of: appVM.isAppReady) { isReady in
+                if isReady {
+                    // Let the LaunchScreenView local animations complete (liftoff + shockwave)
+                    // before fading out the launch screen completely
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                        withAnimation(.easeOut(duration: 0.6)) {
+                            showLaunchScreen = false
+                        }
+                    }
+                }
+            }
+            if showLaunchScreen {
+                LaunchScreenView()
+                    .ignoresSafeArea()
+                    .zIndex(2)
+                    .transition(.opacity)
+                    .allowsHitTesting(false) // Never eat touches defensively
+            }
+        }
+        .onAppear {
+            if appVM.isAppReady {
+                showLaunchScreen = false
+            }
+        }
+        // Force evaluation on task spawn (more reliable than onAppear for macOS window respawn)
+        .task {
+            if appVM.isAppReady {
+                showLaunchScreen = false
+            }
+        }
+    }
+}

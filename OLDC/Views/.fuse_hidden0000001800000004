@@ -1,0 +1,64 @@
+import SwiftUI
+
+struct DashboardView: View {
+    @ObservedObject var vm: DashboardViewModel
+    @State private var showUninstallBrewConfirmation = false
+    @State private var showUninstallPythonConfirmation = false
+    @State private var showInstallConfirmation = false
+    @State private var showSystemPythonErrorPopover = false
+    @State private var isRefreshing = false
+    
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 24) {
+                MasterHeaderView(
+                    title: "Dashboard",
+                    subtitle: "System status overview",
+                    image: "chart.bar.fill",
+                    color: .blue
+                )
+                
+                SystemStatusCard(vm: vm, showSystemPythonErrorPopover: $showSystemPythonErrorPopover)
+                
+                InstalledPythonsCard(vm: vm)
+                
+                InstallPythonCard(vm: vm, showInstallConfirmation: $showInstallConfirmation)
+                
+                if vm.brewStatus == "Installed" || !vm.installedPythons.isEmpty {
+                    UninstallCard(
+                        vm: vm,
+                        showUninstallBrewConfirmation: $showUninstallBrewConfirmation,
+                        showUninstallPythonConfirmation: $showUninstallPythonConfirmation
+                    )
+                }
+                
+                if vm.brewStatus == "Installed" {
+                    BrewMaintenanceCard(vm: vm)
+                }
+                
+                Spacer()
+            }
+            .padding(.vertical)
+        }
+        .navigationTitle("Dashboard")
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                if isRefreshing || vm.isBusy {
+                    ProgressView()
+                        .controlSize(.small)
+                } else {
+                    Button {
+                        Task {
+                            isRefreshing = true
+                            try? await Task.sleep(for: .seconds(1.5))
+                            await vm.runDetection(force: true)
+                            isRefreshing = false
+                        }
+                    } label: {
+                        Label("Refresh", systemImage: "arrow.clockwise")
+                    }
+                }
+            }
+        }
+    }
+}
