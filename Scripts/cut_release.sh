@@ -109,6 +109,19 @@ MIN_OS=$(settings  | sed -n 's/.*MACOSX_DEPLOYMENT_TARGET = //p' | head -1)
 : "${MIN_OS:=14.6}"
 [ -n "$VERSION" ] || { echo "✗ couldn't read MARKETING_VERSION from Xcode"; exit 1; }
 
+# Guard against the Sparkle infinite-update loop (cache/hiccup.md, v1.3). Sparkle compares the
+# appcast's sparkle:version (== MARKETING_VERSION) against the installed app's CFBundleVersion
+# (= $(CURRENT_PROJECT_VERSION)). If the build number drifts below the marketing version, every
+# updated install still reports the old CFBundleVersion, so the feed always looks "newer" and the
+# app re-downloads forever. Enforce the version-only invariant documented at the top of this file.
+BUILD_NUM=$(settings | sed -n 's/.*CURRENT_PROJECT_VERSION = //p' | head -1)
+[ "$BUILD_NUM" = "$VERSION" ] || {
+  echo "✗ CURRENT_PROJECT_VERSION ($BUILD_NUM) != MARKETING_VERSION ($VERSION)."
+  echo "  CFBundleVersion would ship as $BUILD_NUM while the feed advertises $VERSION → Sparkle"
+  echo "  infinite-update loop. Set CURRENT_PROJECT_VERSION = \$(MARKETING_VERSION) in the project."
+  exit 1
+}
+
 VDIR="$REL_DIR/Versions/$VERSION"
 DMG="$APP_REPO_DIR/build/Catalyst-${VERSION}.dmg"
 mkdir -p "$VDIR" "$APP_REPO_DIR/build"
