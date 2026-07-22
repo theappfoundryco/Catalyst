@@ -352,12 +352,17 @@ APP=build/export/Catalyst.app
 # .dmg is both what humans download and what Sparkle's enclosure points at.
 rm -f "$DMG"
 if command -v create-dmg >/dev/null 2>&1; then
-  # Nicer layout when create-dmg is installed (brew install create-dmg): positioned icons + the
-  # classic drag-onto-Applications window.
+  # Branded layout (create-dmg): custom volume icon + backdrop and the exact icon/window
+  # geometry carried over from the pre-OSS builder. Assets live in Scripts/ (tracked now that
+  # the stray Scripts/ ignore is gone). Backdrop is the @2x PNG (1400x920) shown at 700x460.
   create-dmg \
     --volname "Catalyst ${VERSION}" \
-    --icon "Catalyst.app" 150 190 \
-    --app-drop-link 450 190 \
+    --volicon "$APP_REPO_DIR/Scripts/VolumeIcon.icns" \
+    --background "$APP_REPO_DIR/Scripts/dmg-background.png" \
+    --window-pos 200 120 --window-size 700 460 \
+    --icon-size 112 \
+    --icon "Catalyst.app" 185 290 \
+    --app-drop-link 515 290 \
     --hide-extension "Catalyst.app" \
     "$DMG" "$APP"
 else
