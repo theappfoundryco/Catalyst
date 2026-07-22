@@ -1,5 +1,9 @@
 import SwiftUI
-
+/// An expandable group displaying a list of health issues for a specific category.
+///
+/// ```swift
+/// IssueGroup(title: "Network", color: .blue, issues: issues) { issue in await fix(issue) }
+/// ```
 struct IssueGroup: View {
     let title: String
     let color: Color

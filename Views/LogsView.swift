@@ -1,7 +1,11 @@
 import SwiftUI
 import Combine
 import UniformTypeIdentifiers
-
+/// A view for inspecting, searching, and exporting terminal output and system diagnostics logs.
+///
+/// ```swift
+/// LogsView(vm: logsViewModel)
+/// ```
 struct LogsView: View {
     @ObservedObject var vm: LogsViewModel
     
@@ -124,6 +128,9 @@ struct LogsView: View {
         .animation(.easeInOut(duration: 0.15), value: vm.exportType)
     }
 
+    /// Resolves the SF Symbol associated with the chosen log export format.
+    /// - Parameter type: The selected serialization layout targeted for disk export.
+    /// - Returns: The corresponding SF Symbol identifier string.
     private func exportIcon(for type: LogsViewModel.ExportType) -> String {
         switch type.rawValue {
         case "Terminal": return "terminal"

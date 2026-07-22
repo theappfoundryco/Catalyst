@@ -203,17 +203,25 @@ deprecate_predecessors() {
   done
 }
 
+# PUBLISH FIRST, polish second. Ordering here is deliberate and was learned the hard way.
+#
+# Pushing the appcast is the step that makes an update REACHABLE; syncing GitHub Release bodies
+# is cosmetic. This function used to run the cosmetic step first, so when
+# `sync_release_notes.sh` failed (it lacked the executable bit — and git recorded it that way,
+# so every clone would have hit it), `set -e` killed the run BEFORE the push. That left a
+# published Release with no matching appcast: invisible to every install, and silent, because
+# Sparkle reads a feed that doesn't list a newer version as "no update available". It happened
+# on two consecutive releases before anyone noticed.
+#
+# Now the push happens first and the notes sync cannot abort the run — a failure there is
+# reported and survivable, because `./Scripts/sync_release_notes.sh` can be re-run any time.
 sync_and_git() {
   if $DRY_RUN; then
-    echo "   [dry-run] ./Scripts/sync_release_notes.sh"
     echo "   [dry-run] git add -A && git commit && git pull --rebase && git push  (in $UPDATES_DIR)"
+    echo "   [dry-run] bash ./Scripts/sync_release_notes.sh"
     return 0
   fi
-  "$APP_REPO_DIR/Scripts/sync_release_notes.sh"
 
-  # Publish the feed. This is the step that actually makes an update reachable — a Release with
-  # no corresponding appcast push is invisible to every installed copy, and fails silently
-  # because Sparkle reads an unreachable feed as "no update available".
   git -C "$UPDATES_DIR" add -A
   if git -C "$UPDATES_DIR" diff --cached --quiet; then
     echo "▸ Nothing new to commit in updates."
@@ -222,6 +230,16 @@ sync_and_git() {
   fi
   git -C "$UPDATES_DIR" pull --rebase origin main
   git -C "$UPDATES_DIR" push origin main
+  echo "▸ Feed published."
+
+  # Invoked via `bash`, not executed directly: an explicit interpreter doesn't care whether the
+  # executable bit survived the clone, the zip, or the copy. Never rely on a permission bit for
+  # a script you control the call site of.
+  if ! bash "$APP_REPO_DIR/Scripts/sync_release_notes.sh"; then
+    echo "⚠️  sync_release_notes.sh failed — the feed IS published and users will get the update."
+    echo "   Only the GitHub Release bodies are stale. Re-run when convenient:"
+    echo "   bash ./Scripts/sync_release_notes.sh"
+  fi
 }
 
 # Prepend a dated entry to updates/catalyst/CHANGELOG.md, built from this version's notes.html

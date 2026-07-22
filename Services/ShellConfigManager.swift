@@ -3,6 +3,13 @@ import Foundation
 /// A manager resolving shell profile scopes by dictating custom sourcing injections.
 ///
 /// Ensures local configuration artifacts exist and properly link against native shell initializers.
+///
+/// ```swift
+/// let manager = ShellConfigManager.shared
+/// if !manager.hasManagedBlock(id: "my-block") {
+///     try manager.writeManagedBlock(id: "my-block", content: "alias foo='bar'")
+/// }
+/// ```
 final class ShellConfigManager {
     static let shared = ShellConfigManager()
     
@@ -119,27 +126,41 @@ final class ShellConfigManager {
     }
 
     // MARK: - Managed Blocks
-    //
-    // A single, unambiguous convention for Catalyst-owned regions in
-    // `.zshrc_catalyst`, replacing the per-feature brace-counting (SmartShortcuts)
-    // and exact-format comment parsing (Aliases). Each block is delimited by:
-    //
-    //   # CATALYST_BEGIN <id>
-    //   ...content...
-    //   # CATALYST_END <id>
-    //
-    // `id` should be a stable, collision-free key (e.g. "alias-gp", "shortcut-django").
+    ///
+    /// A single, unambiguous convention for Catalyst-owned regions in
+    /// `.zshrc_catalyst`, replacing the per-feature brace-counting (SmartShortcuts)
+    /// and exact-format comment parsing (Aliases). Each block is delimited by:
+    ///   # CATALYST_BEGIN <id>
+    ///   ...content...
+    ///   # CATALYST_END <id>
+    ///
+    /// **Rationale:** Guaranteeing deterministic extraction boundaries prevents Catalyst from ever accidentally truncating or destroying native user aliases in their `~/.zshrc`.
 
+    /// `id` should be a stable, collision-free key (e.g. "alias-gp", "shortcut-django").
+    ///
+    /// **Gotchas:** Mutating IDs across versions inherently orphans old shell blocks, permanently polluting the user's rc file.
+
+    /// - Parameter id: The designated section identifier mapping the block.
+    /// - Returns: The exact bounding declaration prefix.
     private func beginMarker(_ id: String) -> String { "# CATALYST_BEGIN \(id)" }
+    /// Computes the closing sentinel block required to track managed ZSH script configurations.
+    /// - Parameter id: The designated section identifier mapping the block.
+    /// - Returns: The exact bounding declaration suffix.
     private func endMarker(_ id: String) -> String { "# CATALYST_END \(id)" }
 
     /// Whether a managed block with the given id currently exists.
+    ///
+    /// - Parameter id: The predefined constant identifier (e.g. "alias-gp").
+    /// - Returns: A binary boolean describing block discovery status.
     func hasManagedBlock(id: String) -> Bool {
         guard let content = readCatalystConfig() else { return false }
         return content.components(separatedBy: .newlines).contains(beginMarker(id))
     }
 
     /// Returns the inner content of a managed block, or `nil` if absent.
+    ///
+    /// - Parameter id: The exact identifying script constraint literal.
+    /// - Returns: Reconstructed lines natively embedded without boundary metadata.
     func readManagedBlock(id: String) -> String? {
         guard let content = readCatalystConfig() else { return nil }
         let lines = content.components(separatedBy: .newlines)
@@ -150,6 +171,9 @@ final class ShellConfigManager {
     }
 
     /// Removes a managed block by id. Returns true if a block was found and removed.
+    ///
+    /// - Parameter id: The precise target text chunk ID boundary string.
+    /// - Returns: Flag capturing valid detection / excision cycles successfully running.
     @discardableResult
     func removeManagedBlock(id: String) -> Bool {
         guard let content = readCatalystConfig() else { return false }
@@ -158,19 +182,25 @@ final class ShellConfigManager {
               let end = lines.firstIndex(of: endMarker(id)),
               start <= end else { return false }
         lines.removeSubrange(start...end)
-        // Collapse a possible double blank line left behind.
+        /// Collapse a possible double blank line left behind.
+        ///
+        /// **Rationale:** Maintains a pristine, visually readable shell configuration file when Catalyst features are dynamically toggled off.
         let newContent = lines.joined(separator: "\n")
         try? writeCatalystConfig(newContent)
         return true
     }
 
     /// Writes (or idempotently replaces) a sentinel-delimited managed block.
+    ///
     /// - Parameters:
     ///   - id: Stable identifier for the block.
     ///   - content: The shell lines to place between the sentinels.
+    /// - Throws: Missing configuration file bounds resulting in IO exceptions.
     func writeManagedBlock(id: String, content: String) throws {
         _ = ensureCatalystSourced()
-        // Replace any existing block with the same id (idempotent install).
+        /// Replace any existing block with the same id (idempotent install).
+        ///
+        /// **Rationale:** Ensures Catalyst can safely re-inject updated bash/zsh functions across multiple app launches without duplicating source material.
         removeManagedBlock(id: id)
 
         var config = readCatalystConfig() ?? ""

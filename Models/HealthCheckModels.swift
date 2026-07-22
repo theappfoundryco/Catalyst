@@ -55,25 +55,51 @@ enum HealthCategory: String, Codable, CaseIterable, Sendable {
 /// owning doctor. Decoupled from the display `title` so rewording or localizing a
 /// title can never break auto-fix routing.
 enum HealthFix: String, Codable, Sendable {
+    /// Shell profile missing the Catalyst sourcing block.
     case shellConfigNotSourced
+    /// Python environment targeting the base system runtime.
     case systemPythonDefault
+    /// Apple Developer Tools not found on disk.
     case missingXcodeTools
+    /// Excessive local snapshot backups consuming space.
     case excessiveBackups
+    /// Port mapping conflict preventing application launch.
     case portInUse
+    /// Stopped or zombie Docker containers consuming disk.
     case pruneZombieContainers
+    /// Dangling Docker images without valid tags.
     case pruneDanglingImages
+    /// Xcode intermediate build products folder is oversized.
     case clearDerivedData
+    /// Node package manager cache consuming excessive space.
     case clearNPMCache
+    /// Insecure file ownership on `.ssh` directory.
     case fixSSHDirPermissions
+    /// Insecure file ownership on SSH private keys.
     case fixSSHKeyPermissions
+    /// Broken local ownership boundaries on `.npm` folder.
     case fixNPMOwnership
+    /// Firewall running in strict blocking mode.
     case strictFirewallMode
+    /// macOS stealth mode enabled, rejecting ping requests.
     case stealthModeEnabled
+    /// Orphaned or broken startup item left in LaunchAgents.
     case brokenStartupItem
+    /// Known resource-intensive background daemon active.
     case activeStartupService
 }
 
 /// A serialized representation reporting a specific error identified during diagnostic cycles.
+///
+/// ```swift
+/// let issue = HealthIssue(
+///     category: .shell,
+///     title: "Missing Source",
+///     description: "Add to .zshrc",
+///     severity: .warning,
+///     autoFixAvailable: true
+/// )
+/// ```
 struct HealthIssue: Identifiable, Codable, Sendable {
     /// A unique random identification token necessary for SwiftUI diffing arrays.
     var id = UUID()
@@ -114,6 +140,7 @@ extension Doctor {
 /// Refinement for doctors whose tool may be absent (Docker/Java/Node). When the
 /// tool isn't installed the service reports `.notInstalled` instead of running.
 protocol AvailabilityCheckable {
+    /// Ascertains if the targeted external dependency executable can be resolved in the environment path.
     func checkAvailability() async -> Bool
 }
 

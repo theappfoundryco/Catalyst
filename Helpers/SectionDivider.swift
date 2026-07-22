@@ -1,9 +1,4 @@
-//
-//  SectionDivider.swift
-//  Catalyst
-//
-//  Opaque, fixed-height separator for scrolling dashboard content.
-//
+/// Opaque, fixed-height separator for scrolling dashboard content.
 
 import SwiftUI
 
@@ -18,6 +13,10 @@ import SwiftUI
 ///
 /// This is the **single source of truth** for section separators in scrolling
 /// content. Replaces ad-hoc `Divider()` usage app-wide.
+///
+/// ```swift
+/// SectionDivider(color: .gray, height: 1)
+/// ```
 struct SectionDivider: View {
     /// The rule color. Defaults to the adaptive system separator.
     var color: Color = Color(NSColor.separatorColor)
@@ -37,6 +36,14 @@ struct SectionDivider: View {
 /// fills the height offered by its container. Use as a column separator inside
 /// an `HStack` (where `SectionDivider`, being horizontal, cannot). Fixed width
 /// so it never competes with flexible siblings for horizontal space.
+///
+/// ```swift
+/// HStack {
+///     Text("Left")
+///     VerticalRule()
+///     Text("Right")
+/// }
+/// ```
 struct VerticalRule: View {
     /// The rule color. Defaults to the adaptive system separator.
     var color: Color = Color(NSColor.separatorColor)

@@ -1,9 +1,5 @@
-//
-//  OutputConsoleView.swift
-//  Catalyst
-//
-//  Centralized installation/output console card.
-//
+/// Centralized installation/output console card.
+
 import SwiftUI
 
 /// A reusable card that displays monospaced terminal-style output with a Clear button.
@@ -62,9 +58,11 @@ struct OutputConsoleView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .frame(maxHeight: maxHeight)
-            // Yield the scroll wheel to the page scroll when output fits; keeps
-            // independent scrolling for long logs without the nested-scroll jerk
-            // and removes the boundary rubber-band (toAvoid.md Rule 1).
+            /// Yield the scroll wheel to the page scroll when output fits; keeps
+            /// independent scrolling for long logs without the nested-scroll jerk
+            ///
+            /// **Rationale:** Solves the notorious SwiftUI "scroll trap" where a short embedded scroll view steals wheel events from the parent page.
+            // and removes the boundary rubber-band (ANTI_PATTERNS.md Rule 1).
             .scrollBounceBehavior(.basedOnSize)
             .codePanel()
         }

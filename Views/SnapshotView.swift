@@ -1,19 +1,17 @@
-//
-//  SnapshotView.swift
-//  Catalyst
-//
-//  CatalystSnapshot screen. Mirrors the Cruft Sweeper grammar: a top-level
-//  `Group` that switches between distinct full states (Landing → Working →
-//  Capture-ready / Restore-plan), cards use `cardStyle()`, and the restore plan
-//  uses a `ZStack`-anchored sticky action bar.
-//
-//  Color language follows the app: blue is the screen accent, domain colors
-//  come from what those domains use elsewhere (brew orange, pip/projects blue,
-//  shell/git purple), and green/orange/red stay semantic.
-//
+/// CatalystSnapshot screen. Mirrors the Cruft Sweeper grammar: a top-level
+/// `Group` that switches between distinct full states (Landing → Working →
+/// Capture-ready / Restore-plan), cards use `cardStyle()`, and the restore plan
+/// uses a `ZStack`-anchored sticky action bar.
+/// Color language follows the app: blue is the screen accent, domain colors
+/// come from what those domains use elsewhere (brew orange, pip/projects blue,
+/// shell/git purple), and green/orange/red stay semantic.
 
 import SwiftUI
-
+/// The main view for the Snapshot & Migrate feature, managing the flow between landing, capture, and restore states.
+///
+/// ```swift
+/// SnapshotView(vm: snapshotViewModel)
+/// ```
 struct SnapshotView: View {
     @ObservedObject var vm: SnapshotViewModel
 
@@ -108,6 +106,8 @@ private struct SnapshotImportBar: View {
 
 /// Maps a section's declared color name onto the app palette. Only colors the
 /// app already uses for these domains — nothing new.
+/// - Parameter name: The semantic identifier attached to the snapshot block.
+/// - Returns: A derived UI color representation.
 private func sectionColor(_ name: String) -> Color {
     switch name {
     case "orange": return .orange
@@ -160,8 +160,10 @@ private struct SnapshotLandingView: View {
 
                 ErrorBanner(message: $vm.errorMessage)
 
-                // Two large, illustrated action cards — each carries a gradient
-                // badge, a flow motif, and the real domain chips this feature moves.
+                /// Two large, illustrated action cards — each carries a gradient
+                /// badge, a flow motif, and the real domain chips this feature moves.
+                ///
+                /// **Rationale:** Hero cards with explicit domain chips immediately communicate the scope of the snapshot feature to wary users.
                 LandingAction(
                     icon: "camera.fill",
                     accent: .green,
@@ -173,8 +175,10 @@ private struct SnapshotLandingView: View {
                     disabled: vm.isWorking
                 ) { vm.beginCapture() }
 
-                // Surfaces itself only when there's unfinished business — secrets
-                // that were restored as placeholders and never unlocked.
+                /// Surfaces itself only when there's unfinished business — secrets
+                /// that were restored as placeholders and never unlocked.
+                ///
+                /// **Rationale:** Contextual visibility ensures users aren't confused by a "Decrypt Secrets" button when their environment is already fully unlocked.
                 if vm.pendingSecretPlaceholders > 0 {
                     SnapshotSecretsPendingCard(
                         count: vm.pendingSecretPlaceholders,
@@ -194,8 +198,10 @@ private struct SnapshotLandingView: View {
                     disabled: vm.isWorking
                 ) { Task { await vm.importSnapshot() } }
 
-                // Compact privacy footnote — wraps to one line when the window is
-                // wide enough, otherwise flows to two.
+                /// Compact privacy footnote — wraps to one line when the window is
+                /// wide enough, otherwise flows to two.
+                ///
+                /// **Rationale:** Proactively addressing telemetry and cloud concerns at the bottom of the hero screen prevents users from abandoning the flow due to security fears.
                 HStack(spacing: 8) {
                     Image(systemName: "lock.shield")
                         .font(.caption)
@@ -229,7 +235,9 @@ private struct LandingAction: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            // Header: gradient badge + title + accent tagline.
+            /// Header: gradient badge + title + accent tagline.
+            ///
+            /// **Rationale:** Establishes visual continuity between the landing cards and the detailed execution views.
             HStack(spacing: 16) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
@@ -256,7 +264,9 @@ private struct LandingAction: View {
                 .foregroundColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            // The real domains this feature carries.
+            /// The real domains this feature carries.
+            ///
+            /// **Rationale:** Re-affirming the scope with visual chips sets clear expectations about exactly what will be modified.
             FlowLayout(spacing: 8) {
                 ForEach(SnapshotSectionKind.allCases, id: \.self) { DomainChip(kind: $0) }
             }
@@ -322,6 +332,12 @@ private extension SnapshotSectionKind {
 private struct FlowLayout: Layout {
     var spacing: CGFloat = 8
 
+    /// Calculates the bounding layout dimensions for a dynamic flow container.
+    /// - Parameters:
+    ///   - proposal: The dimensional boundary requested by the parent container.
+    ///   - subviews: The active rendering tree requiring layout resolution.
+    ///   - cache: Extensible performance buffers holding intermediate pass geometry.
+    /// - Returns: The fully calculated bounding box enclosing all flowed children.
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout Void) -> CGSize {
         let maxWidth = proposal.width ?? .infinity
         var x: CGFloat = 0, y: CGFloat = 0, rowHeight: CGFloat = 0
@@ -336,6 +352,12 @@ private struct FlowLayout: Layout {
         return CGSize(width: proposal.width ?? x, height: y + rowHeight)
     }
 
+    /// Executes the physical spatial positioning of child views within a flow layout.
+    /// - Parameters:
+    ///   - bounds: The explicit drawing coordinates enclosing the parent frame.
+    ///   - proposal: The dimensional boundary requested by the parent container.
+    ///   - subviews: The active rendering tree requiring layout resolution.
+    ///   - cache: Extensible performance buffers holding intermediate pass geometry.
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout Void) {
         var x = bounds.minX, y = bounds.minY, rowHeight: CGFloat = 0
         for view in subviews {
@@ -406,7 +428,9 @@ private struct SnapshotCaptureReadyView: View {
         }
     }
 
-    // Sticky export footer (same grammar as the restore/Cruft bar), green flow.
+    /// Sticky export footer (same grammar as the restore/Cruft bar), green flow.
+    ///
+    /// **Rationale:** Anchoring primary calls to action to the bottom of the scroll view guarantees they are always accessible regardless of list length.
     private var exportBar: some View {
         let exported = vm.lastExportURL != nil
         return SnapshotFooterBar(
@@ -415,12 +439,14 @@ private struct SnapshotCaptureReadyView: View {
                 ? "Saved to \(vm.lastExportURL?.lastPathComponent ?? "")"
                 : "\(totalItems) items · nothing leaves your Mac until you pick a location"
         ) {
-            // `.bordered` (not `.secondaryAction`) so this matches the adjacent
-            // Export button's height exactly. `SecondaryActionButtonStyle` is a
-            // custom style with fixed padding — it ignores `controlSize`, which is
-            // why Discard rendered noticeably shorter than Export. Both AppKit
-            // styles honour `.large`, so they line up by construction rather than
-            // by a hand-tuned frame height.
+            /// `.bordered` (not `.secondaryAction`) so this matches the adjacent
+            /// Export button's height exactly. `SecondaryActionButtonStyle` is a
+            /// custom style with fixed padding — it ignores `controlSize`, which is
+            /// why Discard rendered noticeably shorter than Export. Both AppKit
+            /// styles honour `.large`, so they line up by construction rather than
+            /// by a hand-tuned frame height.
+            ///
+            /// **Gotchas:** Attempting to force-match button heights with hardcoded frame modifiers breaks catastrophically when the user changes their system font size.
             Button { vm.discardCapture() } label: {
                 Text("Discard").fontWeight(.semibold)
             }
@@ -444,7 +470,11 @@ private struct SnapshotCaptureReadyView: View {
         vm.capturedSnapshot?.inventory.reduce(0) { $0 + $1.count } ?? 0
     }
 
-    // Machine + stats header (mirrors the restore screen's source card).
+    /// Machine + stats header (mirrors the restore screen's source card).
+    ///
+    /// **Rationale:** Providing the source machine context reassures the user that they are restoring the correct archive.
+    /// - Parameter snap: The top-level snapshot container bridging telemetry sources.
+    /// - Returns: The active presentation hierarchy for the detail view.
     private func summaryCard(_ snap: CatalystSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 12) {
@@ -476,7 +506,11 @@ private struct SnapshotCaptureReadyView: View {
         .cardStyle()
     }
 
-    // Per-category inventory.
+    /// Per-category inventory.
+    ///
+    /// **Rationale:** Grouping operations by domain (Homebrew, Pip, Secrets) matches the mental model of the underlying package managers.
+    /// - Parameter snap: The top-level snapshot container bridging telemetry sources.
+    /// - Returns: The active presentation hierarchy for the detail view.
     private func contentsCard(_ snap: CatalystSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
@@ -503,6 +537,9 @@ private struct SnapshotCaptureReadyView: View {
         .cardStyle()
     }
 
+    /// Highlights potential restoration conflicts identified within the snapshot payload.
+    /// - Parameter snap: The top-level snapshot container bridging telemetry sources.
+    /// - Returns: The active presentation hierarchy for the detail view.
     private func warningsCard(_ snap: CatalystSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 10) {
@@ -526,6 +563,7 @@ private struct SnapshotCaptureReadyView: View {
 
 }
 
+/// Standardizes the visual presentation of a single recorded environment variable.
 private struct InventoryRow: View {
     let kind: SnapshotSectionKind
     let count: Int
@@ -582,17 +620,23 @@ private struct SnapshotRestorePlanView: View {
                 VStack(spacing: 20) {
                     if let snap = vm.loadedSnapshot { sourceCard(snap) }
 
-                    // One-click bootstrap for a fresh Mac — shown only while choosing,
-                    // when something the snapshot needs is missing.
+                    /// One-click bootstrap for a fresh Mac — shown only while choosing,
+                    /// when something the snapshot needs is missing.
+                    ///
+                    /// **Gotchas:** Hiding this bootstrap card leaves users stranded on fresh macOS installs, forcing them to open Terminal and manually install Xcode tools.
                     if !isStatus && !vm.missingPrereqs.isEmpty { prerequisitesCard }
 
-                    // Install space picker — only when the plan actually restores pip
-                    // packages, and only while choosing (hidden during the run).
+                    /// Install space picker — only when the plan actually restores pip
+                    /// packages, and only while choosing (hidden during the run).
+                    ///
+                    /// **Rationale:** Dynamically exposing configuration only when required reduces cognitive load for users restoring simple dotfile-only snapshots.
                     if !isStatus && hasPipActions { installSpaceCard }
 
-                    // Passphrase prompt — only when this snapshot actually carries
-                    // sealed secrets. Optional by design: skipping it costs the user
-                    // that one row and nothing else.
+                    /// Passphrase prompt — only when this snapshot actually carries
+                    /// sealed secrets. Optional by design: skipping it costs the user
+                    /// that one row and nothing else.
+                    ///
+                    /// **Gotchas:** Forcing a hard requirement on the passphrase blocks the entire environment restore if the user simply forgot their password.
                     if !isStatus, let count = vm.sealedSecretCount {
                         SnapshotSecretsUnlockCard(
                             count: count,
@@ -606,9 +650,11 @@ private struct SnapshotRestorePlanView: View {
                     if isStatus {
                         if let summary = vm.summary {
                             RestoreSummaryCard(summary: summary)
-                            // The secrets step is idempotent and independent of the
-                            // pipeline, so a skipped/mistyped passphrase is fixable
-                            // right here — no re-running the restore.
+                            /// The secrets step is idempotent and independent of the
+                            /// pipeline, so a skipped/mistyped passphrase is fixable
+                            /// right here — no re-running the restore.
+                            ///
+                            /// **Rationale:** Designing for failure allows users to confidently retry cryptographic operations without fearing environment corruption.
                             if let count = vm.sealedSecretCount, vm.pendingSecretPlaceholders > 0 {
                                 secretsRetryCard(count)
                             }
@@ -628,8 +674,10 @@ private struct SnapshotRestorePlanView: View {
                 .padding(.vertical)
             }
 
-            // Footer appears only when there's a selection to act on — same as
-            // Cruft Sweeper's delete bar.
+            /// Footer appears only when there's a selection to act on — same as
+            /// Cruft Sweeper's delete bar.
+            ///
+            /// **Gotchas:** Rendering an active "Restore" button when 0 items are selected creates ambiguous dead-clicks that confuse users.
             if isStatus {
                 statusBar
             } else if vm.actionableCount > 0 {
@@ -647,11 +695,13 @@ private struct SnapshotRestorePlanView: View {
         }
     }
 
-    // Live progress card shown on the Status screen while a run is in flight.
-    // Determinate: the bar tracks completed / total runnable actions so the user
-    // can see forward motion instead of an opaque spinner. (We deliberately don't
-    // show a time estimate — installs are network/wheel-bound and unpredictable;
-    // step count is the honest signal.)
+    /// Live progress card shown on the Status screen while a run is in flight.
+    /// Determinate: the bar tracks completed / total runnable actions so the user
+    /// can see forward motion instead of an opaque spinner. (We deliberately don't
+    /// show a time estimate — installs are network/wheel-bound and unpredictable;
+    /// step count is the honest signal.)
+    ///
+    /// **Rationale:** Providing deterministic progress prevents users from forcibly terminating the app during a long Homebrew compilation phase.
     private var runningCard: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 12) {
@@ -670,11 +720,13 @@ private struct SnapshotRestorePlanView: View {
         .cardStyle()
     }
 
-    // "Install All" bootstrap: lists what this Mac is missing for the snapshot
-    // (Command Line Tools, Homebrew, Python interpreters) and installs them in
-    // dependency order via the injected Dashboard installers — so a fresh Mac is
-    // resolved right here, no detour. Homebrew/Python complete inline; Command Line
-    // Tools hands off to Apple's dialog.
+    /// "Install All" bootstrap: lists what this Mac is missing for the snapshot
+    /// (Command Line Tools, Homebrew, Python interpreters) and installs them in
+    /// dependency order via the injected Dashboard installers — so a fresh Mac is
+    /// resolved right here, no detour. Homebrew/Python complete inline; Command Line
+    /// Tools hands off to Apple's dialog.
+    ///
+    /// **Gotchas:** Skipping the dependency ordering causes Python installations to fail immediately if Homebrew hasn't finished linking.
     private var prerequisitesCard: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 12) {
@@ -729,10 +781,12 @@ private struct SnapshotRestorePlanView: View {
         .cardStyle()
     }
 
-    // Install-space picker, shown at the top of Migrate when the plan restores pip
-    // packages. Binds the global `InstallPreferences.mode` (single source of truth):
-    // on Protected, externally-managed (3.12+) pip sets are skipped rather than
-    // force-overridden; User space / System-wide install them with the matching flag.
+    /// Install-space picker, shown at the top of Migrate when the plan restores pip
+    /// packages. Binds the global `InstallPreferences.mode` (single source of truth):
+    /// on Protected, externally-managed (3.12+) pip sets are skipped rather than
+    /// force-overridden; User space / System-wide install them with the matching flag.
+    ///
+    /// **Rationale:** Surfacing the PEP-668 boundary explicitly in the UI educates the user on modern macOS Python constraints before they authorize a global restore.
     private var installSpaceCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 12) {
@@ -767,6 +821,8 @@ private struct SnapshotRestorePlanView: View {
     /// had secrets AND placeholders are still sitting in `~/.zshrc` — i.e. the
     /// passphrase was skipped or wrong. Applying is a single file rewrite, so it
     /// needs neither the plan nor another restore pass.
+    /// - Parameter count: The total number of consecutive authorization failures.
+    /// - Returns: The active presentation hierarchy for the detail view.
     private func secretsRetryCard(_ count: Int) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             SnapshotSecretsUnlockCard(
@@ -792,9 +848,13 @@ private struct SnapshotRestorePlanView: View {
         }
     }
 
-    // Source + plan stats in one informative header card (4.11-style: lead with
-    // the actionable numbers, not celebration).
+    /// Source + plan stats in one informative header card (4.11-style: lead with
+    /// the actionable numbers, not celebration).
+    ///
+    /// **Rationale:** Professional tools prioritize data density over empty space; surfacing counts immediately helps users verify the snapshot integrity.
 
+    /// - Parameter snap: The top-level snapshot container bridging telemetry sources.
+    /// - Returns: The active presentation hierarchy for the detail view.
     private func sourceCard(_ snap: CatalystSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 16) {
             HStack(spacing: 12) {
@@ -822,7 +882,9 @@ private struct SnapshotRestorePlanView: View {
         .cardStyle()
     }
 
-    // Contents (grouped, collapsible — mirrors Cruft's "Detailed Results")
+    /// Contents (grouped, collapsible — mirrors Cruft's "Detailed Results")
+    ///
+    /// **Rationale:** Collapsible sections allow users to drill into specific domains (like pip) without being overwhelmed by a 500-item flattened list.
 
     private var contentsCard: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -848,6 +910,11 @@ private struct SnapshotRestorePlanView: View {
         .cardStyle()
     }
 
+    /// Groups related snapshot restoration steps under a common collapsible header.
+    /// - Parameters:
+    ///   - kind: The discrete module type matching the action array.
+    ///   - items: The sequential tasks generated for system synchronization.
+    /// - Returns: The active presentation hierarchy for the detail view.
     private func sectionGroup(_ kind: SnapshotSectionKind, items: [RestoreAction]) -> some View {
         let readOnly = isStatus
         let selected = items.filter { $0.isActionable && $0.selected }.count
@@ -902,7 +969,9 @@ private struct SnapshotRestorePlanView: View {
         )
     }
 
-    // Sticky action bars (opaque, same chrome as Cruft's delete bar)
+    /// Sticky action bars (opaque, same chrome as Cruft's delete bar)
+    ///
+    /// **Gotchas:** Transparent sticky bars cause text collision when the user scrolls the main list underneath them, destroying legibility.
 
     /// Preview phase: choose items, then Dry run or Restore (→ Status screen).
     private var previewBar: some View {
@@ -954,11 +1023,15 @@ private struct SnapshotRestorePlanView: View {
         }
     }
 
-    // Helpers
+    /// Helpers
+    ///
+    /// **Rationale:** Grouping internal view builders separates the declarative layout logic from the structural hierarchy above.
 
     /// Live note for a pip row reflecting the current Install Space: on Protected,
     /// externally-managed (3.12+) sets will be skipped on restore. Recomputes as the
     /// picker changes because this view observes `installPrefs`.
+    /// - Parameter action: The targeted instruction executing the restoration step.
+    /// - Returns: An optional string detailing bypass conditions, or nil.
     private func skipNote(for action: RestoreAction) -> String? {
         guard action.kind == .pip, installPrefs.mode == .protected,
               action.blockedReason == nil, !action.alreadySatisfied else { return nil }
@@ -967,6 +1040,9 @@ private struct SnapshotRestorePlanView: View {
         return "Protected space — will skip on restore. Pick User space above to install."
     }
 
+    /// Constructs a dynamic binding to track the expansion state of a specific section.
+    /// - Parameter kind: The specific section block queried for expansion tracking.
+    /// - Returns: An interactive boolean binding linked to view state.
     private func expandBinding(_ kind: SnapshotSectionKind) -> Binding<Bool> {
         Binding(
             get: { expanded.contains(kind) },
@@ -975,7 +1051,7 @@ private struct SnapshotRestorePlanView: View {
     }
 }
 
-// MARK: - Action row (Equatable, plain values — Formrules 3.6)
+// MARK: - Action row (Equatable, plain values — CODING_STANDARDS 3.6)
 
 private struct ActionRow: View, Equatable {
     let title: String

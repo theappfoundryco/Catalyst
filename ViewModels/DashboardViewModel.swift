@@ -11,19 +11,46 @@ enum DetectionState {
     case unknown
 }
 
+/// The main view model driving the Catalyst Dashboard, coordinating system detection
+/// and high-level installation actions.
+///
+/// `DashboardViewModel` manages the asynchronous detection sequence that populates
+/// the dashboard tiles (Brew, Python, pip). It delegates lower-level shell tasks to
+/// `DetectionService`, `PythonManager`, and `BrewMaintenanceManager`.
+///
+/// **Caveats:**
+/// - The `runDetection` method fires concurrently for initial checks, but defers
+///   heavy I/O operations (`detectPipUpgrades` and `loadBrewStats`) until the end
+///   to prevent blocking the initial UI render.
+///
+/// ```swift
+/// await vm.runDetection()
+/// if vm.brewState == .installed { ... }
+/// ```
 @MainActor
 final class DashboardViewModel: ObservableObject {
+    /// The user-facing status string for Command Line Tools.
     @Published var commandLineToolsStatus = "Click Refresh to detect"
+    /// The UI color representing the Command Line Tools state.
     @Published var commandLineToolsStatusColor: Color = .secondary
     // R6: logic-only state (read by AppViewModel, never by a View). Plain `var`
     // so setting it doesn't fire objectWillChange / re-render the Dashboard; the
     // sibling `*Status` string mutation already drives the visible update.
     var commandLineToolsState: DetectionState = .unknown
+    
+    /// The user-facing status string for Homebrew.
     @Published var brewStatus = "Click Refresh to detect"
+    /// The UI color representing the Homebrew state.
     @Published var brewStatusColor: Color = .secondary
+    /// Logic-only enum state for Homebrew presence.
     var brewState: DetectionState = .unknown
+    
+    /// The user-facing status string for the system's default Python version.
     @Published var systemPythonVersion = "Click Refresh to detect"
+    /// A potential user-facing error encountered when querying the system Python.
     @Published var systemPythonError: String? = nil // Track specific error
+    
+    /// The raw list of discovered Python installations.
     @Published var installedPythons: [PythonInstallation] = [] {
         didSet {
             // Sort once when the set changes, not on every render of the card (R3).
@@ -35,15 +62,29 @@ final class DashboardViewModel: ObservableObject {
     /// `installedPythons` ordered by version — read by the dashboard card so it
     /// doesn't `.sorted{}` inside `body`.
     @Published private(set) var sortedInstalledPythons: [PythonInstallation] = []
+    
+    /// The user-facing status string for pip.
     @Published var pipVersion = "Click Refresh to detect"
+    /// The UI color representing the pip state.
     @Published var pipStatusColor: Color = .secondary
+    
+    /// Indicates whether a detection scan is currently in progress.
     @Published var isDetecting = false
+    /// True after the very first successful detection pass.
     @Published var hasLoadedOnce = false
+    
+    /// List of available Python versions fetched from the Homebrew catalog.
     @Published var availablePythonVersions: [AvailableVersion] = []
+    /// Indicates whether the available versions list is being downloaded.
     @Published var isLoadingAvailableVersions = false
+    /// Tracks which version the user selected in the UI to install.
     @Published var selectedVersionToInstall: String? = nil
+    
+    /// Indicates if a Python installation is actively running.
     @Published var isInstallingPython = false
+    /// Indicates if a Homebrew installation is actively running.
     @Published var isInstallingBrew = false
+    
     /// Brew install/maintenance output on its own observable so a streamed chunk
     /// re-renders only the console card, not the whole dashboard (R2). The bridge
     /// is immediate, so the post-stream `brew.parseUnlinkedKegs(from:)` read in
@@ -53,24 +94,42 @@ final class DashboardViewModel: ObservableObject {
         get { console.text }
         set { console.set(newValue) }
     }
+    
+    /// The list of unlinked Homebrew kegs discovered during a `doctorBrew` run.
     @Published var brewUnlinkedKegs: [String] = []
+    /// Indicates if the CLT installer trigger is active.
     @Published var isInstallingCommandLineTools = false
+    /// A Catalyst-recommended version of Python for users who are unsure.
     @Published var recommendedVersion: String? = nil
+    /// A set of python paths marked for deletion in the UI.
     @Published var selectedVersionsToUninstall: Set<String> = []
+    
+    /// Indicates if Homebrew is currently being uninstalled.
     @Published var isUninstallingBrew = false
+    /// Indicates if Python(s) are currently being uninstalled.
     @Published var isUninstallingPython = false
+    
+    /// The version string of the Python installation currently upgrading its pip.
     @Published var upgradingPipFor: String? = nil
+    /// The version string of the Python installation currently repairing its pip.
     @Published var repairingPipFor: String? = nil
     /// Per-interpreter pip upgrade target, keyed by interpreter path. A value is
     /// present only when that interpreter's own pip reports pip as outdated (via
     /// `pip list --outdated`), so it honors Requires-Python and is correct
     /// per-interpreter — unlike the old single global PyPI `info.version`.
     @Published var pipUpgradeTargets: [String: String] = [:]
+    
+    /// Indicates if a `brew update` is running.
     @Published var isBrewUpdating = false
+    /// Indicates if a `brew upgrade` is running.
     @Published var isBrewUpgrading = false
+    /// Indicates if a `brew cleanup` is running.
     @Published var isBrewCleaning = false
+    /// Indicates if a `brew doctor` is running.
     @Published var isRunningBrewDoctor = false
+    /// The parsed file system metrics for the Homebrew cellar and cache.
     @Published var brewSystemStats: BrewSystemStats?
+    /// Indicates if a `brew link` operation is running.
     @Published var isBrewLinking = false
     /// Short, user-facing error surfaced as a banner when a Homebrew/Python
     /// install fails (P3) — the install output otherwise only reaches the Logs
@@ -116,6 +175,13 @@ final class DashboardViewModel: ObservableObject {
         return sorted.joined(separator: ", ")
     }
     
+    /// Initializes the dashboard controller and instantiates its sub-managers.
+    ///
+    /// - Parameters:
+    ///   - brewService: Dependency for raw Homebrew shell execution.
+    ///   - pythonService: Dependency for python-build and pip parsing.
+    ///   - privileges: Dependency for escalating AppleScript execution.
+    ///   - logger: Reusable terminal output stream.
     init(brewService: BrewService, pythonService: PythonService, privileges: PrivilegesService, logger: Logger) {
         self.brewService = brewService
         self.pythonService = pythonService
@@ -137,6 +203,16 @@ final class DashboardViewModel: ObservableObject {
         )
     }
     
+    /// Executes the primary detection sequence to locate Homebrew, Pythons, and pip.
+    ///
+    /// **Flow:**
+    /// 1. Resets error states.
+    /// 2. Fires off CLT, Brew, System Python, and Installed Python checks in a parallel batch.
+    /// 3. Fires off pip and available remote Python version checks in a second parallel batch.
+    /// 4. Flips ``isDetecting`` to `false`, unblocking the UI.
+    /// 5. Detaches asynchronous background probes for pip upgrades and brew celler size (heavy I/O).
+    ///
+    /// - Parameter force: If true, invalidates the Python cache forcing a full disk scan.
     func runDetection(force: Bool = false) async {
         guard !isDetecting else { return }
         
@@ -182,12 +258,14 @@ final class DashboardViewModel: ObservableObject {
         Task { await self.loadBrewStats() }
     }
     
+    /// Detects if macOS Command Line Tools are active via ``DetectionService/detectCommandLineTools()``.
     private func detectCommandLineTools() async {
         logger.debugLog("🐛 det: CLT start")
         applyCommandLineTools(await detection.detectCommandLineTools())
         logger.debugLog("🐛 det: CLT end")
     }
 
+    /// Maps the raw detection enum to user-facing strings and colors for the Command Line Tools tile.
     private func applyCommandLineTools(_ state: DetectionState) {
         commandLineToolsState = state
         switch state {
@@ -200,6 +278,7 @@ final class DashboardViewModel: ObservableObject {
         }
     }
 
+    /// Scans the host system for a globally accessible Python via ``DetectionService/detectSystemPython()``.
     private func detectSystemPython() async {
         logger.debugLog("🐛 det: systemPython start")
         let result = await detection.detectSystemPython()
@@ -208,6 +287,7 @@ final class DashboardViewModel: ObservableObject {
         logger.debugLog("🐛 det: systemPython end (\(result.version))")
     }
 
+    /// Reads the `.pyenv/versions` equivalent structure to enumerate isolated Pythons via ``DetectionService/detectInstalledPythons()``.
     private func detectInstalledPythons() async {
         logger.debugLog("🐛 det: installedPythons start")
         installedPythons = await detection.detectInstalledPythons()
@@ -217,12 +297,14 @@ final class DashboardViewModel: ObservableObject {
         logger.debugLog("🐛 det: installedPythons end")
     }
 
+    /// Checks for the `brew` binary via ``DetectionService/detectBrew()``.
     private func detectBrew() async {
         logger.debugLog("🐛 det: brew start")
         applyBrew(await detection.detectBrew())
         logger.debugLog("🐛 det: brew end")
     }
 
+    /// Maps the raw detection enum to user-facing strings and colors for the Homebrew tile.
     private func applyBrew(_ state: DetectionState) {
         brewState = state
         switch state {
@@ -235,6 +317,7 @@ final class DashboardViewModel: ObservableObject {
         }
     }
 
+    /// Scans the first discovered Python environment for its pip binary and version.
     private func detectPip() async {
         logger.debugLog("🐛 det: pip start (first=\(installedPythons.first?.version ?? "none"))")
         defer { logger.debugLog("🐛 det: pip end") }
@@ -254,7 +337,14 @@ final class DashboardViewModel: ObservableObject {
         }
     }
     
-    /// Repair pip for a specific Python installation
+    /// Triggers the pip repair script (`ensurepip`) for a specific Python installation.
+    ///
+    /// **Flow:**
+    /// 1. Sets ``repairingPipFor`` to lock the UI button.
+    /// 2. Defers to ``PythonManager/repairPip(for:)``.
+    /// 3. Invalidates caches and re-triggers detection to sync the UI.
+    ///
+    /// - Parameter installation: The Python target to repair.
     func repairPip(for installation: PythonInstallation) async {
         repairingPipFor = installation.version
 
@@ -268,7 +358,12 @@ final class DashboardViewModel: ObservableObject {
         repairingPipFor = nil
     }
 
-    /// Upgrade pip for a specific Python installation
+    /// Triggers `pip install --upgrade pip` for a specific Python installation.
+    ///
+    /// **Flow:**
+    /// Matches the UI locking and invalidation flow of ``repairPip(for:)``.
+    ///
+    /// - Parameter installation: The Python target to upgrade.
     func upgradePip(for installation: PythonInstallation) async {
         upgradingPipFor = installation.version
 
@@ -281,12 +376,23 @@ final class DashboardViewModel: ObservableObject {
         upgradingPipFor = nil
     }
     
+    /// Synchronous helper to determine if a specific python has a known pip upgrade pending.
+    ///
+    /// - Parameter python: The installation to check.
+    /// - Returns: `true` if this specific interpreter's isolated pip is outdated.
     func isPipUpgradeAvailable(for python: PythonInstallation) -> Bool {
         // Present only when this interpreter's own pip reported pip as outdated.
         pipUpgradeTargets[python.path.path] != nil
     }
     
-    /// Check if the installed Python version matches the system Python version (major.minor)
+    /// Checks if the installed Homebrew Python major/minor version matches the system-level python fallback.
+    ///
+    /// **Rationale:**
+    /// Used to surface warnings about conflicting `PATH` resolutions where `python3` resolves to a system framework
+    /// rather than the Homebrew Cellar.
+    ///
+    /// - Parameter python: The Homebrew installation to check.
+    /// - Returns: `true` if the versions structurally overlap.
     func isSystemPythonConflict(for python: PythonInstallation) -> Bool {
         // Ensure system python version is valid
         guard systemPythonVersion != "Unknown" && 
@@ -309,11 +415,11 @@ final class DashboardViewModel: ObservableObject {
         return systemMajorMinor == installedMajorMinor
     }
     
-    /// Populate `pipUpgradeTargets` by asking each installed interpreter's own
-    /// pip what it can upgrade *pip* to (`pip list --outdated`). Interpreters are
-    /// probed concurrently. Replaces the old single global PyPI `info.version`
-    /// lookup, which ignored Requires-Python and applied one "latest" to every
-    /// interpreter (§7/§46).
+    /// Populates ``pipUpgradeTargets`` by concurrently asking each installed interpreter's own pip if it is outdated.
+    ///
+    /// **Gotchas:**
+    /// - Replaces the old single global PyPI lookup because global lookups ignore the `Requires-Python` constraints
+    ///   (e.g., Python 3.7 cannot support pip 24.x, and a global lookup would falsely flag it for upgrade).
     func detectPipUpgrades() async {
         let pythons = installedPythons
         var targets: [String: String] = [:]
@@ -330,6 +436,7 @@ final class DashboardViewModel: ObservableObject {
         pipUpgradeTargets = targets
     }
 
+    /// Contacts Catalyst APIs to retrieve the master list of compatible Python formulas for this architecture.
     private func loadAvailablePythonVersions() async {
         logger.debugLog("🐛 det: availableVersions start")
         isLoadingAvailableVersions = true
@@ -340,7 +447,12 @@ final class DashboardViewModel: ObservableObject {
         logger.debugLog("🐛 det: availableVersions end (\(result.versions.count))")
     }
     
-
+    /// Installs Homebrew globally, invoking AppleScript privileges if required.
+    ///
+    /// **Flow:**
+    /// 1. Toggles ``isInstallingBrew``.
+    /// 2. Awaits ``BrewMaintenanceManager/installHomebrew()``.
+    /// 3. Upon success, triggers the global cross-ViewModel refresh hook.
     func installHomebrew() async {
         guard !isInstallingBrew else { return }
 
@@ -359,6 +471,11 @@ final class DashboardViewModel: ObservableObject {
         }
     }
 
+    /// Triggers the macOS Command Line Tools installation dialog via `xcode-select --install`.
+    /// 
+    /// **Gotchas:**
+    /// - This does not install CLT automatically; it only summons the GUI dialog. The macOS system handles
+    ///   the rest asynchronously, and Catalyst must wait for the user to click through the system window.
     func installCommandLineTools() async {
         guard !isInstallingCommandLineTools else { return }
         
@@ -389,6 +506,10 @@ final class DashboardViewModel: ObservableObject {
         isInstallingCommandLineTools = false
     }
 
+    /// Installs the specific Python version saved in `selectedVersionToInstall` via Homebrew.
+    ///
+    /// **Flow:**
+    /// Similar to Homebrew installation; hooks directly into ``PythonManager/install(version:)``.
     func installSelectedPython() async {
         guard let version = selectedVersionToInstall, !isInstallingPython else { return }
 
@@ -407,6 +528,7 @@ final class DashboardViewModel: ObservableObject {
         await onGlobalRefresh?("Refreshing after Python install...")
     }
 
+    /// Uninstalls Homebrew globally, invoking AppleScript privileges to wipe the `/opt/homebrew` structure.
     func uninstallHomebrew() async {
         guard !isUninstallingBrew else { return }
         
@@ -418,6 +540,7 @@ final class DashboardViewModel: ObservableObject {
         await onGlobalRefresh?("Refreshing after Homebrew uninstall...")
     }
     
+    /// Uninstalls all Pythons marked in `selectedVersionsToUninstall` sequentially.
     func uninstallSelectedPythons() async {
         guard !isUninstallingPython, !selectedVersionsToUninstall.isEmpty else { return }
         
@@ -434,10 +557,15 @@ final class DashboardViewModel: ObservableObject {
     }
     // MARK: - Homebrew Maintenance
     
+    /// Triggers a cellar space calculation `du -sh` and updates the UI stats.
+    ///
+    /// **Rationale:**
+    /// Takes significant time on large installations; runs entirely off the main thread.
     func loadBrewStats() async {
         brewSystemStats = await brew.loadStats()
     }
 
+    /// Executes `brew update` to refresh local Homebrew taps.
     func updateBrew() async {
         isBrewUpdating = true
         brewInstallOutput = ""
@@ -446,6 +574,7 @@ final class DashboardViewModel: ObservableObject {
         await loadBrewStats()
     }
 
+    /// Executes `brew upgrade` to update all outdated formulae and casks simultaneously.
     func upgradeAllBrew() async {
         isBrewUpgrading = true
         brewInstallOutput = ""
@@ -454,6 +583,7 @@ final class DashboardViewModel: ObservableObject {
         await loadBrewStats()
     }
 
+    /// Executes `brew cleanup` to reclaim SSD space from stale lock files and old downloads.
     func cleanupBrew() async {
         isBrewCleaning = true
         brewInstallOutput = ""
@@ -462,6 +592,11 @@ final class DashboardViewModel: ObservableObject {
         await loadBrewStats()
     }
 
+    /// Executes `brew doctor` and captures diagnostic warnings, looking specifically for unlinked kegs.
+    ///
+    /// **Flow:**
+    /// 1. Runs the command and streams to ``brewInstallOutput``.
+    /// 2. Evaluates the string against ``BrewMaintenanceManager/parseUnlinkedKegs(from:)``.
     func doctorBrew() async {
         isRunningBrewDoctor = true
         brewInstallOutput = ""
@@ -472,6 +607,7 @@ final class DashboardViewModel: ObservableObject {
         isRunningBrewDoctor = false
     }
 
+    /// Re-links any detached kegs discovered by a prior ``doctorBrew()`` scan.
     func linkBrewKegs() async {
         guard !brewUnlinkedKegs.isEmpty else { return }
 
@@ -483,6 +619,7 @@ final class DashboardViewModel: ObservableObject {
         await doctorBrew()
     }
 
+    /// Flushes the live console view string.
     func clearBrewMaintenanceOutput() {
         brewInstallOutput = ""
     }

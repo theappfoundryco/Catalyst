@@ -1,5 +1,9 @@
 import SwiftUI
-
+/// A view for managing SSH key pairs, verifying permissions, and copying public keys.
+///
+/// ```swift
+/// SSHKeyView(vm: sshKeyViewModel)
+/// ```
 struct SSHKeyView: View {
     @ObservedObject var vm: SSHKeyViewModel
 
@@ -42,6 +46,9 @@ struct SSHKeyView: View {
     }
 
     @ViewBuilder
+    /// Renders the active layout based on the loaded cryptographic key state.
+    /// - Parameter report: The compiled filesystem state capturing SSH metadata.
+    /// - Returns: The active presentation hierarchy for the detail view.
     private func content(_ report: SSHKeyReport) -> some View {
         VStack(spacing: 24) {
             if !report.dirPermsOK && report.dirExists {
@@ -113,6 +120,8 @@ struct SSHKeyView: View {
 
     // MARK: - Keys list
 
+    /// - Parameter report: The compiled filesystem state capturing SSH metadata.
+    /// - Returns: The active presentation hierarchy for the detail view.
     private func keysCard(_ report: SSHKeyReport) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             cardHeader("Your Keys", subtitle: "\(report.keys.count) key pair(s) in ~/.ssh", icon: "list.bullet.rectangle.fill")
@@ -131,6 +140,9 @@ struct SSHKeyView: View {
         .cardStyle()
     }
 
+    /// Constructs a detailed visual breakdown for a single discovered SSH key.
+    /// - Parameter key: The structured property block representing a distinct cryptographic key.
+    /// - Returns: The active presentation hierarchy for the detail view.
     private func keyRow(_ key: SSHKey) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
@@ -205,6 +217,11 @@ struct SSHKeyView: View {
 
     // MARK: - Shared
 
+    /// - Parameters:
+    ///   - title: The primary display banner.
+    ///   - subtitle: Supplemental descriptive text.
+    ///   - icon: The associated SF Symbol glyph.
+    /// - Returns: The active presentation hierarchy for the detail view.
     private func cardHeader(_ title: String, subtitle: String, icon: String) -> some View {
         HStack {
             VStack(alignment: .leading, spacing: 4) {

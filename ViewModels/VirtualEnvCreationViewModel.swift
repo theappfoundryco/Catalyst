@@ -3,17 +3,38 @@ import AppKit
 import Combine
 import UniformTypeIdentifiers
 
+/// A view model governing the configuration and instantiation of Python virtual environments.
+///
+/// It coordinates the discovery of project metadata, validates the proposed environment name,
+/// orchestrates the `python -m venv` generation step, automatically writes to `.gitignore`,
+/// and performs a smart install of `requirements.txt` dependencies.
+///
+/// **Caveats:**
+/// - It works in tandem with `VenvBuilder` to safely offload synchronous shell tasks.
+/// - The `isRecommendedVersionMissing` flag gracefully degrades the UI when a project dictates
+///   a specific interpreter that isn't installed natively.
+///
+/// ```swift
+/// @StateObject var vm = VirtualEnvCreationViewModel()
+/// vm.configure(with: url)
+/// await vm.createEnvironment()
+/// ```
 @MainActor
 final class VirtualEnvCreationViewModel: ObservableObject {
+    /// Discovered attributes of the selected target directory (e.g. `isGitRepo`).
     @Published var metadata: ProjectMetadata?
 
     
     // MARK: - Python Selection
+    /// Detected Homebrew Python interpreters capable of serving as venv bases.
     @Published var installedPythons: [BrewPathManager.BrewPython] = []
+    /// The user-selected (or auto-selected) Python interpreter for environment generation.
     @Published var selectedPython: BrewPathManager.BrewPython?
+    /// Set if the project explicitly demands a Python version the system doesn't have.
     @Published var isRecommendedVersionMissing = false
     
     // MARK: - Environment Settings
+    /// The intended directory name for the virtual environment (defaults to `.venv`).
     @Published var venvName = ".venv"
 
     /// Inline validation for the environment name. Allows an optional single leading dot
@@ -37,7 +58,7 @@ final class VirtualEnvCreationViewModel: ObservableObject {
     // MARK: - Dependencies
     private let scannerService = ProjectScannerService.shared
     // BrewPathManager is a singleton, accessed via .shared
-    /// FS/process work (gitignore, verify, retry) extracted out of this VM (R1).
+    // FS/process work (gitignore, verify, retry) extracted out of this VM (R1).
     private let builder = VenvBuilder()
 
     private let logger: Logger
@@ -47,6 +68,15 @@ final class VirtualEnvCreationViewModel: ObservableObject {
     }
     
     // MARK: - Initialization
+    /// Probes the specified URL to determine defaults (ignores, requirements) before UI presentation.
+    ///
+    /// **Flow:**
+    /// 1. Resets all tracking variables (`requirementsIssues`, `failedPackages`, etc).
+    /// 2. Detaches an async task to scan the folder (via ``ProjectScannerService``) for `.gitignore` and `requirements.txt`.
+    /// 3. Probes ``BrewPathManager`` for the list of available pythons.
+    /// 4. Evaluates `recommendedPythonVersion`. If requested version doesn't exist, sets `isRecommendedVersionMissing` true.
+    ///
+    /// - Parameter url: The absolute local file URL of the target project directory.
     func configure(with url: URL) {
         guard !isCreating else { return }
         
@@ -106,12 +136,17 @@ final class VirtualEnvCreationViewModel: ObservableObject {
     }
     
     // MARK: - Verification State
+    /// A subset of requested packages that failed post-install verification.
     @Published var failedPackages: [String] = []
+    /// A subset of requested packages that passed post-install verification.
     @Published var successfulPackages: [String] = []
+    /// Indicates whether the verification sweep is currently running or completed.
     @Published var verificationComplete = false
     @Published var isVerifying = false
     
+    /// Unused array of detected strict compatibility bounds (e.g. `< 2.0`).
     @Published var requirementsIssues: [CompatibilityIssue] = []
+    /// Unused toggle for bypassing strict dependency constraints.
     @Published var isRelaxingRequirements = false
     
     // Tracks if we should relax versions during install
@@ -133,16 +168,24 @@ final class VirtualEnvCreationViewModel: ObservableObject {
     
     // MARK: - Creation
     
+    /// True while `venv` creation or `pip` installation is actively running.
     @Published var isCreating = false
+    /// The streamed text output from creation/installation steps.
     @Published var creationOutput = ""
+    /// Transient error text if the baseline `venv` creation crashes.
     @Published var creationError: String?
+    /// True when the entire creation and optional installation cycle finishes.
     @Published var isComplete = false
     
+    /// Configures whether Catalyst automatically executes `pip install -r requirements.txt`.
     @Published var shouldInstallRequirements = true
+    /// Configures whether Catalyst automatically appends the `venvName` to `.gitignore`.
     @Published var shouldAddToGitignore = false
+    /// Contextual helper text for the gitignore toggle (e.g. "Already ignored").
     @Published var gitStatusMessage: String?
     
     // MARK: - Helpers
+    /// Pipes diagnostic lines into both the UI console and the persistent `Logger`.
     private func log(_ message: String) {
         creationOutput += message
         Logger.shared.log("[VirtualEnvCreation] \(message.trimmingCharacters(in: .newlines))")
@@ -154,6 +197,15 @@ final class VirtualEnvCreationViewModel: ObservableObject {
 
     // MARK: - Creation
     
+    /// Executes the underlying `python -m venv` and wires up smart install features.
+    ///
+    /// **Flow:**
+    /// 1. If ``tempCreatedProject`` exists (i.e. a previous install failed verification), returns it immediately.
+    /// 2. If `shouldAddToGitignore` is toggled, appends the venv directory to the project's `.gitignore`.
+    /// 3. Emits `python3 -m venv .venv` through the async process runner.
+    /// 4. If `shouldInstallRequirements` is true, routes through ``performSmartInstall()``.
+    ///
+    /// - Returns: A hydrated ``Project`` model if successful, or `nil` on fatal error.
     func createEnvironment() async -> Project? {
         // If we already created it but stopped due to verification failure
         if let existing = tempCreatedProject {
@@ -229,6 +281,10 @@ final class VirtualEnvCreationViewModel: ObservableObject {
             return nil
         }
     }
+    /// Invokes `pip install -r requirements.txt` directly against the new environment.
+    ///
+    /// **Gotchas:**
+    /// This bypasses compatibility pre-checks and directly invokes the generated `.venv/bin/pip`.
     func performSmartInstall() async {
         guard let project = self.tempCreatedProject, let venvPath = project.venvPath else { return }
         
@@ -273,6 +329,11 @@ final class VirtualEnvCreationViewModel: ObservableObject {
     }
     // MARK: - Verification Logic
     
+    /// Calls `VenvBuilder` to validate that installed packages match the requested list.
+    ///
+    /// - Parameters:
+    ///   - venvPath: Absolute path to the virtual environment folder.
+    ///   - projectPath: Absolute path to the parent directory.
     private func verifyInstallation(venvPath: String, projectPath: String) async {
         isVerifying = true
         successfulPackages = []
@@ -298,6 +359,10 @@ final class VirtualEnvCreationViewModel: ObservableObject {
         isVerifying = false
     }
 
+    /// Triggers a localized `pip install` exclusively on the subset of packages that failed.
+    ///
+    /// **Rationale:**
+    /// Bypasses the bulk `-r` execution in favor of discrete install commands via ``VenvBuilder/retryInstall(packages:pipPath:onOutput:)`` to isolate stubborn failures.
     func retryFailedPackages() async {
         guard let _ = tempCreatedProject, !failedPackages.isEmpty else { return }
         
@@ -325,16 +390,19 @@ final class VirtualEnvCreationViewModel: ObservableObject {
         isCreating = false
     }
     
+    /// Saves the names of packages that failed to install into a plain text file.
     func exportFailedPackages() {
         guard !failedPackages.isEmpty else { return }
         exportText(failedPackages.joined(separator: "\n"), filename: "failed_requirements.txt")
     }
     
+    /// Saves the full, streamed creation/installation log to a plain text file.
     func exportLog() {
         guard !creationOutput.isEmpty else { return }
         exportText(creationOutput, filename: "creation_log.txt")
     }
     
+    /// Presents a macOS `NSSavePanel` and writes the provided payload.
     private func exportText(_ text: String, filename: String) {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.plainText]

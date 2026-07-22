@@ -3,6 +3,10 @@ import AppKit
 
 /// The panel shown from the menu-bar icon: a compact health summary plus quick
 /// actions, so the user can check status without opening the main window.
+///
+/// ```swift
+/// MenuBarContentView(appVM: appViewModel)
+/// ```
 struct MenuBarContentView: View {
     @ObservedObject var appVM: AppViewModel
     @ObservedObject var dr: DrCatalystViewModel
@@ -32,7 +36,9 @@ struct MenuBarContentView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            // Header
+            /// Header
+            ///
+            /// **Rationale:** Visually anchors the condensed menubar popover with familiar branding.
             HStack(spacing: 8) {
                 Image(systemName: "bolt.heart.fill")
                     .foregroundStyle(LinearGradient(colors: [.blue, .purple], startPoint: .topLeading, endPoint: .bottomTrailing))
@@ -45,7 +51,9 @@ struct MenuBarContentView: View {
 
             Divider()
 
-            // Health score
+            /// Health score
+            ///
+            /// **Rationale:** Provides the primary at-a-glance metric for the entire system without opening the dashboard.
             HStack(spacing: 14) {
                 ZStack {
                     Circle().stroke(scoreColor.opacity(0.15), lineWidth: 6).frame(width: 52, height: 52)
@@ -63,7 +71,9 @@ struct MenuBarContentView: View {
                 Spacer()
             }
 
-            // Counts
+            /// Counts
+            ///
+            /// **Rationale:** Groups secondary metrics for users interested in payload size rather than pure health state.
             HStack(spacing: 8) {
                 statChip(count: dr.criticalCount, label: "Critical", color: .red)
                 statChip(count: dr.warningCount, label: "Warnings", color: .orange)
@@ -72,7 +82,9 @@ struct MenuBarContentView: View {
 
             Divider()
 
-            // Quick actions
+            /// Quick actions
+            ///
+            /// **Rationale:** Exposes immediate remediation paths directly from the menubar to reduce friction.
             VStack(spacing: 6) {
                 actionButton("Open Catalyst", systemImage: "macwindow") { openMainWindow() }
                 actionButton("Run Health Scan", systemImage: "stethoscope") {
@@ -105,6 +117,11 @@ struct MenuBarContentView: View {
 
     // MARK: - Pieces
 
+    /// - Parameters:
+    ///   - count: The numeric metric requiring highlighting.
+    ///   - label: A brief descriptive noun for the count.
+    ///   - color: The assigned semantic color reflecting priority.
+    /// - Returns: The active presentation hierarchy for the detail view.
     private func statChip(count: Int, label: String, color: Color) -> some View {
         VStack(spacing: 2) {
             Text("\(count)").font(.system(.title3, design: .rounded)).fontWeight(.bold).foregroundColor(color)
@@ -116,6 +133,12 @@ struct MenuBarContentView: View {
         .cornerRadius(8)
     }
 
+    /// A standardized clickable row for the Catalyst menu bar dropdown.
+    /// - Parameters:
+    ///   - title: The explicit user action label.
+    ///   - systemImage: The associated SF Symbol glyph.
+    ///   - action: The executable closure bound to tap events.
+    /// - Returns: The active presentation hierarchy for the detail view.
     private func actionButton(_ title: String, systemImage: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack {
@@ -131,6 +154,7 @@ struct MenuBarContentView: View {
 
     // MARK: - Actions
 
+    /// - Parameter screen: The targeted primary navigation endpoint.
     private func openTab(_ screen: AppViewModel.Screen) {
         appVM.currentScreen = screen
         openMainWindow()

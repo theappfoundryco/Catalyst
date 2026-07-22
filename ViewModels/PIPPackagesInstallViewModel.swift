@@ -2,13 +2,35 @@ import Foundation
 import SwiftUI
 import Combine
 
+/// A view model that orchestrates PyPI package searching and installation.
+///
+/// It hits the `NetworkConfig.APIEndpoint.pypiURL` prefix shards to perform debounced
+/// typeahead searching for pip packages, then executes `pip install` on the user-selected
+/// Python interpreter.
+///
+/// **Caveats:**
+/// - It accurately handles PEP 668 constraints by appending `--break-system-packages`
+///   when dealing with Python >= 3.12, ensuring installs don't fail mysteriously on macOS.
+///
+/// ```swift
+/// await vm.searchPackages()
+/// await vm.installPackage("requests")
+/// ```
 @MainActor
 final class PIPPackagesInstallViewModel: ObservableObject {
+    /// Discovered Python installations with a valid pip executable.
     @Published var availablePythonVersions: [PythonInstallation] = []
+    /// The interpreter that packages will be installed into.
     @Published var selectedPythonVersion: PythonInstallation?
+    
+    /// The raw text typed by the user.
     @Published var searchQuery: String = ""
+    /// The PyPI packages matching the search query.
     @Published var searchResults: [String] = []
+    /// Indicates if a search request is actively flying to the backend.
     @Published var isSearching = false
+    
+    /// The name of the package currently running through `pip install`.
     @Published var installingPackage: String?
     /// Streaming install output lives on its own `ConsoleOutput` so appending a
     /// chunk re-renders only the console card, not the whole package catalog +
@@ -19,8 +41,11 @@ final class PIPPackagesInstallViewModel: ObservableObject {
         get { console.text }
         set { console.set(newValue) }
     }
+    /// True after the first search is performed, allowing the UI to show "No results".
     @Published var hasSearched = false
+    /// The list of already installed packages for the selected python (to prevent double-installs).
     @Published var installedPackages: Set<String> = []
+    /// Indicates whether at least one pip-capable Python exists on the system.
     @Published var isPythonWithPipAvailable = false
     /// Short, user-facing error surfaced as a banner when an install fails (P3).
     @Published var installError: String?
@@ -40,6 +65,7 @@ final class PIPPackagesInstallViewModel: ObservableObject {
     private let logger: Logger
     private let baseURL = NetworkConfig.APIEndpoint.pypiURL
     
+    /// Defines an installable Python package candidate mapped to a PyPI registry entry.
     struct PackageItem: Codable {
         let name: String
         let fetched_at: String
@@ -50,10 +76,15 @@ final class PIPPackagesInstallViewModel: ObservableObject {
         self.logger = logger
     }
     
+    /// Refreshes the local installed package list when a user swaps interpreters.
     func onPythonVersionChange() async {
         await loadInstalledPackages()
     }
     
+    /// Resets search state and clears installation history.
+    ///
+    /// **Rationale:**
+    /// Ensures stale `searchResults` and `installationOutput` from a prior attempt do not flash when reopening the install sheet.
     func reset() async {
         searchQuery = ""
         searchResults = []
@@ -63,6 +94,10 @@ final class PIPPackagesInstallViewModel: ObservableObject {
         await loadPythonVersions()
     }
     
+    /// Populates ``availablePythonVersions`` via the central ``PythonService``.
+    ///
+    /// **Gotchas:**
+    /// Filters the global inventory to only retain environments where `.pipAvailable` is true.
     func loadPythonVersions() async {
         do {
             availablePythonVersions = try await pythonService.detectPythons()
@@ -83,11 +118,17 @@ final class PIPPackagesInstallViewModel: ObservableObject {
         }
     }
     
+    /// Verifies that pip operations are actually possible on the current system by checking the populated versions.
     func checkPrerequisites() async {
         isPythonWithPipAvailable = !availablePythonVersions.isEmpty
         logger.log("Prerequisites: Python/pip available = \(isPythonWithPipAvailable)")
     }
     
+    /// Loads the existing packages for `selectedPythonVersion` to prevent installing duplicates.
+    ///
+    /// **Flow:**
+    /// 1. Emits `pip list --format=freeze`.
+    /// 2. Splits output by `=` and downcases to build a fast-lookup `Set`.
     func loadInstalledPackages() async {
         guard let python = selectedPythonVersion else { return }
         
@@ -107,6 +148,13 @@ final class PIPPackagesInstallViewModel: ObservableObject {
         }
     }
     
+    /// Triggers a fetch to the Cloudflare PyPI shards to filter matching package names.
+    ///
+    /// **Flow:**
+    /// 1. Takes the first 2 characters of the user's query to hit the pre-computed static JSON shard.
+    /// 2. Downloads the shard containing all PyPI packages starting with that prefix.
+    /// 3. Performs a substring `.contains()` match locally.
+    /// 4. Caps results at 100 to prevent SwiftUI `LazyVStack` stutter.
     func searchPackages() async {
         guard !searchQuery.isEmpty else {
             searchResults = []
@@ -149,6 +197,15 @@ final class PIPPackagesInstallViewModel: ObservableObject {
         isSearching = false
     }
     
+    /// Executes a streaming `pip install` for the specified package against the chosen Python.
+    ///
+    /// **Flow:**
+    /// 1. Validates the Python version and sanitizes the target package name.
+    /// 2. Extracts `pipFlags` via ``InstallPreferences``, appending `--break-system-packages` if Python >= 3.12 (PEP 668).
+    /// 3. Streams stdout/stderr directly into ``installationOutput`` via a blocking shell execution.
+    /// 4. On success, reloads the `installedPackages` set.
+    ///
+    /// - Parameter packageName: The PyPI package name to install.
     func installPackage(_ packageName: String) async {
         installError = nil
 
@@ -203,6 +260,7 @@ final class PIPPackagesInstallViewModel: ObservableObject {
         installingPackage = nil
     }
     
+    /// Clears the streaming console output view for the next operation.
     func clearOutput() {
         installationOutput = ""
     }

@@ -25,6 +25,7 @@ struct AppInfoResponse: Codable {
     /// A dictionary encompassing historic and active release cycles mapped to distinct structural changes.
     let versions: [String: VersionInfo]
     
+    /// JSON mapping keys for the root metadata layer.
     enum CodingKeys: String, CodingKey {
         case appName = "app_name"
         case bugReport = "bug_report"
@@ -45,6 +46,7 @@ struct VersionInfo: Codable {
     /// Hardware specifications strictly necessary for system deployment.
     let requirements: String
     
+    /// JSON mapping keys for version-specific payload attributes.
     enum CodingKeys: String, CodingKey {
         case releaseDate = "release_date"
         case tagline, highlights, requirements

@@ -1,7 +1,12 @@
 import SwiftUI
 import Combine
-
+/// A view dedicated to searching and installing Homebrew formulae and casks.
+///
+/// ```swift
+/// FormulaeCaskInstallView(viewModel: installViewModel)
+/// ```
 struct FormulaeCaskInstallView: View {
+    /// Differentiates between a Homebrew core formula and a GUI application cask.
     enum InstallType {
         case formulae
         case casks
@@ -117,7 +122,7 @@ struct FormulaeCaskInstallView: View {
                         }
                     }
                     .frame(maxHeight: 400)
-                    .scrollBounceBehavior(.basedOnSize) // toAvoid.md Rule 1
+                    .scrollBounceBehavior(.basedOnSize) // ANTI_PATTERNS.md Rule 1
                 } else {
                     // Initial State
                     EmptyStateView(icon: "magnifyingglass", message: "Search using the bar above")
@@ -184,7 +189,7 @@ struct FormulaeCaskInstallView: View {
                         }
                     }
                     .frame(maxHeight: 400)
-                    .scrollBounceBehavior(.basedOnSize) // toAvoid.md Rule 1
+                    .scrollBounceBehavior(.basedOnSize) // ANTI_PATTERNS.md Rule 1
                 } else {
                     // Initial State
                     EmptyStateView(icon: "magnifyingglass", message: "Search using the bar above")

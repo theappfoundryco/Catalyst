@@ -3,11 +3,17 @@ import Foundation
 /// Pure parsing of `requirements.txt` package names plus PEP 503 name
 /// normalization. Extracted from `VirtualEnvCreationViewModel` (R1) so the logic
 /// is testable in isolation and reusable by the verifier.
+///
+/// ```swift
+/// let packages = RequirementsParser.names(from: "requests>=2.0\npytest")
+/// ```
 enum RequirementsParser {
 
     /// Normalized package names from a `requirements.txt` body. Skips
     /// comment/blank/option/URL/VCS lines and strips inline comments, environment
     /// markers, extras, and version specifiers.
+    /// - Parameter contents: The complete multiline raw dependency specification text.
+    /// - Returns: An array containing isolated package identifiers without version constraints.
     static func names(from contents: String) -> [String] {
         contents.components(separatedBy: .newlines)
             .map { $0.trimmingCharacters(in: .whitespaces) }
@@ -30,6 +36,8 @@ enum RequirementsParser {
     }
 
     /// PEP 503-style normalization: lowercase and replace `_`/`.` with `-`.
+    /// - Parameter name: The raw unformatted string parsed from the configuration.
+    /// - Returns: A sanitized representation matching standardized Python registry format.
     static func normalize(_ name: String) -> String {
         name.lowercased()
             .replacingOccurrences(of: "_", with: "-")

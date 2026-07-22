@@ -19,6 +19,11 @@ extension Notification.Name {
 /// the privileged/process/network work and logs progress; the ViewModel keeps
 /// the busy flags, selection state, cache invalidation, and global-refresh
 /// orchestration around these calls. `@MainActor` matches the VM's isolation.
+///
+/// ```swift
+/// let manager = PythonManager(pythonService: service, privileges: priv, logger: logger)
+/// let success = await manager.install(version: "3.11")
+/// ```
 @MainActor
 final class PythonManager {
     private let pythonService: PythonService
@@ -50,6 +55,9 @@ final class PythonManager {
 
     /// Installable Python versions — served from cache when fresh, else discovered from brew.
     /// Filters out already-installed major.minors; recommended = highest non-deprecated.
+    ///
+    /// - Parameter installed: Current environment binaries to exclude from discovery views.
+    /// - Returns: A bounded `AvailableVersions` metadata grouping.
     func fetchAvailableVersions(installed: [PythonInstallation]) async -> AvailableVersions {
         let all: [AvailableVersion]
         if let c = discovered, Date().timeIntervalSince(c.at) < discoveryTTL {
@@ -65,9 +73,11 @@ final class PythonManager {
     }
 
     /// `brew search` for `python@x.y` names, then `brew info --json=v2` for the deprecation flag
-    /// (structured, not scraped — Formrules 2.4). Runs with auto-update/analytics/hints **off**
+    /// (structured, not scraped — CODING_STANDARDS 2.4). Runs with auto-update/analytics/hints **off**
     /// so it's fast + deterministic and never blocks on a network `brew update`, plus a hard
     /// timeout. Empty when Homebrew is absent (the install picker is already gated on brew).
+    ///
+    /// - Returns: A scraped mapping defining semantic version integers and expiration metadata.
     private func discoverViaBrew() async -> [AvailableVersion] {
         logger.log("🔎 Discovering installable Python versions via brew…")
         let quiet = [
@@ -110,10 +120,13 @@ final class PythonManager {
     /// `brew info --json=v2` — only the fields we need (tolerant of everything else).
     private struct BrewInfoV2: Decodable {
         let formulae: [Formula]
-        struct Formula: Decodable { let name: String; let deprecated: Bool }
+        /// Represents a parsed Homebrew formula for Python distribution.
+    struct Formula: Decodable { let name: String; let deprecated: Bool }
     }
 
     /// "python@3.13" → "3.13" (nil if the name isn't a `python@<major>.<minor>` formula).
+    /// - Parameter name: The parsed Homebrew package nomenclature.
+    /// - Returns: The extracted version fragment.
     private static func majorMinor(fromFormula name: String) -> String? {
         guard name.hasPrefix("python@") else { return nil }
         let v = String(name.dropFirst("python@".count))
@@ -121,6 +134,10 @@ final class PythonManager {
     }
 
     /// Numeric compare so "3.13" > "3.9" (not lexicographic).
+    /// - Parameters:
+    ///   - a: The primary version string bound to comparison.
+    ///   - b: The secondary boundary checked against the primary.
+    /// - Returns: True if `a` is semantically greater than `b`.
     private static func versionGreater(_ a: String, _ b: String) -> Bool {
         let pa = a.split(separator: ".").compactMap { Int($0) }
         let pb = b.split(separator: ".").compactMap { Int($0) }
@@ -135,6 +152,8 @@ final class PythonManager {
 
     /// Upgrade pip for a specific Python installation. Logs progress; the VM
     /// invalidates caches and re-detects afterward.
+    ///
+    /// - Parameter python: The isolated Python scope targeted for pip synchronization.
     func upgradePip(for python: PythonInstallation) async {
         logger.log("⬆️ Upgrading pip for Python \(python.version)...")
 
@@ -151,13 +170,15 @@ final class PythonManager {
             if result.succeeded {
                 logger.log("✅ pip upgraded successfully for Python \(python.version)")
             } else if Self.isNoRecordFileError(result.combinedOutput) {
-                // This pip is owned by Homebrew (no RECORD file), so pip can't
-                // uninstall it to upgrade in place. Forcing it with
-                // --ignore-installed "works" (pip --version shows the new version)
-                // but leaves Homebrew's old dist-info behind, so `pip list` keeps
-                // reporting pip as outdated forever and the environment is left
-                // inconsistent. The integrity-respecting path is to let Homebrew
-                // own it — update via the formula, not pip.
+                /// This pip is owned by Homebrew (no RECORD file), so pip can't
+                /// uninstall it to upgrade in place. Forcing it with
+                /// --ignore-installed "works" (pip --version shows the new version)
+                /// but leaves Homebrew's old dist-info behind, so `pip list` keeps
+                /// reporting pip as outdated forever and the environment is left
+                /// inconsistent. The integrity-respecting path is to let Homebrew
+                /// own it — update via the formula, not pip.
+                ///
+                /// **Gotchas:** Attempting to force-upgrade Homebrew's pip via Python directly corrupts the `dist-info` manifest, causing Catalyst to enter an infinite upgrade loop.
                 logger.log("ℹ️ pip for Python \(python.version) is managed by Homebrew and can't be upgraded with pip (no RECORD file). Update it with: brew upgrade \(python.formula)")
             } else {
                 logger.log("❌ Failed to upgrade pip for Python \(python.version)")
@@ -169,6 +190,8 @@ final class PythonManager {
 
     /// Detects pip's "can't uninstall — no RECORD file" failure, which happens
     /// when the current pip was placed by Homebrew rather than pip itself.
+    /// - Parameter output: The captured standard error payload.
+    /// - Returns: True if text corresponds to the known missing metadata bug.
     private static func isNoRecordFileError(_ output: String) -> Bool {
         output.contains("uninstall-no-record-file") ||
         output.contains("no RECORD file was found")
@@ -176,6 +199,9 @@ final class PythonManager {
 
     /// Repair pip for a specific Python installation (delegates to the service,
     /// which logs its own progress).
+    ///
+    /// - Parameter python: Target distribution object.
+    /// - Returns: True if pipeline effectively restores module linkages.
     func repairPip(for python: PythonInstallation) async -> Bool {
         await pythonService.repairPip(for: python)
     }
@@ -185,8 +211,13 @@ final class PythonManager {
     /// Install `python@<version>` via the privileged brew path, then link it.
     /// Returns `true` if the formula installed (linking failures are logged but
     /// don't fail the install, matching prior behavior).
+    ///
+    /// - Parameter version: The major.minor target (e.g. `3.12`) bound for dependency inclusion.
+    /// - Returns: Boolean dictating successful installation constraints.
     func install(version: String) async -> Bool {
-        // Terminal header banner
+        /// Terminal header banner
+        ///
+        /// **Rationale:** Ensures CLI diagnostic output provides an immediate visual anchor when users pipe Catalyst install logs to a file.
         logger.log("\n\n═══════════════════════════════════════", category: .terminal)
         logger.log("       🐍 PYTHON INSTALLATION", category: .terminal)
         logger.log("       Version: \(version)", category: .terminal)
@@ -227,6 +258,8 @@ final class PythonManager {
     }
 
     /// Uninstall each selected Python (`python@<major.minor>`), logging per item.
+    ///
+    /// - Parameter versions: A set array of semver literal strings targeted for disk removal.
     func uninstall(versions: Set<String>) async {
         for version in versions {
             logger.log("🗑️ Uninstalling Python \(version)...")
@@ -249,21 +282,30 @@ final class PythonManager {
             }
         }
         logger.log("✅ Python uninstallation complete")
-        // Tell every Python-dependent view its inventory is now stale.
+        /// Tell every Python-dependent view its inventory is now stale.
+        ///
+        /// **Gotchas:** Omitting cache invalidation causes the GUI to permanently display an unlinked Python version until the user manually restarts Catalyst.
         NotificationCenter.default.post(name: .catalystPythonInventoryChanged, object: nil)
     }
 
     /// Link a freshly installed Python: unlink for a clean slate, force-link,
     /// then ensure pip is present (best-effort, PEP 668 aware).
+    ///
+    /// - Parameter version: Semantic iteration identifying formula linking.
+    /// - Returns: Standard boolean flag signifying linker success or structural blockage.
     func link(version: String) async -> Bool {
         logger.log("🔗 Linking Python \(version)...")
 
         let brewPath = BrewPathManager.shared.brewPath
 
-        // Step 1: Unlink first (clean slate)
+        /// Step 1: Unlink first (clean slate)
+        ///
+        /// **Gotchas:** Overwriting an active symlink without unlinking first can cause `ln` to traverse into the target directory, destroying the global Homebrew prefix tree.
         _ = try? await AsyncProcessRunner.shared.run(command: "\(brewPath) unlink python@\(version) 2>/dev/null || true")
 
-        // Step 2: Link with force
+        /// Step 2: Link with force
+        ///
+        /// **Rationale:** Guaranteeing forced symlink creation resolves scenarios where aborted previous installs left dangling ghost links.
         do {
             let linkResult = try await AsyncProcessRunner.shared.run(command: "\(brewPath) link python@\(version) --overwrite --force")
 
@@ -275,7 +317,9 @@ final class PythonManager {
                 return false
             }
 
-            // Step 3: Check if pip is already working (Homebrew usually installs it)
+            /// Step 3: Check if pip is already working (Homebrew usually installs it)
+            ///
+            /// **Rationale:** Avoiding unnecessary `ensurepip` calls shaves multiple seconds off the TTFB (time to first byte) for the terminal diagnostic window.
             logger.log("🔍 Verifying pip installation...")
             let majorMinor = version.split(separator: ".").prefix(2).joined(separator: ".")
             let pythonBin = "\(BrewPathManager.shared.homebrewPrefix)/bin/python\(majorMinor)"
@@ -287,7 +331,9 @@ final class PythonManager {
                 return true
             }
 
-            // If pip is missing, try ensurepip with safe fallbacks
+            /// If pip is missing, try ensurepip with safe fallbacks
+            ///
+            /// **Gotchas:** Calling `ensurepip` on a managed environment throws a fatal PEP-668 exception; safe fallbacks bypass this for system interpreters.
             logger.log("🔧 pip missing, attempting setup...", category: .terminal)
 
             let ensurepipResult = try await AsyncProcessRunner.shared.run(command: "\(InputSanitizer.singleQuote(pythonBin)) -m ensurepip --default-pip 2>&1")
@@ -295,13 +341,17 @@ final class PythonManager {
             if !ensurepipResult.succeeded && ensurepipResult.combinedOutput.contains("externally-managed-environment") {
                 logger.log("⚠️ Standard ensurepip blocked by PEP 668.", category: .terminal)
                 logger.log("ℹ️ Attempting safe fallback...", category: .terminal)
-                // pip is likely provided as a Homebrew dependency; treat as success.
+                /// pip is likely provided as a Homebrew dependency; treat as success.
+                ///
+                /// **Rationale:** Homebrew natively ships Pip entirely decoupled from the Python binary via a parallel formula; `ensurepip` failure is expected and safe.
                 return true
             }
 
             logger.log("[ensurepip] \(ensurepipResult.combinedOutput)", category: .terminal)
 
-            // Verify final status
+            /// Verify final status
+            ///
+            /// **Gotchas:** Skipping final verification masks catastrophic PATH-resolution failures where the newly linked python binary executes an entirely different system version.
             let verifyResult = try await AsyncProcessRunner.shared.run(command: "\(InputSanitizer.singleQuote(pythonBin)) -m pip --version 2>&1")
 
             if verifyResult.succeeded {

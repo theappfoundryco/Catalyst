@@ -1,6 +1,12 @@
 import Foundation
 
 /// A local storage registry preserving diagnostic scan aggregations to trace temporal health variations.
+///
+/// ```swift
+/// let store = HealthHistoryStore()
+/// store.saveSnapshot(issues)
+/// let history = store.loadHistory()
+/// ```
 struct HealthHistoryStore {
     private let fileURL: URL
     
@@ -12,6 +18,9 @@ struct HealthHistoryStore {
     }
     
     /// Saves a new health snapshot to the local history store based on the active scan results.
+    ///
+    /// **Gotchas:**
+    /// Snapshots are debounced by calendar day. A subsequent save on the exact same day overwrites the existing daily snapshot, preventing automatic remediation sweeps from filling the 30-day capacity in one afternoon.
     ///
     /// - Parameter issues: The array of `HealthIssue` objects detected during the current scan.
     func saveSnapshot(_ issues: [HealthIssue]) {
@@ -27,10 +36,11 @@ struct HealthHistoryStore {
         
         var history = loadHistory()
 
-        // Debounce: keep at most one snapshot per calendar day. `fix()` re-scans
-        // after every auto-fix, which previously wrote many snapshots minutes
-        // apart and evicted real daily history under the 30-entry cap. Same day →
-        // update in place; new day → append.
+        /// Debounce: keep at most one snapshot per calendar day. `fix()` re-scans
+        /// after every auto-fix, which previously wrote many snapshots minutes
+        /// apart, flooding the chart with redundant data points.
+        ///
+        /// **Rationale:** Prevents UI thrashing on the frontend charts by enforcing strict daily aggregations of health states.
         if let last = history.last, Calendar.current.isDate(last.date, inSameDayAs: snapshot.date) {
             history[history.count - 1] = snapshot
         } else {
@@ -55,12 +65,18 @@ struct HealthHistoryStore {
         return history.sorted { $0.date < $1.date }
     }
     
+    /// Maps the list of active issues into a single score out of 100 via multiplicative decay.
+    ///
+    /// - Parameter issues: The active `HealthIssue` list.
+    /// - Returns: A bounded integer score [0, 100].
     private func calculateScore(issues: [HealthIssue]) -> Int {
-        // Multiplicative decay rather than additive `100 − Σweight`. The old model
-        // saturated to 0 at ~5 criticals, so a bad machine and a catastrophic one
-        // both read "0" with no resolution. Decay degrades smoothly and asymptotes
-        // toward 0, staying meaningful at the bad end. Severity sets the per-issue
-        // factor (critical hits hardest).
+        /// Multiplicative decay rather than additive `100 − Σweight`. The old model
+        /// saturated to 0 at ~5 criticals, so a bad machine and a catastrophic one
+        /// both read "0" with no resolution. Decay degrades smoothly and asymptotes
+        /// toward 0, staying meaningful at the bad end. Severity sets the per-issue
+        /// factor (critical hits hardest).
+        ///
+        /// **Rationale:** Exponential decay algorithms natively preserve mathematical differentiation in the UI even when the environment is profoundly corrupted.
         let criticals = issues.filter { $0.severity == .critical }.count
         let warnings  = issues.filter { $0.severity == .warning }.count
         let infos     = issues.filter { $0.severity == .info }.count

@@ -1,17 +1,16 @@
-//
-//  AppInfoCenter.swift
-//  Catalyst
-//
-//  A modular info system: an `InfoDot` (ⓘ) can be dropped anywhere with a topic.
-//  Clicking it shows a quick popover; "Learn more" opens ONE shared, topic-
-//  switched sheet (`AppInfoSheet`) attached at the app root. All explainer copy
-//  lives here as the single source of truth.
-//
+/// A modular info system: an `InfoDot` (ⓘ) can be dropped anywhere with a topic.
+/// Clicking it shows a quick popover; "Learn more" opens ONE shared, topic-
+/// switched sheet (`AppInfoSheet`) attached at the app root. All explainer copy
+/// lives here as the single source of truth.
 
 import SwiftUI
 import Combine
 
 /// A documentation topic surfaced by `InfoDot` and the shared info sheet.
+///
+/// ```swift
+/// let topic: InfoTopic = .pep668
+/// ```
 enum InfoTopic: String, CaseIterable, Identifiable {
     case installModes
     case pep668
@@ -98,15 +97,25 @@ enum InfoTopic: String, CaseIterable, Identifiable {
 
 /// App-wide coordinator for the shared info sheet. Any `InfoDot` calls
 /// `present(_:)`; the root view presents `AppInfoSheet` bound to `topic`.
+///
+/// ```swift
+/// InfoCenter.shared.present(.pep668)
+/// ```
 @MainActor
 final class InfoCenter: ObservableObject {
     static let shared = InfoCenter()
     @Published var topic: InfoTopic?
     private init() {}
+    /// Activates the info sheet for the specified diagnostic topic.
+    /// - Parameter topic: The static documentation view configured for display.
     func present(_ topic: InfoTopic) { self.topic = topic }
 }
 
 /// A small ⓘ button. Tap → quick popover summary; "Learn more" → shared sheet.
+///
+/// ```swift
+/// InfoDot(topic: .pep668)
+/// ```
 struct InfoDot: View {
     let topic: InfoTopic
     @State private var showPopover = false
@@ -142,6 +151,10 @@ struct InfoDot: View {
 
 /// The single shared info sheet with a segmented topic switcher, deep-linked to
 /// whichever topic opened it.
+///
+/// ```swift
+/// AppInfoSheet(initialTopic: .pep668)
+/// ```
 struct AppInfoSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var selected: InfoTopic

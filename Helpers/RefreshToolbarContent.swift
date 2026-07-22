@@ -1,10 +1,5 @@
-//
-//  RefreshToolbarContent.swift
-//  Catalyst
-//
-//  Shared toolbar refresh button used across views that follow the
-//  "spinner while loading, otherwise refresh button" pattern.
-//
+/// Shared toolbar refresh button used across views that follow the
+/// "spinner while loading, otherwise refresh button" pattern.
 
 import SwiftUI
 

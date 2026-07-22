@@ -9,6 +9,11 @@ struct ArchitectureDoctor: Doctor {
 
     /// Executes the primary scanning routine validating environmental hardware translation and package manager allocations.
     ///
+    /// **Flow:**
+    /// 1. Queries `sysctl` for Apple Silicon indicators (`hw.optional.arm64`).
+    /// 2. Checks translation flags indicating Rosetta 2 activity.
+    /// 3. Cross-references the active Homebrew path to detect x86 prefixes on ARM chips.
+    ///
     /// - Returns: An array of `HealthIssue` objects representing detected architectural conflicts or performance concerns.
     func run() async -> [HealthIssue] {
         var issues: [HealthIssue] = []
@@ -40,11 +45,13 @@ struct ArchitectureDoctor: Doctor {
         return issues
     }
     
+    /// Queries `sysctl` to determine if the host CPU is Apple Silicon (arm64).
     private func checkForAppleSilicon() async -> Bool {
         let res = try? await AsyncProcessRunner.shared.run(command: "sysctl -n hw.optional.arm64")
         return res?.stdout.trimmingCharacters(in: .whitespacesAndNewlines) == "1"
     }
     
+    /// Queries `sysctl` to determine if the active process is currently running under Rosetta 2 translation.
     private func checkForRosetta() async -> Bool {
         let res = try? await AsyncProcessRunner.shared.run(command: "sysctl -n sysctl.proc_translated")
         return res?.stdout.trimmingCharacters(in: .whitespacesAndNewlines) == "1"
@@ -52,8 +59,11 @@ struct ArchitectureDoctor: Doctor {
     
     /// Attempts to programmatically remediate architectural discrepancies.
     ///
+    /// **Gotchas:**
+    /// Architectural boundaries are immutable at runtime. Fixing them typically requires the user to reinstall binaries or switch terminal environments entirely.
+    ///
     /// - Parameter issue: The specific architectural issue requested for remediation.
-    /// - Returns: A boolean indicating whether the auto-fix was successful (always false for architectural issues).
+    /// - Returns: A boolean indicating whether the auto-fix was successful (always `false` for architectural issues).
     func fix(_ issue: HealthIssue) async -> Bool {
         return false
     }

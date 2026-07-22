@@ -1,9 +1,14 @@
 import SwiftUI
-
+/// A view for discovering and applying updates to installed Homebrew formulae and casks.
+///
+/// ```swift
+/// OutdatedBrewView(vm: outdatedBrewViewModel)
+/// ```
 struct OutdatedBrewView: View {
     @ObservedObject var vm: OutdatedBrewViewModel
     @State private var selectedFilter: BrewFilter = .all
     
+    /// Controls the active subset view of outdated Homebrew packages.
     enum BrewFilter: String, CaseIterable {
         case all = "All"
         case formula = "Formulae"

@@ -1,12 +1,12 @@
-//
-//  ResultDisclosureGroup.swift
-//  Catalyst
-//
-//  Centralized success/failed package result disclosure groups.
-//
+/// Centralized success/failed package result disclosure groups.
+
 import SwiftUI
 
 /// The result status of a package operation, determining the color and icon.
+///
+/// ```swift
+/// let status: ResultStatus = .success
+/// ```
 enum ResultStatus {
     /// Green checkmark — operation succeeded.
     case success
@@ -102,7 +102,7 @@ struct ResultDisclosureGroup: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .frame(maxHeight: maxHeight)
-            .scrollBounceBehavior(.basedOnSize) // toAvoid.md Rule 1
+            .scrollBounceBehavior(.basedOnSize) // ANTI_PATTERNS.md Rule 1
             .padding(8)
             .background(
                 RoundedRectangle(cornerRadius: 6)

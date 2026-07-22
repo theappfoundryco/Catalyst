@@ -9,11 +9,16 @@ struct JavaDoctor: Doctor, AvailabilityCheckable {
 
     /// Verifies if the Java runtime is available using the macOS `java_home` utility.
     ///
+    /// **Flow:**
+    /// 1. Executes `/usr/libexec/java_home` in a login shell, bypassing Xcode stub prompts.
+    ///
     /// - Returns: A boolean indicating if a valid JDK is installed.
     func checkAvailability() async -> Bool {
         do {
-            // On macOS, `which java` always returns /usr/bin/java (the stub), so it's a bad check for existence.
-            // `/usr/libexec/java_home` will exit with 1 if no JDK is found.
+            /// On macOS, `which java` always returns /usr/bin/java (the stub), so it's a bad check for existence.
+            /// `/usr/libexec/java_home` will exit with 1 if no JDK is found.
+            ///
+            /// **Gotchas:** Shelling directly to the `java` binary invokes an invisible macOS shim that blocks the main actor thread waiting for user GUI interaction.
              let res = try await AsyncProcessRunner.shared.run(command: "/usr/libexec/java_home", useLoginShell: true)
              return res.succeeded
         } catch {
@@ -23,16 +28,25 @@ struct JavaDoctor: Doctor, AvailabilityCheckable {
     
     /// Executes comprehensive Java environment checks.
     ///
+    /// **Flow:**
+    /// 1. Extracts the active `java -version` string footprint.
+    /// 2. Inspects `JAVA_HOME` validity and ensures it points to an existing directory.
+    /// 3. Cross-references `/usr/libexec/java_home -V` to identify environments containing more than 3 installed JDKs.
+    ///
     /// - Returns: An array of `HealthIssue` issues detailing JDK chaos, missing paths, or missing runtimes.
     func run() async -> [HealthIssue] {
         var issues: [HealthIssue] = []
         
-        // 1. Check current java version
+        /// 1. Check current java version
+        ///
+        /// **Rationale:** Resolving the active JDK string verifies that terminal environment overrides (like jenv) actually map to executing binaries.
         var currentJavaVersion = ""
         do {
             let res = try await AsyncProcessRunner.shared.run(command: "java -version 2>&1 | head -n 1") // Stderr has the version often
             if res.succeeded {
-                // Output format usually: openjdk version "11.0.12" 2021-07-20
+                /// Output format usually: openjdk version "11.0.12" 2021-07-20
+                ///
+                /// **Gotchas:** Oracle and OpenJDK constantly change string outputs. Safely tokenizing by double-quotes isolates the exact semantic version.
                 if let version = res.stdout.components(separatedBy: "\"").dropFirst().first {
                     currentJavaVersion = String(version)
                 } else {
@@ -49,7 +63,9 @@ struct JavaDoctor: Doctor, AvailabilityCheckable {
             }
         } catch {}
         
-        // 2. Check JAVA_HOME
+        /// 2. Check JAVA_HOME
+        ///
+        /// **Rationale:** Tools like Maven and Gradle explicitly read `JAVA_HOME` natively, completely ignoring whatever `java` binary is in the `PATH`.
         var javaHome = ""
         do {
              let res = try await AsyncProcessRunner.shared.run(command: "echo $JAVA_HOME")
@@ -64,7 +80,9 @@ struct JavaDoctor: Doctor, AvailabilityCheckable {
                     autoFixAvailable: false // We could fix, but picking WHICH java is hard
                 ))
              } else {
-                 // Check validity
+                 /// Check validity
+                 ///
+                 /// **Gotchas:** A dangling `JAVA_HOME` symlink causes instantaneous compilation failure in Xcode and Android Studio.
                  var isDir = ObjCBool(false)
                  if !FileManager.default.fileExists(atPath: javaHome, isDirectory: &isDir) || !isDir.boolValue {
                       issues.append(HealthIssue(
@@ -76,26 +94,34 @@ struct JavaDoctor: Doctor, AvailabilityCheckable {
                     ))
                  }
                  
-                 // Check mismatch with active java
-                 // If JAVA_HOME is set, `java` should usually match it.
-                 // Heuristic: Does `java` path match `JAVA_HOME/bin/java`?
+                 /// Check mismatch with active java
+                 /// If JAVA_HOME is set, `java` should usually match it.
+                 /// Heuristic: Does `java` path match `JAVA_HOME/bin/java`?
+                 ///
+                 /// **Rationale:** Identifying mismatches stops the classic "it runs in terminal but fails in the IDE" synchronization bug.
                  let whichJava = try await AsyncProcessRunner.shared.run(command: "which java")
                  let javaPath = whichJava.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
                  
-                 // If java is /usr/bin/java (macOS stubs), it delegates to /usr/libexec/java_home
-                 // A mismatch is cleaner to check by version string, but versions are parsed weirdly.
-                 // Let's check if the JAVA_HOME string appears in the verbose output of java?
-                 // Or easier: check if `JAVA_HOME/bin/java -version` == `java -version`
+                 /// If java is /usr/bin/java (macOS stubs), it delegates to /usr/libexec/java_home
+                 /// A mismatch is cleaner to check by version string, but versions are parsed weirdly.
+                 /// Let's check if the JAVA_HOME string appears in the verbose output of java?
+                 /// Or easier: check if `JAVA_HOME/bin/java -version` == `java -version`
+                 ///
+                 /// **Gotchas:** Calling `java -version` intrinsically relies on standard error streams (`stderr`), breaking normal `stdout` pipeline parsers.
              }
         } catch {}
         
-        // 3. Detect Multiple JDKs (Chaos)
-        // Command: /usr/libexec/java_home -V
+        /// 3. Detect Multiple JDKs (Chaos)
+        /// Command: /usr/libexec/java_home -V
+        ///
+        /// **Rationale:** Surfacing excessive JDK installations prompts developers to clean their environment, speeding up Gradle indexing operations.
         do {
             let res = try await AsyncProcessRunner.shared.run(command: "/usr/libexec/java_home -V")
             if res.succeeded {
                 let lines = res.stderr.components(separatedBy: .newlines) // -V writes to stderr
-                // Count lines starting with spaces (versions)
+                /// Count lines starting with spaces (versions)
+                ///
+                /// **Gotchas:** The `-V` flag output natively formats multiple versions as un-keyed lists padded entirely by variable whitespace logic.
                 let installedCount = lines.filter({ $0.trimmingCharacters(in: .whitespaces).first?.isNumber ?? false }).count
                 
                 if installedCount > 3 {
@@ -114,6 +140,9 @@ struct JavaDoctor: Doctor, AvailabilityCheckable {
     }
     
     /// Attempts to resolve Java environment issues.
+    ///
+    /// **Gotchas:**
+    /// Modifying `JAVA_HOME` programmatically is fragile across `.zprofile`, `.zshrc`, and `.bash_profile`. Remediation is left to the user.
     ///
     /// - Parameter issue: The Java configuration issue to address.
     /// - Returns: A boolean indicating whether the remediation was successful.

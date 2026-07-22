@@ -14,6 +14,11 @@ enum PrivilegeError: Error {
 ///
 /// `PrivilegesService` wraps `osascript` to prompt for system administrator credentials
 /// and executes sensitive commands securely, such as modifying package paths or installing core toolchains.
+///
+/// ```swift
+/// let privileges = PrivilegesService(logger: logger)
+/// let (success, output) = try await privileges.runWithPrivileges(command: "rm -rf /opt/homebrew/Caches")
+/// ```
 final class PrivilegesService {
     private let logger: Logger
 
@@ -37,6 +42,9 @@ final class PrivilegesService {
     /// Forgets the admin credential — both the in-memory copy and the durable
     /// Keychain item. Call after a known password change (the stored one no
     /// longer works). The next privileged action will prompt again and re-store.
+    ///
+    /// **Gotchas:**
+    /// Triggers `AdminCredentialStore.clear()` which irrecoverably dumps the persistent keychain node.
     func invalidateCredentials() {
         credentialGate.lock()
         cachedPassword = nil
@@ -93,15 +101,19 @@ final class PrivilegesService {
             FileManager.default.homeDirectoryForCurrentUser.path + "/Downloads"
         ]
 
-        // Allowlist wins: explicit safe areas are permitted even when nested
-        // under a broader blocked prefix (e.g. ~/Library/Caches/Homebrew).
+        /// Allowlist wins: explicit safe areas are permitted even when nested
+        /// under a broader blocked prefix (e.g. ~/Library/Caches/Homebrew).
+        ///
+        /// **Rationale:** Guarantees that global security filters don't inadvertently block localized Catalyst operations that are mathematically proven to be safe.
         for area in safeAreas {
             if expandedPath == area || expandedPath.hasPrefix(area + "/") {
                 return true
             }
         }
 
-        // Otherwise reject anything inside a protected location.
+        /// Otherwise reject anything inside a protected location.
+        ///
+        /// **Gotchas:** Apple strictly enforces SIP (System Integrity Protection) on root domains; blindly permitting mutations there causes silent `EPERM` kernel drops.
         for blocked in blockedPrefixes {
             if expandedPath == blocked || expandedPath.hasPrefix(blocked + "/") {
                 logger.log("⚠️ Path rejected (protected location): \(expandedPath)")
@@ -124,9 +136,11 @@ final class PrivilegesService {
     /// - Returns: A tuple encompassing the execution success metric and the output buffer.
     /// - Throws: A `PrivilegeError` encoding the cancellation or failure root cause.
     func runWithPrivileges(command: String) async throws -> (success: Bool, output: String) {
-        // Preferred path: a registered privileged helper runs the command over
-        // XPC with no prompt. Falls through to the password flow if it's off or
-        // not installed.
+        /// Preferred path: a registered privileged helper runs the command over
+        /// XPC with no prompt. Falls through to the password flow if it's off or
+        /// not installed.
+        ///
+        /// **Rationale:** Apple natively encourages XPC helper daemons to offload privileged execution contexts entirely from the application's primary memory space.
         if preferPrivilegedHelper, PrivilegedHelperManager.shared.isInstalled {
             do {
                 let (code, output) = try await PrivilegedHelperManager.shared.runShell(command)
@@ -148,7 +162,9 @@ final class PrivilegesService {
 
         var result = try await runSudo(command: command, password: password)
 
-        // A stale/rejected credential: forget it, prompt once, and retry.
+        /// A stale/rejected credential: forget it, prompt once, and retry.
+        ///
+        /// **Rationale:** Prevents Catalyst from entering a deadlocked infinite authentication loop if the user fundamentally changes their root password during the session.
         if result.authFailed {
             logger.log("🔐 Cached credential rejected — re-requesting")
             invalidateCredentials()
@@ -172,15 +188,20 @@ final class PrivilegesService {
     /// this session's memory, then from the on-device Keychain (a prior launch).
     /// Only if neither exists does it prompt, validate, and persist. Retries the
     /// dialog up to 3 times on an incorrect entry.
+    ///
+    /// - Returns: The strictly verified textual password.
+    /// - Throws: A `PrivilegeError.failed` or `.cancelled` enum on failure thresholds.
     private func ensureCredential() async throws -> String {
         credentialGate.lock()
         let existing = cachedPassword
         credentialGate.unlock()
         if let existing { return existing }
 
-        // Persisted from a previous launch — reuse silently. If it's stale, the
-        // caller's authFailed path clears it (via invalidateCredentials) and
-        // routes back here to prompt fresh.
+        /// Persisted from a previous launch — reuse silently. If it's stale, the
+        /// caller's authFailed path clears it (via invalidateCredentials) and
+        /// routes back here to prompt fresh.
+        ///
+        /// **Rationale:** Maximizes developer velocity by caching SUDO authentication payloads, bypassing repetitive GUI modal disruptions across app launches.
         if let stored = AdminCredentialStore.load() {
             credentialGate.lock()
             cachedPassword = stored
@@ -204,6 +225,10 @@ final class PrivilegesService {
     }
 
     /// Presents the secure password dialog and returns the entered text.
+    ///
+    /// - Parameter retry: Boolean adjusting the AppleScript layout to signal an incorrect initial attempt.
+    /// - Returns: The extracted password block from the interactive UI.
+    /// - Throws: `PrivilegeError.cancelled` on non-zero `osascript` exits.
     private func promptForPassword(retry: Bool) async throws -> String {
         let message = retry
             ? "That password didn't work. Please try again."
@@ -229,7 +254,9 @@ final class PrivilegesService {
                 if proc.terminationStatus == 0 {
                     continuation.resume(returning: out.trimmingCharacters(in: .whitespacesAndNewlines))
                 } else {
-                    // Non-zero from osascript here means the user pressed Cancel.
+                    /// Non-zero from osascript here means the user pressed Cancel.
+                    ///
+                    /// **Gotchas:** AppleScript translates UI cancellations into raw error codes; distinguishing this from an actual script syntax error prevents false "failure" analytics.
                     continuation.resume(throwing: PrivilegeError.cancelled)
                 }
             }
@@ -242,6 +269,9 @@ final class PrivilegesService {
     }
 
     /// Validates a password by priming sudo's timestamp (`sudo -S -v`).
+    ///
+    /// - Parameter password: The plaintext credential buffer.
+    /// - Returns: True if successfully authorized without an authentication failure.
     private func passwordIsValid(_ password: String) async -> Bool {
         guard let result = try? await runSudo(command: "-v", password: password, validateOnly: true) else {
             return false
@@ -249,11 +279,19 @@ final class PrivilegesService {
         return result.success && !result.authFailed
     }
 
+    /// Wraps the execution result of an elevated process call.
     private struct SudoResult { let success: Bool; let output: String; let exitCode: Int32; let authFailed: Bool }
 
     /// Runs `sudo -S` with the password piped on stdin (no GUI dialog, no
     /// password embedded in any script source). When `validateOnly` is true the
     /// arguments are passed straight to sudo (used for `-v`).
+    ///
+    /// - Parameters:
+    ///   - command: The raw string executable layout.
+    ///   - password: The validated plaintext admin credential.
+    ///   - validateOnly: Switches the execution away from `-c command` strictly into `-v`.
+    /// - Returns: A tightly coupled struct of standard output bytes and logical completion flags.
+    /// - Throws: Exception bubbling if the Process class intrinsically throws during startup.
     private func runSudo(command: String, password: String, validateOnly: Bool = false) async throws -> SudoResult {
         try await withCheckedThrowingContinuation { continuation in
             let process = Process()
@@ -262,10 +300,12 @@ final class PrivilegesService {
                 ? ["-S", "-p", "", "-v"]
                 : ["-S", "-p", "", "/bin/sh", "-c", command]
 
-            // Pin a stable locale so sudo's auth-failure messages are always the English strings
-            // the `authFailed` detection below matches. Without this, a localized Mac emits
-            // translated errors, `authFailed` stays false, and the stale-password re-prompt
-            // (e.g. after the user changes their macOS password) silently never fires.
+            /// Pin a stable locale so sudo's auth-failure messages are always the English strings
+            /// the `authFailed` detection below matches. Without this, a localized Mac emits
+            /// translated errors, `authFailed` stays false, and the stale-password re-prompt
+            /// (e.g. after the user changes their macOS password) silently never fires.
+            ///
+            /// **Rationale:** Ensures regex text parsing survives global deployment without breaking on non-English operating systems.
             var env = ProcessInfo.processInfo.environment
             env["LC_ALL"] = "C"
             process.environment = env
@@ -358,6 +398,8 @@ final class PrivilegesService {
     /// Initiates the global Homebrew installation process by redirecting execution into an interactive terminal instance.
     ///
     /// - Parameter logHandler: A closure rendering structural guidance prompts.
+    /// - Parameter logHandler: The targeted callback delegate surfacing installation steps.
+    /// - Throws: Execution cancellation blocks or systemic failures bridging to root.
     func installHomebrew(logHandler: @escaping (String) -> Void) async throws {
         logger.log("📦 Installing Homebrew...")
         logHandler("📦 Opening Terminal to install Homebrew...")
@@ -436,11 +478,13 @@ final class PrivilegesService {
             logger.log("⚠️ \(paths.count - safePaths.count) path(s) were rejected by safety check")
         }
         
-        // Shell-quote each path exactly once via the singleQuote helper. The
-        // inner single-quote layer makes the path safe for the shell; the
-        // AppleScript-source escaping inside runWithPrivileges is a separate
-        // layer (it targets the osascript string literal, not the shell), so
-        // the two do not redundantly stack.
+        /// Shell-quote each path exactly once via the singleQuote helper. The
+        /// inner single-quote layer makes the path safe for the shell; the
+        /// AppleScript-source escaping inside runWithPrivileges is a separate
+        /// layer (it targets the osascript string literal, not the shell), so
+        /// the two do not redundantly stack.
+        ///
+        /// **Gotchas:** Double-quoting causes the shell to parse literal quotes into the filepath string, causing catastrophic "file not found" errors during admin-level deletions.
         let rmCommands = safePaths
             .map { "rm -rf \(InputSanitizer.singleQuote($0))" }
             .joined(separator: " && ")

@@ -1,6 +1,10 @@
 import Foundation
 
 /// A utility struct designed to calculate storage metrics for directories on the file system.
+///
+/// ```swift
+/// let bytes = ScannerUtils.calculateSize(url: directoryURL)
+/// ```
 struct ScannerUtils {
     
     /// Recursively calculates the aggregated size of a complete folder structure utilizing the native `FileManager`.

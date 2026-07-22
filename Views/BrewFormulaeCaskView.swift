@@ -1,5 +1,9 @@
 import SwiftUI
-
+/// A view for browsing and managing installed Homebrew formulae and casks.
+///
+/// ```swift
+/// BrewFormulaeCaskView(viewModel: brewViewModel)
+/// ```
 struct BrewFormulaeCaskView: View {
     @ObservedObject var viewModel: BrewFormulaeCaskViewModel
     @State private var selectedTab = 0
@@ -18,13 +22,17 @@ struct BrewFormulaeCaskView: View {
                 )
                 
                 if viewModel.isBrewInstalled {
-                    // Warning Box
+                    /// Warning Box
+                    ///
+                    /// **Gotchas:** Users regularly uninstall active system dependencies; this banner acts as a vital circuit breaker before destructive operations.
                     BannerView(
                         .warning,
                         message: "Uninstalling packages uses --ignore-dependencies flag. Removing dependencies may break other packages. Use at your own risk."
                     )
                     
-                    // Tab Selector
+                    /// Tab Selector
+                    ///
+                    /// **Rationale:** Scopes the enormous Homebrew registry into logically discrete segments to prevent user decision paralysis.
                     Picker("", selection: $selectedTab) {
                         Text("Formulae").tag(0)
                         Text("Casks").tag(1)
@@ -32,7 +40,9 @@ struct BrewFormulaeCaskView: View {
                     .pickerStyle(.segmented)
                     .padding(.horizontal)
                     
-                    // Package Lists
+                    /// Package Lists
+                    ///
+                    /// **Rationale:** Conditionally switches the data source beneath the common search/filter interface based on the active tab segment.
                     if viewModel.isLoading {
                         LoadingStateView("Loading packages...")
                     } else {
@@ -60,7 +70,9 @@ struct BrewFormulaeCaskView: View {
             }
         }
         .task {
-            // Ensure data is loaded if not already
+            /// Ensure data is loaded if not already
+            ///
+            /// **Rationale:** Defers network fetching until the exact moment the view appears, preserving bandwidth if the user never opens this specific screen.
             if !viewModel.hasLoadedOnce {
                 await viewModel.loadInstalledPackages()
             }
@@ -85,7 +97,9 @@ struct BrewFormulaeCaskView: View {
             
             SectionDivider()
             
-            // Search Bar
+            /// Search Bar
+            ///
+            /// **Rationale:** Provides rapid inline filtering over potentially thousands of packages without requiring round trips to the backend.
             SearchBarView(placeholder: "Search in formulae...", text: $formulaeSearchQuery)
 
             SectionDivider()
@@ -134,7 +148,9 @@ struct BrewFormulaeCaskView: View {
             
             SectionDivider()
             
-            // Search Bar
+            /// Search Bar
+            ///
+            /// **Rationale:** Mirrors the formulae search interface exactly to maintain cognitive consistency across tabs.
             SearchBarView(placeholder: "Search in casks...", text: $casksSearchQuery)
 
             SectionDivider()

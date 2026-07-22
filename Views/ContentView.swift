@@ -1,5 +1,9 @@
 import SwiftUI
-
+/// The main entry point and master navigation split view for the Catalyst application.
+///
+/// ```swift
+/// ContentView()
+/// ```
 struct ContentView: View {
     @EnvironmentObject var appVM: AppViewModel
     @ObservedObject private var infoCenter = InfoCenter.shared
@@ -7,10 +11,14 @@ struct ContentView: View {
 
     var body: some View {
         Group {
-            // Catalyst is free and unauthenticated: there is no sign-in gate and no entitlement
-            // branch. The full app renders immediately on launch.
+            /// Catalyst is free and unauthenticated: there is no sign-in gate and no entitlement
+            /// branch. The full app renders immediately on launch.
+            ///
+            /// **Gotchas:** Attempting to introduce async authorization checks here will cause a white-screen flash before the primary window renders.
             NavigationSplitView {
-                // Sidebar
+                /// Sidebar
+                ///
+                /// **Rationale:** Encapsulating sidebar rendering offloads state observation from the primary container view.
                 VStack(spacing: 0) {
                     List(selection: $appVM.currentScreen) {
                         Section("Project Management") {
@@ -135,14 +143,18 @@ struct ContentView: View {
                     }
                     .listStyle(.sidebar)
 
-                    // Auto-update badge (P9): "Update available" → "Downloading…" →
-                    // "Relaunch to update". Renders nothing when up to date.
+                    /// Auto-update badge (P9): "Update available" → "Downloading…" →
+                    /// "Relaunch to update". Renders nothing when up to date.
+                    ///
+                    /// **Rationale:** Directly mirroring the Sparkle state machine in the UI ensures users are never blind to background payload transfers.
                     SidebarUpdateBadge()
                         .padding(.horizontal, 8)
                         .padding(.top, 6)
 
-                    // Status indicator at bottom of sidebar (now also surfaces the
-                    // integrity/install-mode state via its shield + popover control).
+                    /// Status indicator at bottom of sidebar (now also surfaces the
+                    /// integrity/install-mode state via its shield + popover control).
+                    ///
+                    /// **Gotchas:** Hiding this indicator on small windows completely obscures critical SIP or permission warnings.
                     StatusIndicatorView(networkMonitor: appVM.networkMonitor)
                         .padding(.horizontal, 8)
                         .padding(.top, 6)
@@ -152,7 +164,9 @@ struct ContentView: View {
                 .navigationSplitViewColumnWidth(min: 235, ideal: 235)
             } detail: {
                 NavigationStack {
-                    // Main content
+                    /// Main content
+                    ///
+                    /// **Rationale:** Maintains a clean declarative separation between the navigation sidebar and the active workspace panel.
                     Group {
                         switch appVM.currentScreen {
                         case .dashboard:
@@ -235,27 +249,35 @@ struct ContentView: View {
                         }
                     }
                 }
-                // App-wide fix: force detail symbols to monochrome so a button's
-                // SF Symbol always follows its label color instead of rendering in
-                // a mismatched accent/multicolor. Applies to all screens + their
-                // toolbars, but NOT the sidebar (which keeps its colored icons).
-                // Explicit colors/gradients on icons are preserved.
+                /// App-wide fix: force detail symbols to monochrome so a button's
+                /// SF Symbol always follows its label color instead of rendering in
+                /// a mismatched accent/multicolor. Applies to all screens + their
+                /// toolbars, but NOT the sidebar (which keeps its colored icons).
+                /// Explicit colors/gradients on icons are preserved.
+                ///
+                /// **Gotchas:** Stripping this modifier causes SF Symbols in disabled buttons to remain bright blue instead of gracefully dimming to gray.
                 .symbolRenderingMode(.monochrome)
             }
-            // Main app toolbar is always visible. Traffic lights stay native.
+            /// Main app toolbar is always visible. Traffic lights stay native.
+            ///
+            /// **Gotchas:** Overriding the window style to `.hiddenTitleBar` unexpectedly destroys the native macOS traffic light hover interactions.
             .toolbar(.visible, for: .windowToolbar)
-            // One shared info sheet for the whole app; any InfoDot deep-links here.
+            /// One shared info sheet for the whole app; any InfoDot deep-links here.
+            ///
+            /// **Rationale:** Consolidating documentation into a single global sheet prevents SwiftUI presentation stack collisions when multiple views request help simultaneously.
             .sheet(item: $infoCenter.topic) { topic in
                 AppInfoSheet(initialTopic: topic)
             }
-            // Blocking Privacy/Terms consent sheet — window-modal over the whole app.
-            // Hosted on its OWN view node (a clear background) rather than stacked as a second
-            // `.sheet` on this NavigationSplitView: two sheet modifiers on one view is unsupported
-            // and thrashes SwiftUI's presentation state. A macOS sheet is window-modal regardless
-            // of which view hosts it, so it still blocks the whole app. Non-dismissable (the sheet
-            // itself sets `interactiveDismissDisabled`); acceptance clears the requirement, which
-            // nils the item and dismisses. Recomputed from persisted state on launch, so it
-            // survives force-quit/relaunch and re-appears on a version bump.
+            /// Blocking Privacy/Terms consent sheet — window-modal over the whole app.
+            /// Hosted on its OWN view node (a clear background) rather than stacked as a second
+            /// `.sheet` on this NavigationSplitView: two sheet modifiers on one view is unsupported
+            /// and thrashes SwiftUI's presentation state. A macOS sheet is window-modal regardless
+            /// of which view hosts it, so it still blocks the whole app. Non-dismissable (the sheet
+            /// itself sets `interactiveDismissDisabled`); acceptance clears the requirement, which
+            /// nils the item and dismisses. Recomputed from persisted state on launch, so it
+            /// survives force-quit/relaunch and re-appears on a version bump.
+            ///
+            /// **Gotchas:** Attaching this second `.sheet` directly to the `NavigationSplitView` crashes SwiftUI silently on macOS 14 when the app launches.
             .background(
                 Color.clear.sheet(item: $appVM.legalRequirement) { req in
                     LegalConsentSheet(vm: appVM.legalViewModel, requirement: req)
@@ -264,7 +286,9 @@ struct ContentView: View {
         }
         .onChange(of: scenePhase) { phase in
             if phase == .active {
-                // Re-check legal versions on return — no-op unless the 14-day window has elapsed.
+                /// Re-check legal versions on return — no-op unless the 14-day window has elapsed.
+                ///
+                /// **Rationale:** Tying the remote check to `onReceive` ensures users who leave the app running for months still get prompted when policies change.
                 Task { await appVM.legalViewModel.refreshDue() }
             }
         }
@@ -276,6 +300,10 @@ struct ContentView: View {
 /// Production wrapper: mirrors the live `UpdaterController` singleton and renders `UpdateBadgeView`.
 /// Kept thin so the visual (`UpdateBadgeView`) can be driven by explicit state in Xcode Previews
 /// without touching the runtime controller. Hidden when up to date.
+///
+/// ```swift
+/// SidebarUpdateBadge()
+/// ```
 struct SidebarUpdateBadge: View {
     @ObservedObject private var updates = UpdaterController.shared
 
@@ -294,6 +322,10 @@ struct SidebarUpdateBadge: View {
 /// version put an `info.circle` on every state that opened a notes sheet; it made a passive status
 /// row look like it needed attention. What changed in a release belongs on the release page, not in
 /// a sidebar popover.
+///
+/// ```swift
+/// UpdateBadgeView(phase: .available, onRelaunch: { relaunch() })
+/// ```
 struct UpdateBadgeView: View {
     let phase: UpdatePhase
     let onRelaunch: () -> Void
@@ -319,6 +351,11 @@ struct UpdateBadgeView: View {
     /// The row itself. Not a button — the `readyToRelaunch` case wraps it in one. Keeping the
     /// chrome in a plain view means the two passive states cannot accidentally acquire a hover
     /// or press affordance that implies they do something.
+    /// - Parameters:
+    ///   - icon: The associated SF Symbol glyph.
+    ///   - tint: The color mapping applied to background shading.
+    ///   - text: The localized status string indicating state.
+    /// - Returns: The active presentation hierarchy for the detail view.
     private func badge(icon: String, tint: Color, text: String) -> some View {
         HStack(spacing: 8) {
             Image(systemName: icon)

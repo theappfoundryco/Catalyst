@@ -4,6 +4,10 @@ import Foundation
 ///
 /// `VersionComparator` centralizes version constraint enforcement logic required to map correctly
 /// against different Homebrew or Python versioning schemes.
+///
+/// ```swift
+/// if VersionComparator.isNewer("2.0.0", than: "1.0.0") { ... }
+/// ```
 enum VersionComparator {
     
     /// Compares two normalized version strings sequentially through their semantic segments.
@@ -17,6 +21,9 @@ enum VersionComparator {
         let v1Clean = v1.trimmingCharacters(in: trimSet)
         let v2Clean = v2.trimmingCharacters(in: trimSet)
         
+        /// Tokenizes a semantic version string into a comparable array of integers.
+        /// - Parameter v: The raw semantic version identifier payload.
+        /// - Returns: An array of standardized integer boundaries.
         func parseParts(_ v: String) -> [Int] {
             var parts: [Int] = []
             let components = v.split(separator: ".")

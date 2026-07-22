@@ -7,6 +7,11 @@ struct MemoryDoctor: Doctor {
 
     /// Scans the system for high swap usage and excessive RAM consumption by developer tools.
     ///
+    /// **Flow:**
+    /// 1. Reads swap boundaries from `sysctl vm.swapusage`.
+    /// 2. Parses active memory footprints using `ps -axm -o rss,comm`.
+    /// 3. Filters high-consumption instances matching patterns like Java, Node, Docker, and Xcode.
+    ///
     /// - Returns: An array of `HealthIssue` objects highlighting memory hogs or high swap pressure.
     func run() async -> [HealthIssue] {
         var issues: [HealthIssue] = []
@@ -41,12 +46,16 @@ struct MemoryDoctor: Doctor {
     
     /// Attempts to programmatically resolve memory pressure issues.
     ///
+    /// **Gotchas:**
+    /// Force-killing arbitrary development tasks (`SIGKILL`) causes state loss in simulators and IDEs. Auto-fix is intentionally restricted.
+    ///
     /// - Parameter issue: The memory issue identified.
-    /// - Returns: A boolean indicating if the remediation was successful.
+    /// - Returns: A boolean indicating if the remediation was successful (always `false` for memory bounds).
     func fix(_ issue: HealthIssue) async -> Bool {
         return false
     }
     
+    /// Extracts current swapfile pressure metrics from `sysctl`.
     private func getSwapUsage() async -> Int? {
         guard let result = try? await AsyncProcessRunner.shared.run(command: "sysctl vm.swapusage"), result.succeeded else { return nil }
         
@@ -72,6 +81,7 @@ struct MemoryDoctor: Doctor {
         let ramMB: Int
     }
     
+    /// Collects the highest resident-memory consuming processes via `ps`.
     private func getTopDevProcesses() async -> [ProcessMem] {
         guard let result = try? await AsyncProcessRunner.shared.run(command: "ps -axm -o rss,comm"), result.succeeded else { return [] }
         

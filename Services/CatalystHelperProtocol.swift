@@ -8,13 +8,28 @@ import Foundation
 ///
 /// When you create the helper target in Xcode, add this same file to its
 /// target membership (see `PrivilegedHelper/README.md`).
+///
+/// ```swift
+/// let proxy = connection.remoteObjectProxyWithErrorHandler { error in
+///     print(error)
+/// } as? CatalystHelperProtocol
+/// proxy?.getVersion { version in
+///     print("Helper Version: \(version)")
+/// }
+/// ```
 @objc(CatalystHelperProtocol)
 public protocol CatalystHelperProtocol {
     /// Runs a shell command as root and returns its exit code + combined output.
+    ///
+    /// - Parameters:
+    ///   - command: The raw bash command to execute with elevated privileges.
+    ///   - reply: XPC callback yielding the `(exitCode, standardOutput)` tuple.
     func runShell(_ command: String, withReply reply: @escaping (Int32, String) -> Void)
 
     /// Returns the helper's version string — used to detect when an installed
     /// helper is older than the one bundled with the app and needs updating.
+    ///
+    /// - Parameter reply: XPC callback yielding the semantic version string.
     func getVersion(withReply reply: @escaping (String) -> Void)
 }
 

@@ -1,5 +1,9 @@
 import SwiftUI
-
+/// A view displaying the current status and health metrics of the Mac's internal battery.
+///
+/// ```swift
+/// BatteryHealthView(vm: batteryHealthViewModel)
+/// ```
 struct BatteryHealthView: View {
     @ObservedObject var vm: BatteryHealthViewModel
 
@@ -54,6 +58,8 @@ struct BatteryHealthView: View {
     // MARK: - Report
 
     @ViewBuilder
+    /// - Parameter report: The compiled system profile capturing battery metadata.
+    /// - Returns: The active presentation hierarchy for the detail view.
     private func reportContent(_ report: BatteryReport) -> some View {
         VStack(spacing: 24) {
             hero(report).padding(.horizontal)
@@ -123,6 +129,9 @@ struct BatteryHealthView: View {
         }
     }
 
+    /// Renders the primary battery capacity gauge and overall lifecycle state.
+    /// - Parameter report: The compiled system profile capturing battery metadata.
+    /// - Returns: The active presentation hierarchy for the detail view.
     private func hero(_ report: BatteryReport) -> some View {
         HStack(spacing: 0) {
             VStack(spacing: 16) {
@@ -190,13 +199,26 @@ struct BatteryHealthView: View {
 
     // MARK: - Helpers
 
+    /// - Parameter color: The foundational hue generating the gradient range.
+    /// - Returns: A customized vertical gradient blend.
     private func gradient(_ color: Color) -> LinearGradient {
         LinearGradient(colors: [color, color.opacity(0.6)], startPoint: .topLeading, endPoint: .bottomTrailing)
     }
+    /// Evaluates the current power capacity against critical drain thresholds.
+    /// - Parameter p: The present percentage capacity relative to theoretical max.
+    /// - Returns: The designated diagnostic alert color.
     private func chargeColor(_ p: Int) -> Color { p < 20 ? .red : (p < 50 ? .orange : .green) }
+    /// Evaluates the battery cycle count against standard Apple degradation thresholds.
+    /// - Parameter c: The accumulated full power cycles registered by the hardware.
+    /// - Returns: The designated diagnostic alert color.
     private func cycleColor(_ c: Int) -> Color { c > 1000 ? .red : (c > 800 ? .orange : .green) }
+    /// Converts raw battery cycles into a human-readable aging string.
+    /// - Parameter c: The accumulated full power cycles registered by the hardware.
+    /// - Returns: A summarized string translating the hardware degradation.
     private func cycleSubtitle(_ c: Int) -> String {
-        // Apple rates most modern notebooks for ~1000 cycles.
+        /// Apple rates most modern notebooks for ~1000 cycles.
+        ///
+        /// **Rationale:** Hardcoding the 1000-cycle limit provides a sensible default baseline for condition warnings since Apple's own diagnostic tools use it.
         let remaining = max(0, 1000 - c)
         return "~\(remaining) of 1000 left"
     }

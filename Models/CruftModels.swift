@@ -6,19 +6,35 @@ import SwiftUI
 /// `CruftSweeperViewModel.CruftType` / `.CruftItem`; those are now top-level.
 
 /// A category of reclaimable build artifact.
+///
+/// ```swift
+/// let type = CruftType.derivedData
+/// print(type.safety.label) // "Safe"
+/// ```
 enum CruftType: String, CaseIterable, Identifiable {
+    /// JavaScript dependencies restored via npm install.
     case nodeModules = "node_modules"
+    /// Python virtual environments containing isolated packages.
     case venv = ".venv"
+    /// Xcode intermediate build products and shared caches.
     case derivedData = "DerivedData"
+    /// Compiled Python bytecode caches generated automatically.
     case cache = "__pycache__"
+    /// Generic build artifacts for various build systems.
     case build = "build"
+    /// Rust compiled binary output and caches.
     case target = "target" // Rust
+    /// Java Gradle project caches and temporary states.
     case gradle = ".gradle" // Java/Android
+    /// Java Maven build output directories.
     case mvnTarget = "mvn_target" // Java Maven
+    /// Unclassified artifacts falling outside strict matching patterns.
     case unknown = "Other"
 
+    /// The stable string identifier mapping directly to the raw directory value.
     var id: String { rawValue }
 
+    /// The human-readable category title displayed on the section header.
     var title: String {
         switch self {
         case .nodeModules: return "Node.js"
@@ -48,6 +64,7 @@ enum CruftType: String, CaseIterable, Identifiable {
         }
     }
 
+    /// The canonical SF Symbol name identifying the framework in visual lists.
     var icon: String {
         switch self {
         case .nodeModules: return "hexagon.fill"
@@ -62,6 +79,7 @@ enum CruftType: String, CaseIterable, Identifiable {
         }
     }
 
+    /// The semantic color representing the framework, mirroring the standard domain colors.
     var color: Color {
         switch self {
         case .nodeModules: return .green
@@ -84,8 +102,11 @@ enum CruftType: String, CaseIterable, Identifiable {
         /// Requires an explicit rebuild or reinstall to restore.
         case rebuild
 
+        /// The concise label used for the inline chip.
         var label: String { self == .safe ? "Safe" : "Rebuild" }
+        /// The color accent for the safety chip.
         var color: Color { self == .safe ? .green : .orange }
+        /// Detailed explanation of the consequence of deletion, shown in tooltips.
         var detail: String {
             self == .safe
                 ? "Regenerates automatically on next use — safe to clear."
@@ -93,6 +114,7 @@ enum CruftType: String, CaseIterable, Identifiable {
         }
     }
 
+    /// The configured safety level designating how easily the artifact can be restored.
     var safety: Safety {
         switch self {
         case .cache, .derivedData: return .safe
@@ -103,20 +125,29 @@ enum CruftType: String, CaseIterable, Identifiable {
 
 /// A single reclaimable item found by the scan.
 struct CruftItem: Identifiable, Equatable {
+    /// A unique random identifier required for SwiftUI diffing logic.
     let id = UUID()
+    /// The absolute file path anchor referencing the physical artifact on disk.
     let url: URL
+    /// The classified category identifying the framework ownership of this artifact.
     let type: CruftType
+    /// The physical byte size reported by the filesystem traversal logic.
     let size: Int64
+    /// The modification timestamp used to gate deletion logic based on recency.
     let dateModified: Date
 
+    /// A display-friendly string formatting the parent directory name with the artifact name.
     var name: String {
         // For display, show the parent so e.g. "MyApp / node_modules".
         let parent = url.deletingLastPathComponent().lastPathComponent
         return parent.isEmpty ? url.lastPathComponent : "\(parent) / \(url.lastPathComponent)"
     }
 
+    /// The localized basename of the directory on disk.
     var simpleName: String { url.lastPathComponent }
+    /// The absolute string path to the artifact.
     var path: String { url.path }
+    /// The localized byte size converted to a standard file count style.
     var formattedSize: String {
         ByteCountFormatter.string(fromByteCount: size, countStyle: .file)
     }
@@ -124,12 +155,18 @@ struct CruftItem: Identifiable, Equatable {
 
 /// Cruft items grouped by their location (root folder), for the grouped UI.
 struct LocationGroup: Identifiable, Equatable {
+    /// A unique identifier required for SwiftUI iteration.
     let id = UUID()
+    /// The localized string representing the root folder encompassing the artifacts.
     let name: String
+    /// The array of individual artifacts found inside this root folder.
     var items: [CruftItem]
+    /// A boolean capturing the user interface disclosure state for the group.
     var isExpanded: Bool = false
 
+    /// The cumulative physical byte size of all contained items.
     var totalSize: Int64 { items.reduce(0) { $0 + $1.size } }
+    /// The localized byte size converted to a standard file count style.
     var formattedSize: String {
         ByteCountFormatter.string(fromByteCount: totalSize, countStyle: .file)
     }

@@ -1,24 +1,23 @@
-//
-//  AdminCredentialStore.swift
-//  Catalyst
-//
-//  On-device, encrypted storage for the admin credential used by privileged
-//  actions. Backed by the macOS Keychain with a "this device only" access
-//  class, so the value:
-//    • never syncs to iCloud Keychain or any other device,
-//    • is never included in encrypted backups,
-//    • is only readable while the Mac is unlocked, and
-//    • is only ever read back locally to prime `sudo` — never transmitted.
-//
-//  The store exists so the user authenticates once, ever, instead of once per
-//  launch. If the stored password stops working (e.g. the login password
-//  changed), the caller clears it and prompts again.
-//
+/// On-device, encrypted storage for the admin credential used by privileged
+/// actions. Backed by the macOS Keychain with a "this device only" access
+/// class, so the value:
+///   • never syncs to iCloud Keychain or any other device,
+///   • is never included in encrypted backups,
+///   • is only readable while the Mac is unlocked, and
+///   • is only ever read back locally to prime `sudo` — never transmitted.
+/// The store exists so the user authenticates once, ever, instead of once per
+/// launch. If the stored password stops working (e.g. the login password
+/// changed), the caller clears it and prompts again.
 
 import Foundation
 import Security
 
 /// A minimal Keychain wrapper for the single admin-credential item.
+///
+/// ```swift
+/// AdminCredentialStore.save("password")
+/// let pass = AdminCredentialStore.load()
+/// ```
 enum AdminCredentialStore {
     /// Service identifier for the Keychain item (scoped to this app).
     private static let service = "com.catalyst.app.adminCredential"
@@ -31,6 +30,8 @@ enum AdminCredentialStore {
 
     /// Persists the admin password on-device. Overwrites any existing item.
     @discardableResult
+    /// - Parameter password: The unencrypted token required for system access.
+    /// - Returns: True if standard keychain routines confirm write completion.
     static func save(_ password: String) -> Bool {
         guard let data = password.data(using: .utf8) else { return false }
 
@@ -49,6 +50,7 @@ enum AdminCredentialStore {
     }
 
     /// Reads the stored admin password, or `nil` if none is saved.
+    /// - Returns: The unencrypted token required for system access, if present.
     static func load() -> String? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,

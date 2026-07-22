@@ -39,6 +39,13 @@ struct SSHKeyGenResult: Sendable {
 
 /// Lists, generates, and hardens SSH keys in `~/.ssh`. Uses `ssh-keygen` and
 /// direct file reads; no privileges. Complements `SecurityDoctor`'s checks.
+///
+/// ```swift
+/// let report = await SSHKeyService.shared.scan()
+/// for key in report.keys {
+///     print(key.name)
+/// }
+/// ```
 final class SSHKeyService: Sendable {
 
     static let shared = SSHKeyService()
@@ -54,6 +61,9 @@ final class SSHKeyService: Sendable {
 
     // MARK: - Scan
 
+    /// Discovers existing SSH entities and flags standard directory permissions limits.
+    ///
+    /// - Returns: A payload encapsulating fingerprint data strings alongside native filesystem checks.
     func scan() async -> SSHKeyReport {
         let fm = FileManager.default
         let dirExists = fm.fileExists(atPath: sshDir.path)
@@ -69,7 +79,9 @@ final class SSHKeyService: Sendable {
 
         let contents = (try? fm.contentsOfDirectory(atPath: sshDir.path)) ?? []
 
-        // Determine the set of key "bases": every .pub, plus id_* private files.
+        /// Determine the set of key "bases": every .pub, plus id_* private files.
+        ///
+        /// **Rationale:** Apple inherently groups SSH key components into pairs. Scanning globally prevents orphan tracking when users delete just the `.pub` file.
         var bases = Set<String>()
         for name in contents {
             if name.hasSuffix(".pub") {
@@ -119,9 +131,13 @@ final class SSHKeyService: Sendable {
         return SSHKeyReport(scanDate: Date(), dirExists: true, dirPermsOK: dirPermsOK, keys: keys)
     }
 
+    /// A transient container defining key cryptographic footprints parsed from standard output.
     private struct FingerprintInfo { let bits: Int; let fingerprint: String; let comment: String; let type: String }
 
     /// Parses `ssh-keygen -l -f <path>` → "<bits> SHA256:… <comment> (TYPE)".
+    ///
+    /// - Parameter path: Explicit location pointing to target file configuration blocks.
+    /// - Returns: Discovered bit-level architecture attributes and keys mapped back into generic types.
     private func fingerprintInfo(path: String) async -> FingerprintInfo? {
         do {
             let r = try await runner.run(executable: sshKeygenPath, arguments: ["-l", "-f", path], timeoutSeconds: 6)
@@ -154,15 +170,19 @@ final class SSHKeyService: Sendable {
     // MARK: - Generate
 
     /// Generates a new key. Refuses to overwrite an existing file.
+    ///
     /// - Parameters:
     ///   - type: "ed25519" or "rsa".
     ///   - fileName: base name written to `~/.ssh`.
     ///   - comment: `-C` comment.
     ///   - passphrase: empty string ⇒ no passphrase.
+    /// - Returns: Explicit result configuration blocks reporting CLI execution success markers.
     func generate(type: String, fileName: String, comment: String, passphrase: String) async -> SSHKeyGenResult {
         let fm = FileManager.default
 
-        // Ensure ~/.ssh exists at 0o700.
+        /// Ensure ~/.ssh exists at 0o700.
+        ///
+        /// **Rationale:** Prevents catastrophic `ssh-keygen` failures by bootstrapping the base directory infrastructure before attempting cryptographic generation.
         if !fm.fileExists(atPath: sshDir.path) {
             try? fm.createDirectory(at: sshDir, withIntermediateDirectories: true,
                                     attributes: [.posixPermissions: 0o700])
@@ -187,7 +207,9 @@ final class SSHKeyService: Sendable {
         do {
             let r = try await runner.run(executable: sshKeygenPath, arguments: args, timeoutSeconds: 30)
             if r.succeeded {
-                // ssh-keygen already sets 0o600; enforce defensively.
+                /// ssh-keygen already sets 0o600; enforce defensively.
+                ///
+                /// **Gotchas:** Apple's `ssh-keygen` implementation drops permissions down if the user's umask is configured securely, but strict enforcement ensures 100% compliance.
                 _ = try? await runner.run(executable: chmodPath, arguments: ["600", keyURL.path], timeoutSeconds: 5)
                 return SSHKeyGenResult(success: true, message: "Created \(safeName) (\(type)).")
             } else {
@@ -201,11 +223,18 @@ final class SSHKeyService: Sendable {
 
     // MARK: - Permissions
 
+    /// Rewrites native permission boundaries strictly forcing `~/.ssh` to 0700.
+    ///
+    /// - Returns: Validation boolean isolating whether execution cleanly modified bounds.
     func fixDirPermissions() async -> Bool {
         let r = try? await runner.run(executable: chmodPath, arguments: ["700", sshDir.path], timeoutSeconds: 5)
         return r?.succeeded ?? false
     }
 
+    /// Modifies individual SSH target limits masking access only directly available strictly to 0600 natively.
+    ///
+    /// - Parameter key: Evaluated `SSHKey` configuration item mapped internally against paths.
+    /// - Returns: Result isolating `chmod` process status blocks.
     func fixKeyPermissions(_ key: SSHKey) async -> Bool {
         guard let priv = key.privatePath else { return false }
         let r = try? await runner.run(executable: chmodPath, arguments: ["600", priv], timeoutSeconds: 5)

@@ -1,6 +1,10 @@
 import Foundation
 
 /// A positioned commit in the graph: its row (vertical order) and lane (column).
+///
+/// ```swift
+/// let node = GraphNode(commit: commit, row: 0, lane: 1)
+/// ```
 struct GraphNode: Sendable, Identifiable, Equatable {
     let commit: GraphCommit
     let row: Int
@@ -10,6 +14,10 @@ struct GraphNode: Sendable, Identifiable, Equatable {
 
 /// A parent link between two commits, in lane/row coordinates, colored by the lane the
 /// parent occupies (so a branch keeps one color as it descends).
+///
+/// ```swift
+/// let edge = GraphEdge(fromRow: 0, fromLane: 1, toRow: 1, toLane: 1, colorIndex: 1)
+/// ```
 struct GraphEdge: Sendable, Equatable, Identifiable {
     let fromRow: Int
     let fromLane: Int
@@ -22,9 +30,13 @@ struct GraphEdge: Sendable, Equatable, Identifiable {
 /// A single lane line passing through one row's gutter, in lane coordinates.
 ///
 /// Rendering per-row (instead of one giant canvas) keeps the graph fully lazy: each
-/// commit row draws only its own short segments, so a 1,000-commit history never builds
+/// commits only its own short segments, so a 1,000-commit history never builds
 /// a 40,000-pt canvas layer (the previous scroll-jank source). The line jogs to its
 /// target lane within the child's row, then runs straight down — a clean, readable style.
+///
+/// ```swift
+/// let segment = RowSegment(topLane: 1, bottomLane: 1, colorIndex: 1, startsAtNode: true, endsAtNode: false)
+/// ```
 struct RowSegment: Sendable, Equatable {
     /// Lane at the top edge of the row (the child node's lane on its own row).
     let topLane: Int
@@ -38,6 +50,10 @@ struct RowSegment: Sendable, Equatable {
 }
 
 /// The fully-resolved graph: nodes, per-row line segments, and the lane (column) count.
+///
+/// ```swift
+/// let layout = GitGraphLayoutEngine.layout(commits)
+/// ```
 struct GitGraphLayout: Sendable, Equatable {
     let nodes: [GraphNode]
     let edges: [GraphEdge]
@@ -57,12 +73,21 @@ struct GitGraphLayout: Sendable, Equatable {
 /// free one), then reserves lanes for its parents: the first parent continues the
 /// commit's own lane; extra parents (a merge) take fresh lanes. Freed lanes are reused,
 /// so the graph stays compact. No UI, no I/O — trivially unit-testable
-/// (`Formrules.md` 1.3 / §43).
+/// (`CODING_STANDARDS.md` 1.3 / §43).
+///
+/// ```swift
+/// let layout = GitGraphLayoutEngine.layout(commits)
+/// ```
 enum GitGraphLayoutEngine {
+    /// Transforms a linear array of commits into a two-dimensional grid of topological lanes.
+    /// - Parameter commits: A chronologically sorted subset of parsed git log histories.
+    /// - Returns: A spatial rendering layout object for the topological graph.
     static func layout(_ commits: [GraphCommit]) -> GitGraphLayout {
         guard !commits.isEmpty else { return .empty }
 
-        // Row + membership lookups.
+        /// Row + membership lookups.
+        ///
+        /// **Rationale:** Pre-computing row indices avoids O(N) linear scans through the commit array during the graph rendering pass.
         var rowOf = [String: Int](minimumCapacity: commits.count)
         for (row, c) in commits.enumerated() { rowOf[c.hash] = row }
 
@@ -70,6 +95,8 @@ enum GitGraphLayoutEngine {
         var active: [String?] = []       // lane -> hash it is currently reserved for
         var maxLaneIndex = 0
 
+        /// Determines the lowest available horizontal lane index for a new branch trace.
+        /// - Returns: The lowest available integer offset denoting an empty rendering lane.
         func firstFreeLane() -> Int {
             if let i = active.firstIndex(where: { $0 == nil }) { return i }
             active.append(nil)
@@ -77,7 +104,9 @@ enum GitGraphLayoutEngine {
         }
 
         for (_, commit) in commits.enumerated() {
-            // The commit's lane: one already reserved for it, else a free lane.
+            /// The commit's lane: one already reserved for it, else a free lane.
+            ///
+            /// **Rationale:** Reusing lanes from parent reservations keeps the branch line straight rather than stair-stepping horizontally down the graph.
             let myLane: Int
             if let reserved = active.firstIndex(where: { $0 == commit.hash }) {
                 myLane = reserved
@@ -88,7 +117,9 @@ enum GitGraphLayoutEngine {
             laneOf[commit.hash] = myLane
             maxLaneIndex = max(maxLaneIndex, myLane)
 
-            // Reserve lanes for parents that are within the loaded window.
+            /// Reserve lanes for parents that are within the loaded window.
+            ///
+            /// **Gotchas:** Attempting to reserve lanes for commits outside the pagination window will leak lanes globally, crushing the graph into a narrow sliver.
             for (i, parent) in commit.parents.enumerated() where rowOf[parent] != nil {
                 if active.contains(where: { $0 == parent }) { continue } // already on a lane
                 if i == 0 && active[myLane] == nil {
@@ -114,8 +145,10 @@ enum GitGraphLayoutEngine {
                 edges.append(GraphEdge(fromRow: row, fromLane: fromLane,
                                        toRow: pRow, toLane: pLane, colorIndex: pLane))
 
-                // Split the edge into one segment per row it spans (row < pRow always,
-                // since a parent is older and therefore lower in the list).
+                /// Split the edge into one segment per row it spans (row < pRow always,
+                /// since a parent is older and therefore lower in the list).
+                ///
+                /// **Rationale:** SwiftUI's `Canvas` must draw the graph row-by-row; splitting the edge allows each row to draw only the segment of the line that crosses its bounds.
                 guard row < pRow else { continue }
                 for r in row...pRow {
                     let starts = (r == row)

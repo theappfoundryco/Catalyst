@@ -61,6 +61,13 @@ struct LoginItemsReport: Sendable {
 /// launchd agents/daemons and classic login items. Read operations parse plists
 /// directly; mutations shell out to `launchctl` / `osascript`. No admin rights —
 /// system-scope jobs are surfaced read-only.
+///
+/// ```swift
+/// let report = await LoginItemsService.shared.scan()
+/// for agent in report.userAgents {
+///     print(agent.label)
+/// }
+/// ```
 final class LoginItemsService: Sendable {
 
     static let shared = LoginItemsService()
@@ -72,6 +79,9 @@ final class LoginItemsService: Sendable {
 
     // MARK: - Scan
 
+    /// Iterates across all `LaunchAgents`, `LaunchDaemons`, and classic `Login Items` concurrently to build a holistic startup snapshot.
+    ///
+    /// - Returns: A comprehensive ``LoginItemsReport`` encapsulating all boot sequences.
     func scan() async -> LoginItemsReport {
         async let agentsTask = scanAgents()
         async let loginTask = scanLoginItems()
@@ -82,6 +92,8 @@ final class LoginItemsService: Sendable {
         )
     }
 
+    /// Crawls system LaunchAgent directories to parse background daemon plist configurations.
+    /// - Returns: The active discovery list mapped to standard daemons.
     private func scanAgents() async -> [LaunchAgentItem] {
         let loaded = await loadedLabels()
         let dirs: [(String, LaunchAgentScope)] = [
@@ -102,6 +114,12 @@ final class LoginItemsService: Sendable {
         return items.sorted { $0.label.localizedCaseInsensitiveCompare($1.label) == .orderedAscending }
     }
 
+    /// Decodes a raw launch daemon XML plist into a mapped Catalyst identity structure.
+    /// - Parameters:
+    ///   - url: The targeted system absolute root bounding the file.
+    ///   - scope: The defined hierarchical zone determining permissions.
+    ///   - loaded: A lookup map verifying active memory presence.
+    /// - Returns: The structured validation object, or nil on parsing failure.
     private func parseAgent(at url: URL, scope: LaunchAgentScope, loaded: Set<String>) -> LaunchAgentItem? {
         guard let data = try? Data(contentsOf: url),
               let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any]
@@ -124,12 +142,15 @@ final class LoginItemsService: Sendable {
     }
 
     /// The set of labels launchd currently has loaded (`launchctl list`).
+    /// - Returns: A structural subset of unique execution bounds.
     private func loadedLabels() async -> Set<String> {
         do {
             let result = try await runner.run(executable: launchctlPath, arguments: ["list"], timeoutSeconds: 6)
             var labels = Set<String>()
             for line in result.stdout.components(separatedBy: .newlines).dropFirst() {
-                // Columns: PID  Status  Label  (tab-separated)
+                /// Columns: PID  Status  Label  (tab-separated)
+                ///
+                /// **Gotchas:** `launchctl list` dynamically spaces columns based on PID length; relying strictly on tab separation prevents index-out-of-bounds crashes.
                 let cols = line.split(separator: "\t")
                 if let last = cols.last {
                     let label = last.trimmingCharacters(in: .whitespaces)
@@ -142,9 +163,13 @@ final class LoginItemsService: Sendable {
         }
     }
 
+    /// Executes AppleScript via OSAScript to query hidden macOS UI login item sequences.
+    /// - Returns: An accumulated set of active user-level start tools.
     private func scanLoginItems() async -> [LoginItem] {
-        // Names + paths + hidden flags from System Events. Returns empty (rather
-        // than throwing) if Automation permission is denied or none are set.
+        /// Names + paths + hidden flags from System Events. Returns empty (rather
+        /// than throwing) if Automation permission is denied or none are set.
+        ///
+        /// **Rationale:** Prevents a catastrophic app crash when macOS completely denies the underlying AppleScript invocation due to TCC sandbox rules.
         async let names = osaList(property: "name")
         async let paths = osaList(property: "path")
         async let hiddens = osaList(property: "hidden")
@@ -160,6 +185,9 @@ final class LoginItemsService: Sendable {
         return items
     }
 
+    /// Isolates AppleScript list parsing for a specific login item UI property block.
+    /// - Parameter property: The AppleScript specific property to retrieve.
+    /// - Returns: An accumulated list mapped directly from the OSA request.
     private func osaList(property: String) async -> [String] {
         let script = "tell application \"System Events\" to get the \(property) of every login item"
         do {
@@ -175,6 +203,11 @@ final class LoginItemsService: Sendable {
     // MARK: - Mutations (user scope only)
 
     /// Loads/unloads a user agent with `-w` so the enabled state persists.
+    ///
+    /// - Parameters:
+    ///   - agent: The parsed ``LaunchAgentItem`` representing the daemon.
+    ///   - enabled: The boolean toggle dictating whether it should load or unload.
+    /// - Returns: True if the `launchctl` execution succeeded.
     func setAgentEnabled(_ agent: LaunchAgentItem, enabled: Bool) async -> Bool {
         guard agent.scope.isManageable else { return false }
         let sub = enabled ? "load" : "unload"
@@ -187,6 +220,9 @@ final class LoginItemsService: Sendable {
     }
 
     /// Unloads (best-effort) then moves the agent's plist to the Trash.
+    ///
+    /// - Parameter agent: The target ``LaunchAgentItem``.
+    /// - Returns: True if successfully unlinked and trashed.
     func removeAgent(_ agent: LaunchAgentItem) async -> Bool {
         guard agent.scope.isManageable else { return false }
         _ = try? await runner.run(executable: launchctlPath, arguments: ["unload", "-w", agent.plistPath], timeoutSeconds: 8)
@@ -200,6 +236,9 @@ final class LoginItemsService: Sendable {
     }
 
     /// Removes a classic login item via System Events.
+    ///
+    /// - Parameter item: The structured ``LoginItem`` derived from osascript.
+    /// - Returns: True if the deletion succeeded.
     func removeLoginItem(_ item: LoginItem) async -> Bool {
         let safeName = item.name.replacingOccurrences(of: "\"", with: "\\\"")
         let script = "tell application \"System Events\" to delete login item \"\(safeName)\""

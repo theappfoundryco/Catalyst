@@ -2,35 +2,73 @@ import Foundation
 import SwiftUI
 import Combine
 
+/// A view model responsible for managing user-defined and Catalyst-managed shell aliases.
+///
+/// `AliasViewModel` parses both the primary `.zshrc` (for system aliases) and `.zshrc_catalyst`
+/// (for managed aliases). It strictly enforces that only Catalyst-managed aliases can be deleted
+/// via the UI to prevent destructive modifications to the user's personal shell configuration.
+///
+/// **Caveats:**
+/// - Aliases are loaded by manual parsing rather than shell evaluation, meaning complex multi-line
+///   functions or highly dynamic aliases might not parse identically to Zsh's internal parser.
+///
+/// ```swift
+/// @StateObject private var aliasVM = AliasViewModel(logger: .shared)
+/// // ...
+/// await aliasVM.loadAliases()
+/// ```
 @MainActor
 final class AliasViewModel: ObservableObject {
     // Recompute derived lists when their inputs change, not on every render (R3).
+    /// The aggregate list of all detected aliases (system + managed).
     @Published var aliases: [AliasItem] = [] { didSet { recomputeDerived() } }
+    /// Indicates if aliases are currently being read from disk.
     @Published var isLoading = false
+    /// The proposed name for a new alias being created.
     @Published var newAliasName = ""
+    /// The proposed shell command for a new alias being created.
     @Published var newAliasCommand = ""
+    /// The current search query used to filter the displayed aliases.
     @Published var searchQuery = "" { didSet { recomputeFiltered() } }
+    /// Status output detailing the result of an alias addition or deletion.
     @Published var outputMessage = ""
+    /// Flag indicating whether an error alert should be presented.
     @Published var showingError = false
+    /// The message to display inside the error alert.
     @Published var errorMessage = ""
 
+    /// Aliases matching the current `searchQuery`, alphabetically sorted.
     @Published private(set) var filteredAliases: [AliasItem] = []
+    /// A derived list of aliases specifically managed by Catalyst.
     @Published private(set) var catalystAliases: [AliasItem] = []
+    /// A derived list of standard user aliases from the primary config.
     @Published private(set) var otherAliases: [AliasItem] = []
 
     private let logger: Logger
     private let configManager = ShellConfigManager.shared
 
+    /// Initializes the ``AliasViewModel`` with injected dependencies.
+    ///
+    /// - Parameter logger: The shared ``Logger`` instance for terminal output.
     init(logger: Logger) {
         self.logger = logger
     }
 
+    /// Segregates the raw ``aliases`` list into managed and unmanaged (system) buckets.
+    ///
+    /// **Rationale:**
+    /// This is isolated from the `loadAliases()` fetch so that adding/deleting instantly triggers a sort and filter
+    /// without re-parsing the file system. 
     private func recomputeDerived() {
         catalystAliases = aliases.filter { $0.isCatalystManaged }
         otherAliases = aliases.filter { !$0.isCatalystManaged }
         recomputeFiltered()
     }
 
+    /// Applies the current ``searchQuery`` to the full alias list and alphabetically sorts the remainder.
+    ///
+    /// **Gotchas:**
+    /// - Both the alias `name` and the alias `command` body are evaluated in the case-insensitive search.
     private func recomputeFiltered() {
         if searchQuery.isEmpty {
             filteredAliases = aliases.sorted { $0.name < $1.name }
@@ -44,6 +82,16 @@ final class AliasViewModel: ObservableObject {
 
     // MARK: - Load Aliases
     
+    /// Reads and parses both system and Catalyst-managed aliases from the filesystem.
+    ///
+    /// **Flow:**
+    /// 1. Reads the primary config (`~/.zshrc`) via ``ShellConfigManager``.
+    /// 2. Reads the secondary managed config (`~/.zshrc_catalyst`).
+    /// 3. Joins the sets without overriding shadows, presenting both to the user.
+    ///
+    /// **Gotchas:**
+    /// - This method performs duplicate conflict resolution visually but does not actively delete
+    ///   shadowed aliases. Managed aliases are determined by their file origin or sentinel comment block.
     func loadAliases() async {
         isLoading = true
         logger.log("📂 Loading aliases...")
@@ -70,6 +118,16 @@ final class AliasViewModel: ObservableObject {
         isLoading = false
     }
     
+    /// Line-by-line parser for extracting shell aliases from raw text.
+    ///
+    /// **Caveats:**
+    /// - It relies on `# CATALYST_ALIAS:` markers for legacy tracking and uses the `isManagedFile` boolean to blanket-mark
+    ///   files like `.zshrc_catalyst`.
+    ///
+    /// - Parameters:
+    ///   - content: The raw multiline string read from disk.
+    ///   - isManagedFile: If true, every alias discovered in this payload is flagged as `isCatalystManaged`.
+    /// - Returns: An array of ``AliasItem`` instances mapped from the file.
     private func parseAliases(from content: String, isManagedFile: Bool) -> [AliasItem] {
         let lines = content.components(separatedBy: .newlines)
         var foundAliases: [AliasItem] = []
@@ -101,6 +159,14 @@ final class AliasViewModel: ObservableObject {
         return foundAliases
     }
     
+    /// Strictly evaluates a single text line to identify and extract an `alias name=command` pair.
+    ///
+    /// **Rationale:**
+    /// Tighter than a naive split-on-first-`=` followed by stripping one quote pair. It manually evaluates
+    /// the closing quote (so a trailing inline comment like `alias x='y' # note` doesn't leak into the body).
+    ///
+    /// - Parameter line: A single raw string from the config file.
+    /// - Returns: A tuple containing the `name` and `command`, or `nil` if the line does not match standard alias syntax.
     private func parseAliasLine(_ line: String) -> (name: String, command: String)? {
         // Parse: alias name='command' | alias name="command" | alias name=command
         // Tighter than split-on-first-`=`+strip-one-quote-pair: it stops at the
@@ -136,6 +202,16 @@ final class AliasViewModel: ObservableObject {
     
     // MARK: - Add Alias
     
+    /// Validates and appends a new alias to the `.zshrc_catalyst` file as a managed block.
+    ///
+    /// **Flow:**
+    /// 1. Validates the name against strict character requirements.
+    /// 2. Rejects duplicates natively.
+    /// 3. Wraps the command in strict single quotes.
+    /// 4. Flushes the block to disk via ``ShellConfigManager/writeManagedBlock(id:content:)``.
+    ///
+    /// - Important: The command is intentionally wrapped in single quotes using ``InputSanitizer/singleQuote``
+    ///   to preserve shell variables (`$VAR`, `$1`) and backticks until execution time. The old double-quote approach mangled legitimate aliases.
     func addAlias() async {
         let name = newAliasName.trimmingCharacters(in: .whitespaces)
         let command = newAliasCommand.trimmingCharacters(in: .whitespaces)
@@ -200,6 +276,16 @@ final class AliasViewModel: ObservableObject {
     
     // MARK: - Delete Alias
     
+    /// Removes a Catalyst-managed alias from `.zshrc_catalyst`.
+    ///
+    /// **Flow:**
+    /// 1. Attempts removal via the modern ``ShellConfigManager/removeManagedBlock(id:)``.
+    /// 2. If it fails, falls back to manual string parsing for legacy `# CATALYST_ALIAS:` blocks.
+    ///
+    /// **Gotchas:**
+    /// - This function refuses to delete aliases where `isCatalystManaged` is false to protect user integrity.
+    ///
+    /// - Parameter alias: The ``AliasItem`` to remove.
     func deleteAlias(_ alias: AliasItem) async {
         guard alias.isCatalystManaged else {
             showError("Cannot delete system aliases. Only Catalyst-managed aliases can be removed.")
@@ -268,12 +354,16 @@ final class AliasViewModel: ObservableObject {
     
     // MARK: - Helper Functions
 
+    /// Sets the UI error bindings and logs to the console simultaneously.
+    ///
+    /// - Parameter message: The human-readable string to display.
     private func showError(_ message: String) {
         errorMessage = message
         showingError = true
         logger.log("❌ \(message)")
     }
     
+    /// Clears the success/status output message area immediately.
     func clearOutput() {
         outputMessage = ""
     }

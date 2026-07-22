@@ -1,6 +1,10 @@
 import SwiftUI
 import Combine
-
+/// A view for browsing, searching, and uninstalling existing pip packages.
+///
+/// ```swift
+/// PIPPackagesView(viewModel: pipViewModel)
+/// ```
 struct PIPPackagesView: View {
     @ObservedObject var viewModel: PIPPackagesViewModel
     @State private var pipSearchQuery = ""
@@ -22,7 +26,9 @@ struct PIPPackagesView: View {
                             selection: $viewModel.selectedPythonVersion,
                             availableVersions: viewModel.availablePythonVersions.filter { $0.pipAvailable },
                             onSelectionChange: {
-                                // Action handled by ViewModel observation or no action needed
+                                /// Action handled by ViewModel observation or no action needed
+                                ///
+                                /// **Rationale:** Defers complex state transitions to the isolated ViewModel rather than littering the view hierarchy with closures.
                             },
                             warningBanners: [
                                 (title: nil, message: "Uninstalling packages uses --ignore-dependencies flag. Removing dependencies may break other packages. Use at your own risk.")
@@ -30,7 +36,9 @@ struct PIPPackagesView: View {
                         )
                     }
                 
-                // Package Lists
+                /// Package Lists
+                ///
+                /// **Rationale:** Structurally groups the primary scrollable content area below the sticky header.
                 if viewModel.isLoading {
                     LoadingStateView("Loading packages...")
                 } else {
@@ -54,7 +62,9 @@ struct PIPPackagesView: View {
             }
         }
         .task {
-            // Ensure data is loaded
+            /// Ensure data is loaded
+            ///
+            /// **Gotchas:** Omitting this lifecycle hook causes the packages view to initially render completely empty until a background timer fires.
              if !viewModel.hasLoadedOnce {
                 await viewModel.loadInstalledPackages()
             }

@@ -49,6 +49,14 @@ enum ConnectionStatus: Equatable {
 ///
 /// `NetworkMonitor` periodically verifies connectivity toward application server resources, issuing asynchronous validations
 /// maintaining UX synchronicity independent of manual refresh operations.
+///
+/// ```swift
+/// @StateObject private var monitor = NetworkMonitor()
+/// // ...
+/// if monitor.status == .connected {
+///     Text("API is reachable")
+/// }
+/// ```
 @MainActor
 final class NetworkMonitor: ObservableObject {
     /// The structural state metric representing resolution success.
@@ -65,6 +73,9 @@ final class NetworkMonitor: ObservableObject {
     private let logger = Logger.shared
     
     /// Bootstraps native execution threads mapping monitoring cycles.
+    ///
+    /// **Gotchas:**
+    /// Initialization triggers `startMonitoring()` automatically.
     init() {
         startMonitoring()
     }
@@ -74,6 +85,9 @@ final class NetworkMonitor: ObservableObject {
     }
     
     /// Configures execution threads tracking standard monitoring checks cyclically against constant thresholds.
+    ///
+    /// **Flow:**
+    /// Loops continuously on a detached `Task`, pausing for `checkInterval` (30s) between tests until cancelled.
     func startMonitoring() {
         checkTask?.cancel()
         checkTask = Task {
@@ -93,10 +107,18 @@ final class NetworkMonitor: ObservableObject {
     /// `objectWillChange` on *every* assignment (even equal values), so without
     /// this guard the 30s poll re-rendered the always-visible sidebar each cycle
     /// even when nothing changed (R2).
+    ///
+    /// - Parameter newValue: The computed state enumeration defining current health.
     private func setStatus(_ newValue: ConnectionStatus) {
         if status != newValue { status = newValue }
     }
 
+    /// Re-evaluates primary network paths using URLSession data tasks.
+    ///
+    /// **Flow:**
+    /// 1. Issues a 10s timeout `GET` to the backend.
+    /// 2. If it encounters a 2xx or 3xx HTTP response, flags as `.connected`.
+    /// 3. Catches failures, delays for 2s, and triggers `retryConnection()`.
     func checkConnectivity() async {
         if status != .connected {
             setStatus(.checking)
@@ -140,6 +162,7 @@ final class NetworkMonitor: ObservableObject {
         }
     }
     
+    /// A secondary, shorter-timeout fallback probe triggered when the primary connection stalls.
     private func retryConnection() async {
         let apiURL = NetworkConfig.APIEndpoint.healthURL
         guard let url = URL(string: apiURL) else {

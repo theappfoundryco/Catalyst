@@ -4,6 +4,10 @@ import Foundation
 ///
 /// `BrewPathManager` resolves the correct binary and prefix paths for Homebrew,
 /// abstracting differences between Apple Silicon and Intel-based Mac architectures.
+///
+/// ```swift
+/// let prefix = await BrewPathManager.shared.homebrewPrefix
+/// ```
 final class BrewPathManager: @unchecked Sendable {
     /// The shared singleton instance.
     static let shared = BrewPathManager()
@@ -34,6 +38,10 @@ final class BrewPathManager: @unchecked Sendable {
     let architecture: Architecture
     
     /// Represents the hardware architecture type.
+    ///
+    /// ```swift
+    /// if BrewPathManager.shared.architecture == .appleSilicon { ... }
+    /// ```
     enum Architecture {
         /// Apple Silicon (ARM64) architecture.
         case appleSilicon
@@ -84,6 +92,7 @@ final class BrewPathManager: @unchecked Sendable {
         _ = await initTask?.result
     }
     
+    /// Asynchronously tests standard installation prefixes to locate the Homebrew binary.
     private func resolveBrewPathAsync() async {
         let standardPaths = ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"]
         
@@ -114,6 +123,8 @@ final class BrewPathManager: @unchecked Sendable {
         }
     }
     
+    /// Thread-safely propagates a discovered Homebrew binary path into the observable state.
+    /// - Parameter brewPath: The verified absolute location of the Homebrew binary on disk.
     private func updatePaths(brewPath: String) {
         lock.lock()
         defer { lock.unlock() }
@@ -170,6 +181,10 @@ final class BrewPathManager: @unchecked Sendable {
     }
     
     /// Represents a valid Python executable installed by Homebrew.
+    ///
+    /// ```swift
+    /// let pythons = await BrewPathManager.shared.getInstalledPythons()
+    /// ```
     struct BrewPython: Identifiable, Hashable {
         /// A unique identifier for the instance.
         let id = UUID()
@@ -219,6 +234,7 @@ final class BrewPathManager: @unchecked Sendable {
 }
 
 fileprivate extension NSLock {
+    /// Executes a scoped closure synchronously within the boundaries of the lock.
     func withLock<T>(_ body: () throws -> T) rethrows -> T {
         lock()
         defer { unlock() }

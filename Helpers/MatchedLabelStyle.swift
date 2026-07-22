@@ -1,9 +1,5 @@
-//
-//  MatchedLabelStyle.swift
-//  Catalyst
-//
-//  Shared label style that keeps a button's SF Symbol the same color as its title.
-//
+/// Shared label style that keeps a button's SF Symbol the same color as its title.
+
 import SwiftUI
 
 /// Renders a `Label` so its SF Symbol always matches the title's color.
@@ -25,6 +21,9 @@ import SwiftUI
 struct MatchedLabelStyle: LabelStyle {
     var spacing: CGFloat = 4
 
+    /// Fuses the system icon and text components into a uniform visual hierarchy.
+    /// - Parameter configuration: The active structural bridge mapping the style attributes.
+    /// - Returns: The active presentation hierarchy for the detail view.
     func makeBody(configuration: Configuration) -> some View {
         HStack(spacing: spacing) {
             configuration.icon
@@ -46,9 +45,16 @@ extension LabelStyle where Self == MatchedLabelStyle {
 /// whole label in ONE color on a neutral surface. Icon == title, always. The
 /// "button color reflects the button type" (neutral surface here) while primary
 /// actions keep `.borderedProminent`.
+///
+/// ```swift
+/// Button("Copy") { }.buttonStyle(.secondaryAction)
+/// ```
 struct SecondaryActionButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
 
+    /// Composes the structural elements enforcing unified foreground tinting.
+    /// - Parameter configuration: The active structural bridge mapping the style attributes.
+    /// - Returns: The active presentation hierarchy for the detail view.
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .labelStyle(.matched)
@@ -91,7 +97,13 @@ extension ButtonStyle where Self == SecondaryActionButtonStyle {
 /// One style with a size knob keeps both rendering the same red, radius, and label treatment —
 /// the alternative was converting the large CTAs to caption size, which would have quietly
 /// demoted the most consequential buttons in the app.
+///
+/// ```swift
+/// Button("Delete") { }.buttonStyle(.destructiveAction)
+/// Button("Uninstall") { }.buttonStyle(.destructiveActionProminent)
+/// ```
 struct DestructiveActionButtonStyle: ButtonStyle {
+    /// Governs the exact geometrical scale of the destructive action trigger.
     enum Size {
         /// Matches ``SecondaryActionButtonStyle`` exactly. For rows of mixed actions.
         case regular
@@ -112,6 +124,9 @@ struct DestructiveActionButtonStyle: ButtonStyle {
     private var vPad: CGFloat { size == .regular ? 5 : 9 }
     private var radius: CGFloat { size == .regular ? 6 : 8 }
 
+    /// Renders the capsule styling wrapped around a high-contrast destructive label.
+    /// - Parameter configuration: The active structural bridge mapping the style attributes.
+    /// - Returns: The active presentation hierarchy for the detail view.
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .labelStyle(.matched)

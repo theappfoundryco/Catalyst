@@ -9,6 +9,10 @@ struct ToolChainCheck: Doctor {
 
     /// Evaluates the `xcode-select` paths and fallback directory structures to confirm installation.
     ///
+    /// **Flow:**
+    /// 1. Queries `xcode-select -p` establishing command line linkage status safely.
+    /// 2. If absent, validates physical structures resolving around `/Library/Developer/CommandLineTools`.
+    ///
     /// - Returns: An array of `HealthIssue` if the command line tools are missing or damaged.
     func run() async -> [HealthIssue] {
         var issues: [HealthIssue] = []
@@ -47,6 +51,9 @@ struct ToolChainCheck: Doctor {
     }
     
     /// Triggers the native macOS Command Line Tools installation dialog if tools are missing.
+    ///
+    /// **Gotchas:**
+    /// The `xcode-select --install` command only triggers an asynchronous GUI flow managed by Apple. It cannot be resolved silently.
     ///
     /// - Parameter issue: The toolchain absence incident to resolve.
     /// - Returns: A boolean indicating if the automated installation sequence started successfully.

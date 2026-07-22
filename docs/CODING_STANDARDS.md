@@ -1,4 +1,4 @@
-# Catalyst — Ground Rules ("Formrules")
+# Catalyst — Coding Standards
 
 **The single source of truth for how to build Catalyst further.** If you're adding
 a screen, a service, a shell call, or a card, the answer to "how do we do that
@@ -11,7 +11,7 @@ rules here exist specifically because macOS (`NSScrollView`, hover, `AppKit`
 bridging, `sudo`) behaves differently.
 
 Companion docs: architecture overview → `ARCHITECTURE.md`;
-scroll-smoothness deep-dive → `toAvoid.md`; release runbook → `RELEASING.md`.
+scroll-smoothness deep-dive → `ANTI_PATTERNS.md`; release runbook → `RELEASING.md`.
 
 > **How to use this file.** These are conventions this codebase actually holds to, and most
 > of them exist because something broke. A rule that reads as fussy usually cost someone a
@@ -149,7 +149,7 @@ body that could carry a token. Log errors as messages, not secrets.
 
 ## Part 3 — Scroll smoothness (macOS-specific)
 
-Full rationale in `toAvoid.md`. The short version:
+Full rationale in `ANTI_PATTERNS.md`. The short version:
 
 3.1 **Every page scroll uses `SmoothPageScroll`, not a bare `ScrollView`.**
 `SmoothPageScroll` (in `Helpers/CardStyleExtensionView.swift`) is a `List`-backed
@@ -172,7 +172,7 @@ for non-navigating card content. Also: **every screen must be inside a scroll
 container** — a bare `VStack` detail (About, before this) lets tall content grow
 the window past the screen and shove the sidebar's bottom status off.
 
-3.2 **Never nest a vertical `ScrollView` inside the page scroll** (`toAvoid.md`
+3.2 **Never nest a vertical `ScrollView` inside the page scroll** (`ANTI_PATTERNS.md`
 Rule 1 — the #1 jank cause). Horizontal inner scrolls are fine (different axis).
 Known offenders still to fix: `OutputConsoleView`, install/search-result lists,
 Alias/Requirements previews. `LogsView`'s single `ScrollViewReader` scroll is the
@@ -605,8 +605,7 @@ and `Helpers/ShortcutContentView.swift` are in the target, as are the Cruft
 Sweeper files (`Services/CruftScanner.swift`, `Models/CruftModels.swift`,
 `Views/Components/CruftSweeperCards.swift`). The cache types (`CacheTTL`,
 `RemoteCache`) live in `Utilities/NetworkConfig.swift` (already registered) to
-avoid a new-file registration — the now-empty `Utilities/RemoteCache.swift` can be
-deleted. Remaining cleanup: **remove the now-unused `MarkdownUI` SPM package**.
+avoid a new-file registration. Remaining cleanup: **remove the now-unused `MarkdownUI` SPM package**.
 
 > Lesson: prefer adding new types to an already-registered file when the pbxproj
 > isn't syncing new files, rather than fighting registration.
@@ -692,5 +691,6 @@ alongside deleted code is worse than no rule.
 - **12.45 Endpoints are composed from ONE constant, and tests must not restate it.** Every path derives from `NetworkConfig.APIEndpoint.baseURL`. `NetworkConfigTests` used to pin each URL to a literal host that had already been replaced twice — a test that restates the value it checks verifies nothing and just has to be edited in lockstep. Assert composition, not the host.
 - **12.46 The liveness probe must share an origin with the content.** `healthURL` points at the data host, not somewhere else. The question it answers is "can Catalyst reach its content?" — probing a different origin reports healthy while every catalog screen sits empty.
 - **12.49 To ask \"is this a git repo?\", ask git — never `[ -d .git ]` (2026-07-21).** `cut_release.sh` rejected a perfectly good `updates/` clone because it tested for a `.git` **directory**. `.git` is a FILE holding a gitdir pointer whenever the repo is a worktree or submodule, and some filesystem mounts don't expose it at all. Use `git -C "$dir" rev-parse --show-toplevel` and compare the result to `$dir` — the comparison matters as much as the query, because a bare `rev-parse` run inside a non-repo walks UP the tree, finds the *parent* repo's `.git`, and reports success for a directory that was never cloned. Generalises: when a tool can answer a question about its own state, asking the filesystem to infer it is guessing.
+- **12.50 Publish before you polish, and never let a cosmetic step abort a release (2026-07-21).** `cut_release.sh` ran `sync_release_notes.sh` (which only refreshes GitHub Release bodies) BEFORE pushing the appcast. That script lacked the executable bit — and git had recorded it as `100644`, so every clone would inherit the fault — so invoking it directly gave permission-denied, `set -e` killed the run, and the push never happened. The result was a published Release with no matching appcast entry: **invisible to every install, and completely silent**, because Sparkle reads a feed that lists no newer version as "no update available". It shipped that way twice before anyone noticed, and only a `log stream` showing a successful 200 with no download revealed it. Three fixes, all of them general: (a) do the step that *matters* first, so a later failure degrades rather than blocks; (b) invoke helper scripts as `bash path/to/script`, never relying on a permission bit that a clone, zip, or copy can drop; (c) if you do rely on the bit, set it in git with `git update-index --chmod=+x` — chmod alone only fixes your machine.
 - **12.48 An unmatched glob stays literal — guard it, and quote what you iterate (2026-07-21).** `cut_release.sh` listed published versions with `for d in "$REL_DIR"/Versions/*/`. With the sibling metadata repo not cloned, the glob matched nothing and bash left it **literal**, `basename` reduced it to `*`, and the caller's unquoted `for v in $preds` expanded that against the working directory — so "no predecessors" became "deprecate every folder in the repo", and the dry run cheerfully listed `README.md` and `LICENSE` as versions to deprecate. Two fixes, both needed: `[ -d "$d" ] || continue` inside the loop, and never iterate an unquoted variable that could hold a glob character. Related: the script now checks the sibling `updates` repo exists *before* building, because finding out after notarization means a published Release with no appcast — invisible to users, since Sparkle reads an unreachable feed as "no update available".
 - **12.47 Removing an Xcode *target* is not like removing files (2026-07-21).** Deleting the test target took three attempts and corrupted `project.pbxproj` twice. What bites: (a) the `pbxproj` Python library has no `remove_target`, and hand-removing objects makes its serializer throw **mid-write**, truncating the file — back it up first; (b) deleting lines by object id also removes the opening line of the nested `TargetAttributes` block and orphans its closing brace; (c) once the last `PBXContainerItemProxy`/`PBXTargetDependency` is gone, their `Begin`/`End` section markers sit empty with nothing between, which the parser rejects outright. Verify after: braces balance, the project parses, the app target still lists every source file, and the scheme XML is valid.

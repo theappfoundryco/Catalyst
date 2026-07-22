@@ -1,7 +1,11 @@
 import SwiftUI
 
 // MARK: - SSD Metric Gauge (Mini circular gauge for individual metrics)
-
+/// A mini circular gauge visualizing a single SSD metric, such as temperature or lifespan used.
+///
+/// ```swift
+/// SSDMetricGauge(value: 45, maxValue: 100, unit: "°C", color: .orange)
+/// ```
 struct SSDMetricGauge: View {
     let value: Int
     let maxValue: Int
@@ -40,7 +44,11 @@ struct SSDMetricGauge: View {
 }
 
 // MARK: - SSD Health Metric Card
-
+/// A styled card presenting a high-level SSD health metric with an icon and gradient.
+///
+/// ```swift
+/// SSDHealthMetricCard(icon: "thermometer", title: "Temperature", value: "45°C", subtitle: "Normal", color: .orange, gradient: myGradient)
+/// ```
 struct SSDHealthMetricCard: View {
     let icon: String
     let title: String
@@ -92,11 +100,16 @@ struct SSDHealthMetricCard: View {
 }
 
 // MARK: - SSD Status Badge
-
+/// A badge indicating the overall status of an SSD metric (passed, warning, critical, neutral).
+///
+/// ```swift
+/// SSDStatusBadge(label: "SMART Status", status: .passed)
+/// ```
 struct SSDStatusBadge: View {
     let label: String
     let status: BadgeStatus
     
+    /// Differentiates warning severity levels for hardware threshold violations.
     enum BadgeStatus {
         case passed, warning, critical, neutral
         
@@ -145,7 +158,11 @@ struct SSDStatusBadge: View {
         .cornerRadius(10)
     }
 }
-
+/// A card detailing the hardware specifications and firmware of the active SSD.
+///
+/// ```swift
+/// DriveIdentityCard(info: driveInfo)
+/// ```
 struct DriveIdentityCard: View {
     let info: DriveInfo
     
@@ -185,6 +202,7 @@ struct DriveIdentityCard: View {
     }
 }
 
+/// Displays a foundational hardware identification property.
 struct IdentityItem: View {
     let label: String
     let value: String
@@ -221,7 +239,11 @@ struct IdentityItem: View {
 }
 
 // MARK: - Storage Vitals Card (full-width capacity overview)
-
+/// A full-width card providing a detailed breakdown of the boot volume's storage capacity.
+///
+/// ```swift
+/// StorageVitalsCard(storage: storageInfo)
+/// ```
 struct StorageVitalsCard: View {
     let storage: StorageInfo
 
@@ -233,6 +255,9 @@ struct StorageVitalsCard: View {
         }
     }
 
+    /// Formats a raw 64-bit byte count into a localized human-readable string.
+    /// - Parameter value: The raw capacity calculated in basic structural bytes.
+    /// - Returns: A localized formatted string converted to human units.
     private func bytes(_ value: Int64) -> String {
         ByteCountFormatter.string(fromByteCount: value, countStyle: .file)
     }
@@ -323,6 +348,7 @@ struct StorageVitalsCard: View {
     }
 }
 
+/// A graphical legend component explaining disk utilization coloring.
 private struct StorageLegendItem: View {
     let label: String
     let value: String
@@ -347,7 +373,11 @@ private struct StorageLegendItem: View {
 }
 
 // MARK: - Data Transfer Bar
-
+/// A card visualizing the lifetime data transfer and I/O command statistics for the SSD.
+///
+/// ```swift
+/// DataTransferBar(transfer: transferStats)
+/// ```
 struct DataTransferBar: View {
     let transfer: DataTransfer
     
@@ -451,6 +481,9 @@ struct DataTransferBar: View {
         )
     }
     
+    /// Inserts standardized grouping separators into raw SMART counter values.
+    /// - Parameter n: The raw mathematical scalar.
+    /// - Returns: A string localized with appropriate digit grouping.
     private func formatLargeNumber(_ n: Int64) -> String {
         let number = Double(n)
         if number >= 1_000_000_000 {
@@ -464,6 +497,7 @@ struct DataTransferBar: View {
     }
 }
 
+/// Renders a singular SMART controller metric alongside its numeric value.
 struct StatDetailRow: View {
     let label: String
     let value: String
@@ -493,7 +527,11 @@ struct StatDetailRow: View {
 
 
 // MARK: - Setup Card (Dependency/Brew missing)
-
+/// A card shown when prerequisite tools for SSD scanning are missing or need setup.
+///
+/// ```swift
+/// SSDSetupCard(icon: "hammer", title: "Setup Required", message: "...", buttonLabel: "Install", isLoading: false) { setup() }
+/// ```
 struct SSDSetupCard: View {
     let icon: String
     let title: String

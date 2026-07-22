@@ -76,31 +76,41 @@ struct CompactInputField: View {
                 // SwiftUI treats SecureField and TextField as different views, so
                 // swapping them would drop focus mid-typing. A stable identity keyed
                 // to THIS field (not a shared constant — two sibling passphrase
-                // fields must not share one) keeps it alive across the toggle.
+                /// fields must not share one) keeps it alive across the toggle.
+                ///
+                /// **Rationale:** Prevents catastrophic focus drops when swapping the underlying `SecureField` for a standard `TextField`.
                 .id("compact-input-\(label ?? placeholder)")
                 .focused($isFocused)
                 .frame(width: width)
-                // Extend the field's hit region to its whole frame so a click on the
-                // blank area (not just the glyphs) focuses it — a bare .plain field
-                // otherwise only accepts hits on the text itself.
+                /// Extend the field's hit region to its whole frame so a click on the
+                /// blank area (not just the glyphs) focuses it — a bare .plain field
+                /// otherwise only accepts hits on the text itself.
+                ///
+                /// **Rationale:** Small, text-only hit targets violate macOS HIG and frustrate mouse users.
                 .contentShape(Rectangle())
-                // ...and actually FOCUS on that click. `contentShape` alone only makes
-                // the region hit-testable, so the trailing blank area of the field
-                // *consumed* the tap and then did nothing with it — the outer gesture
-                // below never saw it, so no caret appeared. A `TextField` with no
-                // explicit `width` greedily fills the row, which is why the dead zone
-                // was the whole right-hand side.
+                /// ...and actually FOCUS on that click. `contentShape` alone only makes
+                /// the region hit-testable, so the trailing blank area of the field
+                /// *consumed* the tap and then did nothing with it — the outer gesture
+                /// below never saw it, so no caret appeared. A `TextField` with no
+                /// explicit `width` greedily fills the row, which is why the dead zone
+                /// was the whole right-hand side.
+                ///
+                /// **Gotchas:** SwiftUI's greedy layout engine will silently swallow tap gestures on trailing spacer areas if focus delegation isn't explicitly defined.
                 .onTapGesture { isFocused = true }
                 .onSubmit { onSubmit?() }
 
-                // Fill the row so clicks anywhere in the field focus it.
+                /// Fill the row so clicks anywhere in the field focus it.
+                ///
+                /// **Rationale:** Expands the hit area of the input field to match standard macOS Human Interface Guidelines, avoiding frustrating dead-clicks.
                 if width != nil { Spacer(minLength: 0) }
 
                 if isSecure && allowReveal {
                     Button {
                         isRevealed.toggle()
-                        // Toggling swaps the underlying view; put the caret back so
-                        // the user can keep typing without re-clicking.
+                        /// Toggling swaps the underlying view; put the caret back so
+                        /// the user can keep typing without re-clicking.
+                        ///
+                        /// **Rationale:** Ensures continuous keyboard flow when users toggle password visibility mid-sentence.
                         isFocused = true
                     } label: {
                         Image(systemName: isRevealed ? "eye.slash.fill" : "eye.fill")
@@ -116,10 +126,12 @@ struct CompactInputField: View {
             }
             .padding(4)
             .cardStyle(.compact, padded: false)
-            // The whole field (including padding/icon/border inset) is the tap
-            // target, not just the text glyphs. This catches the areas the field
-            // itself doesn't own — the leading icon, the 4pt padding, and the gap
-            // before the eye button.
+            /// The whole field (including padding/icon/border inset) is the tap
+            /// target, not just the text glyphs. This catches the areas the field
+            /// itself doesn't own — the leading icon, the 4pt padding, and the gap
+            /// before the eye button.
+            ///
+            /// **Gotchas:** Without this blanket `contentShape`, users clicking near the edges of the field will mysteriously fail to focus it.
             .contentShape(Rectangle())
             .onTapGesture { isFocused = true }
         }

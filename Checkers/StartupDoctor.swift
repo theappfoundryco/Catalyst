@@ -9,6 +9,11 @@ struct StartupDoctor: Doctor {
 
     /// Evaluates LaunchAgents and LaunchDaemons against actively executing services and physical locations.
     ///
+    /// **Flow:**
+    /// 1. Reads standard `/Library` and `~/Library` launch paths aggregating valid `.plist` entities.
+    /// 2. Executes `launchctl list` validating executing background daemons matching identifiers.
+    /// 3. Cross-references internal `<Program>` XML structures ensuring binaries resolve logically on disk.
+    ///
     /// - Returns: An array of `HealthIssue` highlighting missing executables and active background services.
     func run() async -> [HealthIssue] {
         let fm = FileManager.default
@@ -81,6 +86,9 @@ struct StartupDoctor: Doctor {
     }
     
     /// Unloads active legacy services or deletes broken plist files natively.
+    ///
+    /// **Gotchas:**
+    /// Unloading `/Library/LaunchDaemons` often requires `sudo`, which may fail silently if Catalyst lacks elevated scope. Plist deletion handles zombie elements definitively.
     ///
     /// - Parameter issue: The startup issue detailing the label or broken executable.
     /// - Returns: A boolean indicating execution success for removal or unloading.

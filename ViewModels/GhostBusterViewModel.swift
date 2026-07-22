@@ -2,6 +2,7 @@ import Foundation
 import Combine
 import SwiftUI
 
+/// A structure representing an active TCP listener process found on the system.
 struct GhostProcess: Identifiable, Equatable, Sendable {
     let id = UUID()
     let pid: Int
@@ -15,6 +16,20 @@ struct GhostProcess: Identifiable, Equatable, Sendable {
     }
 }
 
+/// A view model that orchestrates scanning and terminating stray developer processes.
+///
+/// `GhostBusterViewModel` uses `lsof` to find processes holding TCP ports open, applying
+/// strict allowlists (development frameworks) and blocklists (system-critical apps) to
+/// ensure users don't accidentally brick their macOS session.
+///
+/// **Caveats:**
+/// - PIDs are strictly verified before being killed to prevent terminating recycled PIDs.
+/// - Root-owned processes cannot be killed (since Catalyst does not blindly escalate privileges for GhostBuster).
+///
+/// ```swift
+/// await vm.scan()
+/// if let ghost = vm.ghosts.first { await vm.killProcess(ghost) }
+/// ```
 @MainActor
 final class GhostBusterViewModel: ObservableObject {
     @Published var ghosts: [GhostProcess] = []
@@ -40,14 +55,27 @@ final class GhostBusterViewModel: ObservableObject {
     
     private let logger = Logger.shared
 
-    /// Lowercased alphanumeric tokens of a command's basename, for whole-token
-    /// allow/blocklist matching (e.g. "com.docker.backend" → {com, docker, backend},
-    /// "google-chrome-helper" → {google, chrome, helper}).
+    /// Lowercased alphanumeric tokens of a command's basename.
+    ///
+    /// **Rationale:**
+    /// Ensures allow/blocklist matching operates on whole tokens (e.g. "com.docker.backend" → `{com, docker, backend}`),
+    /// mitigating dangerous substring matches.
+    ///
+    /// - Parameter command: The raw executable path or name.
+    /// - Returns: A set of safe token strings.
     static func commandTokens(_ command: String) -> Set<String> {
         let base = (command as NSString).lastPathComponent.lowercased()
         return Set(base.components(separatedBy: CharacterSet.alphanumerics.inverted).filter { !$0.isEmpty })
     }
 
+    /// Scans the system for TCP listeners and populates the `ghosts` array based on allowlists.
+    ///
+    /// **Flow:**
+    /// 1. Executes `lsof -F cpn` for machine-readable output.
+    /// 2. Iterates lines, capturing `p` (PID), `c` (Command), and `n` (Port).
+    /// 3. Tokenizes the command basename using ``commandTokens(_:)``.
+    /// 4. Discards tokens found in the ``blockedProcesses`` array.
+    /// 5. Retains processes found in the ``allowedDevKeywords`` or on a common HTTP port.
     func scan() async {
         isScanning = true
         var foundGhosts: [GhostProcess] = []
@@ -140,7 +168,14 @@ final class GhostBusterViewModel: ObservableObject {
     
     // Legacy single port check removed
 
-    
+    /// Attempts to terminate a specific ``GhostProcess`` using `SIGTERM` and then `SIGKILL`.
+    ///
+    /// **Flow:**
+    /// 1. Calls ``killWithRetry(ghost:retries:)``.
+    /// 2. Animates removal from the UI upon success.
+    /// 3. Awaits 500ms before calling a full ``scan()`` to ensure OS port reclamation settles.
+    ///
+    /// - Parameter process: The verified Ghost process struct.
     func killProcess(_ process: GhostProcess) async {
         logger.log("👻 Killing process \(process.pid) (\(process.name))...")
         
@@ -160,6 +195,11 @@ final class GhostBusterViewModel: ObservableObject {
         await scan()
     }
     
+    /// Spawns parallel kill tasks for all discovered ghosts.
+    ///
+    /// **Rationale:**
+    /// Uses a `TaskGroup` to attempt kills simultaneously. Only removes *verified* kills from the UI,
+    /// avoiding the optimistic-UI trap where root-owned processes briefly vanish and pop back.
     func killAllGhosts() async {
         guard !ghosts.isEmpty else { return }
         logger.log("👻 Nucleating all ghosts...")
@@ -190,10 +230,14 @@ final class GhostBusterViewModel: ObservableObject {
         await scan()
     }
     
-    /// Confirms the PID still maps to the command+port we scanned, guarding
-    /// against PID reuse between scan and kill. The OS can recycle a PID on a
-    /// busy machine, so killing a cached PID blindly risks signalling an
-    /// unrelated (possibly important) process.
+    /// Confirms the PID still maps to the command+port we scanned.
+    ///
+    /// **Gotchas:**
+    /// - Guards against PID reuse between scan and kill. The OS can recycle a PID on a busy machine,
+    ///   so killing a cached PID blindly risks terminating an unrelated (and possibly critical) process.
+    ///
+    /// - Parameter ghost: The snapshot of the process to verify.
+    /// - Returns: `true` if `lsof` still places this PID precisely on the tracked port and command.
     private func pidStillMatches(_ ghost: GhostProcess) async -> Bool {
         do {
             let result = try await AsyncProcessRunner.shared.run(
@@ -209,6 +253,17 @@ final class GhostBusterViewModel: ObservableObject {
         }
     }
 
+    /// The low-level execution layer for sending signals to PIDs.
+    ///
+    /// **Flow:**
+    /// 1. Re-verifies PID ownership via ``pidStillMatches(_:)``.
+    /// 2. Loops `retries` times. Sends `-15` (SIGTERM) on attempt 1, and `-9` (SIGKILL) on subsequent attempts.
+    /// 3. Uses `ps -p` to definitively confirm the death of the process.
+    ///
+    /// - Parameters:
+    ///   - ghost: The verified process wrapper.
+    ///   - retries: Number of allowed signal attempts.
+    /// - Returns: `true` if destroyed.
     private func killWithRetry(ghost: GhostProcess, retries: Int = 3) async -> Bool {
         let pid = ghost.pid
         guard pid > 0 else {
@@ -249,6 +304,12 @@ final class GhostBusterViewModel: ObservableObject {
         return false
     }
     
+    /// Maps a process string to an SF Symbol icon for the UI.
+    ///
+    /// - Parameters:
+    ///   - name: Command basename.
+    ///   - port: Integer port (currently unused in logic, reserved for future heuristic matching).
+    /// - Returns: An SF Symbol name string.
     private func determineIcon(for name: String, port: Int) -> String {
         let n = name.lowercased()
         if n.contains("node") { return "hexagon.fill" } // Node

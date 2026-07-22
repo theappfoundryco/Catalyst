@@ -3,6 +3,10 @@ import Foundation
 /// A security utility for sanitizing and validating inputs before they are evaluated in shell contexts.
 ///
 /// `InputSanitizer` guards against command injection via package names, paths, or function aliases.
+///
+/// ```swift
+/// let safeName = InputSanitizer.sanitizePackageName("requests")
+/// ```
 enum InputSanitizer {
 
     private static let validPackageNamePattern = "^[a-zA-Z0-9][a-zA-Z0-9._@-]*$"
@@ -54,6 +58,8 @@ enum InputSanitizer {
     /// path `AsyncProcessRunner.run(executable:arguments:)` which avoids the
     /// shell — and therefore quoting — entirely. This prevents the recurring
     /// "used bare / inside double quotes" class of bug.
+    /// - Parameter string: The raw untrusted input payload.
+    /// - Returns: A safe, single-quoted representation capable of bypassing shell expansions.
     private static func shellEscape(_ string: String) -> String {
         return string.replacingOccurrences(of: "'", with: "'\\''")
     }

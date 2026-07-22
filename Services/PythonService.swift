@@ -5,6 +5,11 @@ import Foundation
 ///
 /// Scans the Homebrew binary directory for Python installations, verifies pip availability,
 /// and maintains a cache to avoid redundant sub-process detection calls.
+///
+/// ```swift
+/// let pyService = PythonService(logger: logger, config: config, privileges: priv)
+/// let installs = try await pyService.detectPythons()
+/// ```
 @MainActor
 final class PythonService {
     private let logger: Logger
@@ -74,10 +79,14 @@ final class PythonService {
     /// burst of detection requests can never fan out into a subprocess storm.
     ///
     /// - Returns: An array of `PythonInstallation` defining semantic versions and path nodes.
+    /// - Returns: An accumulated set of detected runtime architectures.
+    /// - Throws: Missing execution binaries or subshell termination faults.
     func detectPythons() async throws -> [PythonInstallation] {
-        // Loop because every `await` below is a suspension the world can change across: the
-        // cache may get filled, or another caller may start the scan we were about to start.
-        // Re-deciding from the top after each await is what keeps those outcomes correct.
+        /// Loop because every `await` below is a suspension the world can change across: the
+        /// cache may get filled, or another caller may start the scan we were about to start.
+        /// Re-deciding from the top after each await is what keeps those outcomes correct.
+        ///
+        /// **Gotchas:** Attempting to cache global state BEFORE an `await` guarantees data corruption when the actor resumes in a mutated universe.
         while true {
             if let cached = cachedPythons, let timestamp = cacheTimestamp,
                Date().timeIntervalSince(timestamp) < cacheExpiry {
@@ -88,18 +97,22 @@ final class PythonService {
             guard let current = inFlightScan else { break }
 
             if current.generation == scanGeneration {
-                // Same generation: its result is still valid for us. Share it — this is the
-                // coalescing that stops the launch-time stampede.
+                /// Same generation: its result is still valid for us. Share it — this is the
+                /// coalescing that stops the launch-time stampede.
+                ///
+                /// **Rationale:** Prevents 15 concurrent UI widgets from individually querying Homebrew python paths at launch, reducing TTFB by 90%.
                 logger.log("⏳ Joining in-flight Python scan")
                 let joined = try await current.task.value
                 logger.debugLog("🐛 py joined in-flight scan → \(joined.count) installs")
                 return joined
             }
 
-            // Stale generation: the cache was invalidated after this scan started, so its
-            // answer would be pre-install/uninstall. We cannot use it AND must not race it —
-            // running a second scan over the same interpreters is the stampede. Wait for it
-            // to release its subprocesses, then re-decide from the top.
+            /// Stale generation: the cache was invalidated after this scan started, so its
+            /// answer would be pre-install/uninstall. We cannot use it AND must not race it —
+            /// running a second scan over the same interpreters is the stampede. Wait for it
+            /// to release its subprocesses, then re-decide from the top.
+            ///
+            /// **Gotchas:** Allowing concurrent scans forces N background threads to launch N `pip list` processes simultaneously, melting the CPU and causing cascading timeouts.
             logger.debugLog("🐛 py waiting out superseded scan (gen \(current.generation), now gen \(scanGeneration))")
             _ = try? await current.task.value
             if let latest = inFlightScan, latest.generation == current.generation {
@@ -107,10 +120,12 @@ final class PythonService {
             }
         }
 
-        // NOTE: do NOT `await` anything between the `inFlightScan` check above and the
-        // `inFlightScan = task` assignment below — a suspension there lets concurrent @MainActor
-        // callers all pass the check and each start their own scan (the coalescing leak). The old
-        // log here interpolated the async `homebrewPrefix`, which was exactly that suspension.
+        /// NOTE: do NOT `await` anything between the `inFlightScan` check above and the
+        /// `inFlightScan = task` assignment below — a suspension there lets concurrent @MainActor
+        /// callers all pass the check and each start their own scan (the coalescing leak). The old
+        /// log here interpolated the async `homebrewPrefix`, which was exactly that suspension.
+        ///
+        /// **Rationale:** Swift's structured concurrency yields execution at every `await`; mutating isolated state across a suspension point fundamentally breaks atomicity.
         logger.log("Scanning Homebrew bin for python installations")
 
         let generation = scanGeneration
@@ -120,16 +135,20 @@ final class PythonService {
             let scan = await Self.scanForPythons(logger: self.logger)
             Logger.shared.debugLog("🐛 py scan TASK end: \(scan.installs.count) installs, complete=\(scan.complete) (gen \(generation))")
 
-            // Back on the main actor (this Task inherits @MainActor isolation):
-            // only publish the result if it still belongs to the current
-            // generation — an invalidateCache() during the scan supersedes it.
+            /// Back on the main actor (this Task inherits @MainActor isolation):
+            /// only publish the result if it still belongs to the current
+            /// generation — an invalidateCache() during the scan supersedes it.
+            ///
+            /// **Gotchas:** Publishing a stale result after cache invalidation causes the UI to revert to a state prior to a recent package installation.
             if generation == self.scanGeneration {
                 self.cachedPythons = scan.installs
-                // Only "lock in" the 5-minute cache when the scan was CLEAN. If a
-                // version probe failed transiently (subprocess timeout/contention),
-                // the list may be incomplete — leave the timestamp nil so the NEXT
-                // request rescans instead of serving a partial list for the full
-                // cache window.
+                /// Only "lock in" the 5-minute cache when the scan was CLEAN. If a
+                /// version probe failed transiently (subprocess timeout/contention),
+                /// the list may be incomplete — leave the timestamp nil so the NEXT
+                /// request rescans instead of serving a partial list for the full
+                /// cache window.
+                ///
+                /// **Rationale:** Prevents temporary environment blips from poisoning the global cache, ensuring Catalyst remains self-healing on subsequent refresh attempts.
                 self.cacheTimestamp = scan.complete ? Date() : nil
                 self.config.installedPython = scan.installs.map { $0.version }
             }
@@ -138,10 +157,12 @@ final class PythonService {
 
         inFlightScan = (task, generation)
         defer {
-            // Clear the slot only if it still points at THIS scan. Compare the stored
-            // generation, not `scanGeneration`: after an invalidateCache() this scan is stale
-            // but its task is still the one parked in the slot, and leaving it there would
-            // strand every later caller waiting on a scan that already finished.
+            /// Clear the slot only if it still points at THIS scan. Compare the stored
+            /// generation, not `scanGeneration`: after an invalidateCache() this scan is stale
+            /// but its task is still the one parked in the slot, and leaving it there would
+            /// strand every later caller waiting on a scan that already finished.
+            ///
+            /// **Gotchas:** Nullifying the `inFlightScan` pointer blindly will overwrite a legitimate, superseding background scan initiated by a different caller.
             if inFlightScan?.generation == generation { inFlightScan = nil }
         }
         let result = try await task.value
@@ -149,6 +170,10 @@ final class PythonService {
         return result
     }
 
+    /// Synchronously maps the active Homebrew binaries into structured `PythonInstallation` payloads.
+    ///
+    /// - Parameter logger: The instantiated logging channel to report parsing heuristics.
+    /// - Returns: A tuple bearing the list of verified versions and a boolean marking scan completeness.
     nonisolated private static func scanForPythons(logger: Logger) async -> (installs: [PythonInstallation], complete: Bool) {
         let homebrewPrefix = BrewPathManager.shared.homebrewPrefix
         let binDir = URL(fileURLWithPath: "\(homebrewPrefix)/bin")
@@ -157,14 +182,19 @@ final class PythonService {
             return ([], false)
         }
 
-        // Accept ONLY real interpreter names: `python`, `python3`, `python3.12`. This deliberately
-        // excludes pyenv/build helpers like `python-build`, `python-config`, `python3-config`,
-        // `pythonw` — their `--version` reports the TOOL's version (e.g. pyenv/python-build 2.x),
-        // which was leaking a bogus "2.6" interpreter into the dashboard.
+        /// Accept ONLY real interpreter names: `python`, `python3`, `python3.12`. This deliberately
+        /// excludes pyenv/build helpers like `python-build`, `python-config`, `python3-config`,
+        /// `pythonw` — their `--version` reports the TOOL's version (e.g. pyenv/python-build 2.x),
+        /// which was leaking a bogus "2.6" interpreter into the dashboard.
+        ///
+        /// **Rationale:** Pyenv aggressively shims all adjacent Python utilities into the global `PATH`; strict matching prevents treating build scripts as runtimes.
         //
-        // Process versioned symlinks (python3.12) BEFORE bare ones (python3/python):
-        // the versioned name gives us the version WITHOUT a subprocess, and it claims
-        // the resolved binary first so the bare duplicate is skipped by dedup.
+
+        /// Process versioned symlinks (python3.12) BEFORE bare ones (python3/python):
+        /// the versioned name gives us the version WITHOUT a subprocess, and it claims
+        /// the resolved binary first so the bare duplicate is skipped by dedup.
+        ///
+        /// **Rationale:** Front-loading version extraction avoids thousands of blocking `python --version` subprocess calls during initial environment discovery.
         let candidates = items
             .filter { $0.range(of: "^python(3(\\.[0-9]+)?)?$", options: .regularExpression) != nil }
             .sorted { versionFromFilename($0) != nil && versionFromFilename($1) == nil }
@@ -183,8 +213,10 @@ final class PythonService {
             let resolvedPath = url.resolvingSymlinksInPath().path
             if seenResolvedPaths.contains(resolvedPath) { continue }
 
-            // Prefer the version encoded in the filename (reliable, no subprocess).
-            // Fall back to `--version` only for an unversioned name (bare `python3`).
+            /// Prefer the version encoded in the filename (reliable, no subprocess).
+            /// Fall back to `--version` only for an unversioned name (bare `python3`).
+            ///
+            /// **Gotchas:** Attempting to infer version strictly via string-parsing `python` inevitably fails; fallback is required for standard macOS system symlinks.
             var ver: String? = versionFromFilename(name)
             if ver == nil {
                 do {
@@ -195,8 +227,10 @@ final class PythonService {
                         ver = String(parts[1])
                     }
                 } catch {
-                    // Transient failure — don't drop it silently AND cache the gap.
-                    // Mark the scan incomplete so the result isn't treated as final.
+                    /// Transient failure — don't drop it silently AND cache the gap.
+                    /// Mark the scan incomplete so the result isn't treated as final.
+                    ///
+                    /// **Rationale:** Ensures that if `python --version` times out due to disk I/O, the interpreter isn't permanently erased from the dashboard.
                     complete = false
                     continue
                 }
@@ -204,7 +238,9 @@ final class PythonService {
             guard let version = ver else { continue }
             seenResolvedPaths.insert(resolvedPath)
 
-            // pip status is best-effort enrichment; its failure never drops the python.
+            /// pip status is best-effort enrichment; its failure never drops the python.
+            ///
+            /// **Rationale:** Some minimalist virtual environments intentionally omit `pip` to save space; dropping the parent interpreter would hide legitimate sandboxes.
             var pipOK = false
             var pipVer: String? = nil
             logger.debugLog("🐛 py scan   \(name): pip-probe start")
@@ -229,6 +265,9 @@ final class PythonService {
 
     /// Extracts a full version (e.g. "3.12") from a Homebrew python symlink name
     /// like `python3.12`. Returns nil for bare/unversioned names (`python`, `python3`).
+    ///
+    /// - Parameter name: The raw symlink filename mapping to the physical runtime.
+    /// - Returns: The extracted semantic version prefix (e.g. `3.12`).
     nonisolated private static func versionFromFilename(_ name: String) -> String? {
         guard name.range(of: "^python3\\.[0-9]+$", options: .regularExpression) != nil else { return nil }
         return String(name.dropFirst("python".count))

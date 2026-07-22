@@ -9,12 +9,16 @@ import AppKit
 ///
 /// Layout notes:
 /// - The loaded state is one plain `ScrollView` (the documented interactive-content
-///   exception, `Formrules.md` 3.1). Content is pinned to full width to avoid the
+///   exception, `CODING_STANDARDS.md` 3.1). Content is pinned to full width to avoid the
 ///   left-squeeze bug, and both cards use `cardStyle(padded: false)` so their edges align.
 /// - The graph renders **per row** (each row draws only its own lane segments), so a long
 ///   history never builds one giant canvas layer — the previous scroll-jank cause.
 /// - The graph card's title + legend is a **pinned section header**: it sits at the top of
 ///   the card, sticks to the top while scrolling, and drops back into place on scroll-up.
+///
+/// ```swift
+/// GitGraphView(vm: gitGraphViewModel)
+/// ```
 struct GitGraphView: View {
     @ObservedObject var vm: GitGraphViewModel
 
@@ -213,6 +217,9 @@ struct GitGraphView: View {
         }
     }
 
+    /// Renders an error layout when the underlying Git history cannot be parsed.
+    /// - Parameter message: The human readable error message string.
+    /// - Returns: The active presentation hierarchy for the detail view.
     private func failedState(_ message: String) -> some View {
         VStack(spacing: 24) {
             header
@@ -232,14 +239,18 @@ struct GitGraphView: View {
 
     // MARK: - Loaded (summary + graph)
 
+    /// - Parameter summary: The mapped architectural diagram payload resolving graph layout.
+    /// - Returns: The active presentation hierarchy for the detail view.
     private func loadedState(_ summary: RepoSummary) -> some View {
         // One geometry source: the content width (minus the 16pt page padding on each
         // side) drives both the pinned scrollbar and the rows so they stay in sync.
         GeometryReader { geo in
             let availWidth = max(120, geo.size.width - 32)
             ScrollView {
-                // Spacing 0 so the pinned reference header abuts the commit rows (one card);
-                // gaps above the graph are added explicitly.
+                /// Spacing 0 so the pinned reference header abuts the commit rows (one card);
+                /// gaps above the graph are added explicitly.
+                ///
+                /// **Rationale:** Prevents SwiftUI's default stack spacing from tearing the visual continuity of the git branches between the header and the scroll view.
                 LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
                     header
                         .padding(.bottom, 20)
@@ -285,6 +296,8 @@ struct GitGraphView: View {
     /// The gutter + message live in a horizontally-scrollable window (shared `graphHOffset`);
     /// author + hash are frozen on the right. Kept in a plain `LazyVStack` (no inner
     /// `GeometryReader`/scroll) so vertical row culling stays intact.
+    /// - Parameter availWidth: The horizontal drawing boundary available for topological traces.
+    /// - Returns: The active presentation hierarchy for the detail view.
     private func graphRows(availWidth: CGFloat) -> some View {
         let opts = vm.options
         let rowHeight = opts.density.rowHeight
@@ -295,8 +308,10 @@ struct GitGraphView: View {
         let gutter = GraphMetrics.gutter(laneWidth: laneW, laneCount: laneCount)
         let g = GraphMetrics.geometry(available: availWidth, gutter: gutter, rightWidth: rightW)
         let offset = min(max(0, graphHOffset), g.maxOffset)
-        // While searching, show ONLY matching commits (nothing to scroll past). Lane lines
-        // are dropped in this mode — a filtered list has no continuous graph to draw.
+        /// While searching, show ONLY matching commits (nothing to scroll past). Lane lines
+        /// are dropped in this mode — a filtered list has no continuous graph to draw.
+        ///
+        /// **Gotchas:** Attempting to render branch lanes over a sparse, filtered list results in chaotic, criss-crossing lines that connect completely unrelated nodes.
         let nodes = searching ? vm.graph.nodes.filter { vm.matches($0.commit) } : vm.graph.nodes
 
         return LazyVStack(spacing: 0) {
@@ -376,7 +391,9 @@ private struct RepoSummaryCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            // Titled header — matches DrCatalystCards (title + caption subtitle).
+            /// Titled header — matches DrCatalystCards (title + caption subtitle).
+            ///
+            /// **Rationale:** Maintains typographic consistency with the rest of the application dashboard.
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(summary.name)
@@ -426,6 +443,12 @@ private struct RepoSummaryCard: View {
             .frame(height: 1)
     }
 
+    /// Standardizes label-value display formatting within the Git inspection popover.
+    /// - Parameters:
+    ///   - icon: The associated SF Symbol glyph.
+    ///   - label: The textual category description.
+    ///   - value: The configuration property or metric assigned.
+    /// - Returns: The active presentation hierarchy for the detail view.
     private func row(icon: String, label: String, value: String) -> some View {
         HStack(spacing: 10) {
             Image(systemName: icon)
@@ -486,11 +509,15 @@ private struct GraphReferenceHeader: View {
                     .foregroundColor(.secondary)
             }
 
-            // Live search — dims non-matching commits (see CommitRowView).
+            /// Live search — dims non-matching commits (see CommitRowView).
+            ///
+            /// **Rationale:** In-place dimming provides instantaneous visual feedback without disorienting the user by fundamentally altering the graph layout.
             SearchBarView(placeholder: "Search message, author, or hash", text: $searchText)
 
-            // Legend (what each color / node / pill means) with the graph refresh action
-            // inline at the trailing end, sized to match the app's Install buttons.
+            /// Legend (what each color / node / pill means) with the graph refresh action
+            /// inline at the trailing end, sized to match the app's Install buttons.
+            ///
+            /// **Rationale:** Consolidates metadata into the peripheral footer, ensuring the commit history remains the hero element on screen.
             HStack(spacing: 12) {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 18) {
@@ -520,8 +547,10 @@ private struct GraphReferenceHeader: View {
                 }
             }
 
-            // Horizontal scrollbar for the graph's left region — only when it overflows.
-            // Aligned under the message area; the frozen author/hash space stays clear.
+            /// Horizontal scrollbar for the graph's left region — only when it overflows.
+            /// Aligned under the message area; the frozen author/hash space stays clear.
+            ///
+            /// **Gotchas:** Allowing the horizontal scrollbar to bleed under the fixed columns creates a visual overlap that obscures the timestamp data.
             if geometry.maxOffset > 0 {
                 HStack(spacing: 0) {
                     HGraphScrollBar(contentWidth: geometry.leftContent, offset: $hOffset)
@@ -539,6 +568,7 @@ private struct GraphReferenceHeader: View {
 
 /// One legend entry: a small visual swatch + a label.
 private struct LegendItem: View {
+    /// A predefined color palette for rendering distinct topological branch lanes.
     enum Swatch {
         case dot, ring, hollow, line
         case pill(icon: String)
@@ -586,7 +616,7 @@ private struct LegendItem: View {
 
 /// One commit row: a small gutter `Canvas` (its own lane segments + node) on the left,
 /// then ref chips + subject + author + short hash. `Equatable` over plain values so
-/// off-screen rows never re-render (`Formrules.md` 3.6).
+/// off-screen rows never re-render (`CODING_STANDARDS.md` 3.6).
 /// Row geometry shared by every commit row (frozen-column layout + horizontal offset).
 struct RowLayout: Equatable {
     let gutterWidth: CGFloat
@@ -598,6 +628,7 @@ struct RowLayout: Equatable {
     let rowHeight: CGFloat
 }
 
+/// Renders a single Git commit node and its associated horizontal topology traces.
 private struct CommitRowView: View, Equatable {
     let commit: GraphCommit
     let segments: [RowSegment]
@@ -618,7 +649,9 @@ private struct CommitRowView: View, Equatable {
 
     var body: some View {
         HStack(spacing: 0) {
-            // LEFT — gutter + refs + subject, in a horizontally-scrollable clipped window.
+            /// LEFT — gutter + refs + subject, in a horizontally-scrollable clipped window.
+            ///
+            /// **Rationale:** Accommodates deep branch nesting and long commit messages without breaking the strict tabular layout.
             HStack(spacing: 0) {
                 RowGutter(
                     segments: segments,
@@ -649,7 +682,9 @@ private struct CommitRowView: View, Equatable {
             .frame(width: layout.leftViewport, alignment: .leading)
             .clipped()
 
-            // RIGHT — frozen author + hash (never scroll horizontally).
+            /// RIGHT — frozen author + hash (never scroll horizontally).
+            ///
+            /// **Rationale:** Pinning the metadata to the trailing edge ensures users can always attribute a commit regardless of how far right the branch tree extends.
             HStack(spacing: GraphMetrics.gap) {
                 if showAuthor {
                     Text(commit.authorName)
@@ -683,15 +718,22 @@ private struct RowGutter: View {
     let isMerge: Bool
     let laneWidth: CGFloat
     private var leadPad: CGFloat { GraphMetrics.leadPad }
-    // Shrink nodes as lanes compress so dots don't overlap neighbouring lanes.
+    /// Shrink nodes as lanes compress so dots don't overlap neighbouring lanes.
+    ///
+    /// **Gotchas:** Fixed-size nodes in highly compressed graph regions (e.g. 15+ concurrent branches) will bleed into adjacent lanes, creating illegible blobs.
     private var nodeRadius: CGFloat { min(GraphMetrics.nodeRadius, laneWidth * 0.4) }
 
     var body: some View {
         Canvas { ctx, size in
             let h = size.height
+            /// Calculates the exact horizontal layout coordinate for a specified branch lane.
+            /// - Parameter lane: The discrete structural track running vertically down the diagram.
+            /// - Returns: The exact computed X-coordinate displacement.
             func x(_ lane: Int) -> CGFloat { leadPad + CGFloat(lane) * laneWidth + laneWidth / 2 }
 
-            // Lane lines through this row.
+            /// Lane lines through this row.
+            ///
+            /// **Rationale:** Segmented rendering ensures SwiftUI only draws vectors within the visible viewport, keeping CPU usage flat even on 10,000-commit repos.
             for seg in segments {
                 let yTop = seg.startsAtNode ? h / 2 : 0
                 let yBot = seg.endsAtNode ? h / 2 : h
@@ -711,7 +753,9 @@ private struct RowGutter: View {
                            style: StrokeStyle(lineWidth: 2, lineCap: .round))
             }
 
-            // This row's node.
+            /// This row's node.
+            ///
+            /// **Gotchas:** The node must be drawn AFTER the lane lines to ensure it obscures the underlying strokes and remains the focal point of the row.
             let nx = x(nodeLane)
             let ny = h / 2
             let laneColor = GitGraphPalette.lane(nodeLane)
@@ -826,6 +870,7 @@ private struct FiltersPopover: View {
         }
     }
 
+    /// Commits local preferences back to the Git graph view model.
     private func apply() {
         options.authorFilter = author.trimmingCharacters(in: .whitespaces)
         options.pathFilter = path.trimmingCharacters(in: .whitespaces)
@@ -833,6 +878,12 @@ private struct FiltersPopover: View {
         options.untilFilter = until.trimmingCharacters(in: .whitespaces)
     }
 
+    /// A specialized text input component used for configuring Git graph properties.
+    /// - Parameters:
+    ///   - label: The descriptive prompt mapped to the text entry block.
+    ///   - text: The two-way interactive string bridge holding configuration state.
+    ///   - placeholder: Ghost text rendering inside an empty block.
+    /// - Returns: The active presentation hierarchy for the detail view.
     private func field(_ label: String, text: Binding<String>, placeholder: String) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(label)
@@ -932,6 +983,11 @@ private struct CommitDetailSheet: View {
         .frame(minWidth: 520, idealWidth: 560, minHeight: 440, idealHeight: 520)
     }
 
+    /// Displays a single line of commit metadata within the inspection overlay.
+    /// - Parameters:
+    ///   - icon: The symbolic representation for the commit attribute.
+    ///   - text: The associated detail string mapped to the icon.
+    /// - Returns: The active presentation hierarchy for the detail view.
     private func metaRow(icon: String, text: String) -> some View {
         HStack(spacing: 8) {
             Image(systemName: icon)
@@ -945,6 +1001,8 @@ private struct CommitDetailSheet: View {
         }
     }
 
+    /// Writes the designated text payload to the general system clipboard.
+    /// - Parameter string: The textual payload intended for the general clipboard.
     private func copyToPasteboard(_ string: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(string, forType: .string)
@@ -954,9 +1012,12 @@ private struct CommitDetailSheet: View {
 // MARK: - Palette + card-piece backgrounds
 
 /// Stable per-lane color palette. Domain meaning-colors are reserved elsewhere; these are
-/// decorative branch hues cycled round-robin (`Formrules.md` 4.15).
+/// decorative branch hues cycled round-robin (`CODING_STANDARDS.md` 4.15).
 enum GitGraphPalette {
     static let laneColors: [Color] = [.purple, .blue, .green, .orange, .pink, .teal, .indigo, .red]
+    /// Deterministically assigns a color swatch to a branch index using modulo arithmetic.
+    /// - Parameter index: The relative position offset mapping to the lane track.
+    /// - Returns: The standard swatch bound to the specified index.
     static func lane(_ index: Int) -> Color {
         laneColors[((index % laneColors.count) + laneColors.count) % laneColors.count]
     }
@@ -976,6 +1037,10 @@ enum GraphMetrics {
     static let maxLane: CGFloat = 20   // comfortable lane width
 
     /// Total reserved width of the frozen right columns for the shown columns.
+    /// - Parameters:
+    ///   - showAuthor: Indicates if the text name property is enabled.
+    ///   - showHash: Indicates if the abbreviated cryptographic commit identifier is enabled.
+    /// - Returns: The computed dynamic pixel reserve.
     static func rightWidth(showAuthor: Bool, showHash: Bool) -> CGFloat {
         var w: CGFloat = 2 * sidePad
         if showAuthor { w += authorWidth }
@@ -986,22 +1051,37 @@ enum GraphMetrics {
 
     /// Lane width that adapts to the window: many lanes compress (down to `minLane`) so
     /// the gutter never dominates. Beyond the floor, the horizontal scroll takes over.
+    /// - Parameters:
+    ///   - available: The maximum horizontal bounds mapped to the view layout.
+    ///   - laneCount: The overall complexity count of divergent topologies.
+    ///   - rightWidth: The layout slice previously reserved for text attributes.
+    /// - Returns: The standard geometric step size allocated to each track.
     static func laneWidth(available: CGFloat, laneCount: Int, rightWidth: CGFloat) -> CGFloat {
         guard laneCount > 0 else { return maxLane }
         let leftViewport = max(120, available - rightWidth)
-        // Gutter should take at most ~45% of the row (and never a huge fixed slab).
+        /// Gutter should take at most ~45% of the row (and never a huge fixed slab).
+        ///
+        /// **Gotchas:** Unbounded graph width on massively branching repos pushes the commit message entirely off-screen.
         let targetGutter = min(leftViewport * 0.45, 320)
         let usable = max(0, targetGutter - 2 * leadPad)
         return min(maxLane, max(minLane, usable / CGFloat(laneCount)))
     }
 
     /// Gutter width for a given (adaptive) lane width.
+    /// - Parameters:
+    ///   - laneWidth: The dynamic horizontal step allocated to tracks.
+    ///   - laneCount: The sum total of divergent topologies.
+    /// - Returns: The horizontal buffer isolating the graphical canvas from text elements.
     static func gutter(laneWidth: CGFloat, laneCount: Int) -> CGFloat {
         2 * leadPad + CGFloat(max(1, laneCount)) * laneWidth
     }
 
     /// Split the available width into the scrollable left viewport, the left content
     /// width (gutter + message), and how far it can scroll horizontally.
+    /// - Parameters:
+    ///   - available: The parent dimension defining layout logic.
+    ///   - gutter: The isolating boundary between UI concepts.
+    ///   - rightWidth: The static trailing frame housing metadata elements.
     static func geometry(available: CGFloat, gutter: CGFloat, rightWidth: CGFloat)
         -> (leftViewport: CGFloat, leftContent: CGFloat, maxOffset: CGFloat) {
         let leftViewport = max(120, available - rightWidth)
@@ -1036,21 +1116,29 @@ private struct HGraphScrollBar: View {
     }
 }
 
+/// A SwiftUI PreferenceKey used to track precise horizontal scroll view displacement.
 private struct HScrollOffsetKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
+    /// Applies the standard preference aggregation rule for horizontal scroll offsets.
+    /// - Parameters:
+    ///   - value: The aggregated accumulation of previous iteration returns.
+    ///   - nextValue: The dynamic closure producing the active geometric attribute.
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
 }
 
 private extension View {
     /// Card styling for the top piece (the pinned reference header): opaque fill,
     /// top-rounded corners + hairline border. Matches `cardStyle()`'s chrome.
+    /// - Returns: The active presentation hierarchy for the detail view.
     func graphCardTop() -> some View {
         let shape = UnevenRoundedRectangle(topLeadingRadius: 12, bottomLeadingRadius: 0,
                                            bottomTrailingRadius: 0, topTrailingRadius: 12)
         return self
             .background(shape.fill(Color(NSColor.controlBackgroundColor)))
-            // compositingGroup() flattens child layers (e.g. Canvas) so clipShape can
-            // actually round the corners — without it those layers escape the clip.
+            /// compositingGroup() flattens child layers (e.g. Canvas) so clipShape can
+            /// actually round the corners — without it those layers escape the clip.
+            ///
+            /// **Gotchas:** `Canvas` views in SwiftUI frequently ignore bounds clipping unless explicitly forced into an off-screen render pass via `compositingGroup`.
             .compositingGroup()
             .clipShape(shape)
             .overlay(shape.strokeBorder(Color.primary.opacity(0.08), lineWidth: 1))
@@ -1058,13 +1146,16 @@ private extension View {
 
     /// Card styling for the bottom piece (the commit rows): opaque fill, bottom-rounded
     /// corners + hairline border. Abuts the header to read as one continuous card.
+    /// - Returns: The active presentation hierarchy for the detail view.
     func graphCardBottom() -> some View {
         let shape = UnevenRoundedRectangle(topLeadingRadius: 0, bottomLeadingRadius: 12,
                                            bottomTrailingRadius: 12, topTrailingRadius: 0)
         return self
             .background(shape.fill(Color(NSColor.controlBackgroundColor)))
-            // Flatten the per-row Canvas layers so they're clipped to the rounded
-            // bottom corners instead of squaring off the edge while scrolling.
+            /// Flatten the per-row Canvas layers so they're clipped to the rounded
+            /// bottom corners instead of squaring off the edge while scrolling.
+            ///
+            /// **Gotchas:** Unflattened scroll views break visual continuity by allowing list items to render over the top of the container's rounded bezel.
             .compositingGroup()
             .clipShape(shape)
             .overlay(shape.strokeBorder(Color.primary.opacity(0.08), lineWidth: 1))

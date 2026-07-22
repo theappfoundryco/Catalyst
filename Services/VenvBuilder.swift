@@ -6,6 +6,13 @@ import Foundation
 /// callback and returns plain results, so the ViewModel keeps its `@Published`
 /// state and orchestration. The streaming `python -m venv` / `pip install -r`
 /// calls stay in the VM (their exit codes drive VM error messages directly).
+///
+/// ```swift
+/// let builder = VenvBuilder()
+/// let outcome = await builder.verify(venvPath: "/path/to/venv", projectPath: "/path/to/project") { line in
+///     print(line)
+/// }
+/// ```
 struct VenvBuilder {
 
     /// Outcome of verifying which requested packages actually installed.
@@ -18,6 +25,11 @@ struct VenvBuilder {
 
     /// Append the venv folder to `.gitignore` (creating the file if missing),
     /// streaming status lines. Best-effort — failures are reported via output.
+    ///
+    /// - Parameters:
+    ///   - projectPath: URL bounding localized workspace roots.
+    ///   - venvName: Unqualified folder identifier mapped immediately under roots.
+    ///   - onOutput: Closure relaying file stream status logs.
     func writeGitignore(projectPath: URL, venvName: String, onOutput: (String) -> Void) {
         let gitignorePath = projectPath.appendingPathComponent(".gitignore").path
         let entry = "\n# Virtual Environment\n\(venvName)/\n"
@@ -43,6 +55,12 @@ struct VenvBuilder {
 
     /// Verify installed packages against `requirements.txt` using a native set
     /// difference over `pip freeze` (no shell pipeline). Streams progress.
+    ///
+    /// - Parameters:
+    ///   - venvPath: Absolute string defining target Python container instances.
+    ///   - projectPath: Root path defining source constraint specifications (`requirements.txt`).
+    ///   - onOutput: Subprocess emission tracer block.
+    /// - Returns: Segregated report structuring precise dependency states against expected constraints.
     func verify(venvPath: String, projectPath: String, onOutput: @escaping (String) -> Void) async -> VerifyOutcome {
         onOutput("\n🔎 Verifying installed packages...\n")
         onOutput("📂 Project Path: \(projectPath)\n")
@@ -50,14 +68,18 @@ struct VenvBuilder {
         let reqPath = URL(fileURLWithPath: projectPath).appendingPathComponent("requirements.txt").path
         let pythonPath = venvPath + "/bin/python3"
 
-        // 1. Parse requested package names natively.
+        /// 1. Parse requested package names natively.
+        ///
+        /// **Rationale:** Normalizing capitalization and underscores up front ensures deterministic cross-referencing with PyPI's unpredictable naming conventions.
         guard let contents = try? String(contentsOfFile: reqPath, encoding: .utf8) else {
             onOutput("❌ Could not read requirements.txt at \(reqPath)\n")
             return .requirementsUnreadable
         }
         let requested = Set(RequirementsParser.names(from: contents))
 
-        // 2. Installed package names from the venv via array-args pip freeze.
+        /// 2. Installed package names from the venv via array-args pip freeze.
+        ///
+        /// **Gotchas:** Using shell pipes to parse pip freeze risks syntax injection if a malicious package aliases itself; parsing the direct stdout stream is non-negotiable.
         let installed: Set<String>
         do {
             onOutput("⚙️ Reading installed packages (pip freeze)...\n")
@@ -72,7 +94,9 @@ struct VenvBuilder {
             installed = Set(result.stdout.components(separatedBy: .newlines).compactMap { line -> String? in
                 let trimmed = line.trimmingCharacters(in: .whitespaces)
                 guard !trimmed.isEmpty, !trimmed.hasPrefix("#"), !trimmed.hasPrefix("-") else { return nil }
-                // "name==version" or "name @ url"
+                /// "name==version" or "name @ url"
+                ///
+                /// **Gotchas:** External dependencies bound to GitHub SHAs use `@ url` format; naive splits on `==` will drop these entirely from the installed dependency graph.
                 let base = trimmed.components(separatedBy: "==").first ?? trimmed
                 let name = base.components(separatedBy: " @").first ?? base
                 let cleaned = name.trimmingCharacters(in: .whitespaces)
@@ -83,7 +107,9 @@ struct VenvBuilder {
             return .systemError(error.localizedDescription)
         }
 
-        // 3. Native set difference.
+        /// 3. Native set difference.
+        ///
+        /// **Rationale:** Calculating diffs in native Swift avoids spawning costly `/usr/bin/comm` shell subprocesses over transient files.
         let failed = requested.subtracting(installed).sorted()
         let successful = requested.intersection(installed).sorted()
 
@@ -99,6 +125,11 @@ struct VenvBuilder {
 
     /// Retry installing specific packages one at a time via the venv's pip.
     /// Streams per-package output.
+    ///
+    /// - Parameters:
+    ///   - packages: Standard array block structuring failure identifiers natively.
+    ///   - pipPath: Localized installation executable mapping.
+    ///   - onOutput: Closure directing trace context output.
     func retryInstall(packages: [String], pipPath: String, onOutput: @escaping (String) -> Void) async {
         for package in packages {
             guard let sanitizedPackage = InputSanitizer.sanitizePackageName(package) else {

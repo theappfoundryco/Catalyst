@@ -6,9 +6,17 @@ import Foundation
 /// through `onOutput`, and returns a result that distinguishes "couldn't start"
 /// from "ran and succeeded/failed" — the failure case carries a short message
 /// the ViewModel can surface as an error banner (P3).
+///
+/// ```swift
+/// let installer = PackageInstaller(logger: logger)
+/// let result = await installer.install(name: "htop", type: .brewFormula, pythonPath: nil) { output in
+///     print(output)
+/// }
+/// ```
 struct PackageInstaller {
 
-    enum Result {
+    /// Standardized outcome enumeration for command-line package updates.
+enum Result {
         case success
         case failure(message: String)
         case invalidName
@@ -21,6 +29,20 @@ struct PackageInstaller {
         self.logger = logger
     }
 
+    /// Synthesizes and dispatches the raw shell installation string.
+    ///
+    /// **Flow:**
+    /// 1. Validates the package identifier (`sanitizedName`) against injection logic.
+    /// 2. Derives the precise install command (`pip install ...` vs `brew install ...`).
+    /// 3. Handoffs execution to the asynchronous process runner.
+    ///
+    /// - Parameters:
+    ///   - name: The raw package identifier.
+    ///   - type: Disambiguates whether this is a pip, formula, or cask target.
+    ///   - pythonPath: Optional absolute path mapping `pip` bounds (required for pip type).
+    ///   - pythonVersion: Semantic version string optionally bound to pip preference lookups.
+    ///   - onOutput: Closure relaying real-time stdout streams to the view layer.
+    /// - Returns: A standard `Result` enum categorizing success or precise error constraints.
     func install(name: String, type: PackageType, pythonPath: String?, pythonVersion: String? = nil, onOutput: @escaping (String) -> Void) async -> Result {
         let typeLabel: String
         switch type {
@@ -36,7 +58,9 @@ struct PackageInstaller {
 
         logger.log("📦 Installing \(name)...")
 
-        // Validate package name to prevent command injection.
+        /// Validate package name to prevent command injection.
+        ///
+        /// **Rationale:** Protects the `AsyncProcessRunner` from executing rogue semicolons or backticks if a package name is sourced from an untrusted Git repository.
         guard let sanitizedName = InputSanitizer.sanitizePackageName(name) else {
             logger.log("❌ Invalid package name: \(name)")
             return .invalidName
@@ -64,6 +88,13 @@ struct PackageInstaller {
         return await run(command, packageName: name, onOutput: onOutput)
     }
 
+    /// Evaluates the constructed CLI string via `AsyncProcessRunner`.
+    ///
+    /// - Parameters:
+    ///   - command: The fully assembled, safely-escaped bash pipeline.
+    ///   - packageName: The display name passed for contextual logging.
+    ///   - onOutput: The live stdout ingestion closure.
+    /// - Returns: A discrete `Result` based on the termination integer.
     private func run(_ command: String, packageName: String, onOutput: @escaping (String) -> Void) async -> Result {
         do {
             let exitCode = try await AsyncProcessRunner.shared.runWithStreaming(command: command) { text in

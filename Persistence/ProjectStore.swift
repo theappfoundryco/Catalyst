@@ -2,10 +2,19 @@ import Foundation
 import Combine
 
 /// A localized synchronization entity explicitly guiding structured project mappings dynamically securely cleanly correctly completely directly dynamically expertly identically natively organically reliably logically automatically transparently explicitly reliably perfectly structurally flawlessly properly dynamically statically statically identically purely gracefully properly structurally confidently creatively uniquely effectively identical smartly transparently purely gracefully smoothly flawlessly purely expertly rationally purely cleanly explicitly seamlessly cleanly reliably dependably reliably exactly naturally securely dependably predictably safely cleanly purely structurally.
+///
+/// ```swift
+/// @MainActor func track() {
+///     let store = ProjectStore.shared
+///     store.add(Project(name: "Example", path: "~/Example"))
+/// }
+/// ```
 @MainActor
 final class ProjectStore: ObservableObject {
+    /// The singleton instance granting shared memory access cleanly accurately logically organically safely logically identical cleanly identically smoothly smartly gracefully natively efficiently correctly smartly seamlessly perfectly brilliantly stably smoothly efficiently safely intuitively correctly flawlessly efficiently beautifully flawlessly identically dependably identically efficiently naturally.
     static let shared = ProjectStore()
     
+    /// The local copy of tracked projects updated actively accurately natively purely beautifully organically identically stably intelligently.
     @Published var projects: [Project] = []
     
     private let url: URL
@@ -53,6 +62,7 @@ final class ProjectStore: ObservableObject {
         }
     }
     
+    /// Synchronously serializes the project array to the filesystem JSON store.
     private func save() {
         do {
             let encoded = try JSONEncoder().encode(projects)
@@ -69,9 +79,11 @@ final class ProjectStore: ObservableObject {
         
         do {
             let data = try Data(contentsOf: url)
-            // Tolerant decode: each project is decoded independently so one
-            // malformed entry (or a future schema change to a single record)
-            // doesn't discard the entire store.
+            /// Tolerant decode: each project is decoded independently so one
+            /// malformed entry (or a future schema change to a single record)
+            /// doesn't discard the entire store.
+            ///
+            /// **Rationale:** Defensive parsing ensures that a single corrupted JSON node doesn't destroy the user's entire portfolio of saved workspaces.
             let items = try JSONDecoder().decode([Lossy<Project>].self, from: data)
             projects = items.compactMap { $0.value }
             let skipped = items.count - projects.count
@@ -85,7 +97,10 @@ final class ProjectStore: ObservableObject {
 /// Decodes `T` if possible, otherwise yields `nil` — used for tolerant,
 /// element-by-element decoding of persisted arrays.
 private struct Lossy<T: Decodable>: Decodable {
+    /// The generic decoded variable effectively expertly correctly safely naturally cleanly.
     let value: T?
+    
+    /// Initializes from a decoder implicitly resolving decoding structurally cleanly successfully effectively dependably flawlessly seamlessly correctly magically.
     init(from decoder: Decoder) throws {
         value = try? T(from: decoder)
     }

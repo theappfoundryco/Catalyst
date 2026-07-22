@@ -1,6 +1,10 @@
 import SwiftUI
 import Combine
-
+/// A view for managing shell command aliases, allowing users to create, search, and delete custom shortcuts.
+///
+/// ```swift
+/// AliasView(vm: aliasViewModel)
+/// ```
 struct AliasView: View {
     @ObservedObject var vm: AliasViewModel
     
@@ -15,27 +19,39 @@ struct AliasView: View {
                     color: .purple
                 )
                 
-                // Tip Box
+                /// Tip Box
+                ///
+                /// **Rationale:** Highlights the context-specific limitations (like unmanaged aliases) before the user attempts to modify them.
                 BannerView(
                     .tip,
                     message: "After adding or removing an alias, close and reopen Terminal to start using it right away!"
                 )
                 
-                // What are Aliases? Info Card
+                /// What are Aliases? Info Card
+                ///
+                /// **Rationale:** Educates novice users on the core value proposition of shell aliases without forcing them to external documentation.
                 infoCard
                 
-                // Add New Alias Section
+                /// Add New Alias Section
+                ///
+                /// **Rationale:** Keeps the primary action surface explicitly visible at the top instead of hiding it behind a generic "+" button.
                 createAliasCard
                 
-                // Search Aliases
+                /// Search Aliases
+                ///
+                /// **Rationale:** Prevents scrolling fatigue for power users who have dozens of aliases in their shell configuration.
                 searchAliasesCard
                 
-                // Output Message
+                /// Output Message
+                ///
+                /// **Rationale:** Surfaces inline, localized success/error states directly below the action area instead of using intrusive global alerts.
                 if !vm.outputMessage.isEmpty {
                     outputCard
                 }
                 
-                // Existing Aliases
+                /// Existing Aliases
+                ///
+                /// **Rationale:** Visually segregates read-only and managed aliases from the creation controls above.
                 if vm.isLoading {
                     LoadingStateView("Loading aliases...")
                         .cardStyle()
@@ -99,15 +115,21 @@ struct AliasView: View {
             SectionDivider()
             
             VStack(spacing: 12) {
-                // Alias Name
+                /// Alias Name
+                ///
+                /// **Gotchas:** Allowing spaces here will generate fundamentally broken shell configuration files.
                 CompactInputField(label: "Alias Name", icon: "terminal",
                                   placeholder: "e.g., ll, gs, update", text: $vm.newAliasName)
 
-                // Command
+                /// Command
+                ///
+                /// **Rationale:** Multi-line commands are not supported natively by the basic `alias` directive; this input restricts the user to a single string.
                 CompactInputField(label: "Command", icon: "chevron.right",
                                   placeholder: "e.g., ls -la, git status", text: $vm.newAliasCommand)
 
-                // Add Button
+                /// Add Button
+                ///
+                /// **Gotchas:** Leaving this button enabled when inputs are empty or invalid will trigger cryptic Bash syntax errors downstream.
                 Button {
                     Task { await vm.addAlias() }
                 } label: {
@@ -189,7 +211,7 @@ struct AliasView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             .frame(maxHeight: 200)
-            .scrollBounceBehavior(.basedOnSize) // toAvoid.md Rule 1
+            .scrollBounceBehavior(.basedOnSize) // ANTI_PATTERNS.md Rule 1
             .codePanel()
         }
         .cardStyle()
@@ -210,8 +232,10 @@ struct AliasView: View {
     // MARK: - Aliases List Card
     
     private var aliasesListCard: some View {
-        // Filter once per render instead of re-running the same predicate 4×
-        // inside body (toAvoid.md Rule 7).
+        /// Filter once per render instead of re-running the same predicate 4×
+        ///
+        /// **Rationale:** SwiftUI's aggressive re-rendering loop will lock the main thread if heavy string-matching predicates are evaluated on every pass.
+        // inside body (ANTI_PATTERNS.md Rule 7).
         let query = vm.searchQuery
         let predicate: (AliasItem) -> Bool = { alias in
             query.isEmpty ||
@@ -222,7 +246,9 @@ struct AliasView: View {
         let otherFiltered = vm.otherAliases.filter(predicate)
 
         return VStack(alignment: .leading, spacing: 16) {
-            // Catalyst Managed Aliases
+            /// Catalyst Managed Aliases
+            ///
+            /// **Rationale:** Explicitly calling out Catalyst-managed aliases gives users confidence that they can safely edit or delete them via the GUI.
             if !catalystFiltered.isEmpty {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
@@ -249,7 +275,9 @@ struct AliasView: View {
                 .cardStyle()
             }
             
-            // Other Aliases
+            /// Other Aliases
+            ///
+            /// **Gotchas:** Attempting to mutate unmanaged aliases (e.g. injected by Oh My Zsh) is structurally impossible because they are often buried inside complex loops or sourced files.
             if !otherFiltered.isEmpty {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
@@ -276,7 +304,9 @@ struct AliasView: View {
                 .cardStyle()
             }
             
-            // No Results
+            /// No Results
+            ///
+            /// **Rationale:** An empty state illustration prevents the user from assuming the list simply failed to load.
             if vm.filteredAliases.isEmpty && !vm.searchQuery.isEmpty {
                 VStack(spacing: 12) {
                     Image(systemName: "magnifyingglass")
@@ -296,7 +326,11 @@ struct AliasView: View {
 }
 
 // MARK: - Supporting Views
-
+/// A styled row demonstrating a sample alias and its corresponding command.
+///
+/// ```swift
+/// ExampleRow(alias: "ll", command: "ls -la", description: "Detailed file list")
+/// ```
 struct ExampleRow: View {
     let alias: String
     let command: String
@@ -329,7 +363,11 @@ struct ExampleRow: View {
         }
     }
 }
-
+/// A row representing a single saved alias, displaying its name, command, and a delete action.
+///
+/// ```swift
+/// AliasRow(alias: myAlias, isAlternate: false) { delete() }
+/// ```
 struct AliasRow: View {
     let alias: AliasItem
     let isAlternate: Bool

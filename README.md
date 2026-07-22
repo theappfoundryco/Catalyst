@@ -118,14 +118,14 @@ Deeper documentation lives in [`docs/`](docs):
 | Document | What it covers |
 |---|---|
 | [`ARCHITECTURE.md`](docs/ARCHITECTURE.md) | How the pieces fit together, plus a full feature reference |
-| [`Formrules.md`](docs/Formrules.md) | Conventions and invariants this codebase holds to |
-| [`toAvoid.md`](docs/toAvoid.md) | Specific mistakes made here before, and what to do instead |
+| [`CODING_STANDARDS.md`](docs/CODING_STANDARDS.md) | Conventions and invariants this codebase holds to |
+| [`ANTI_PATTERNS.md`](docs/ANTI_PATTERNS.md) | Specific mistakes made here before, and what to do instead |
 | [`RELEASING.md`](docs/RELEASING.md) | Release and hosting runbook |
 
-[`toAvoid.md`](docs/toAvoid.md) is worth reading before your first change. It's a list of things
+[`ANTI_PATTERNS.md`](docs/ANTI_PATTERNS.md) is worth reading before your first change. It's a list of things
 that looked correct, shipped, and broke — each with the rule that came out of it.
 
-Code comments cite these by name — `// Formrules 12.27`, `// toAvoid Rule 1` — so when you hit
+Code comments cite these by name — `// CODING_STANDARDS 12.27`, `// ANTI_PATTERNS Rule 1` — so when you hit
 one while reading, that's the file it means.
 
 ## Contributing

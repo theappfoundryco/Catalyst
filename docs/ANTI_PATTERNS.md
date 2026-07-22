@@ -1,4 +1,4 @@
-# toAvoid.md — Catalyst UI Smoothness Rules
+# ANTI_PATTERNS.md — Catalyst UI Smoothness Rules
 
 **Single source of truth for keeping scrolling smooth (no jerk) while preserving the current look.**
 
@@ -113,7 +113,7 @@ Keep card edges defined with a border, not a shadow. **Use `cardStyle()` for eve
 
 **Also don't:** `.windowStyle(.hiddenTitleBar)` (removes reserved titlebar height → content slides under the buttons); `.windowResizability(.contentMinSize)` (disables native full-screen → green button shows "+"/zoom).
 
-**Do:** use the real chrome directly. Keep views below the titlebar (no top `.ignoresSafeArea()`). For a toolbar-less window that must fill/zoom, use `.frame(maxWidth:.infinity, maxHeight:.infinity)` on its content and an **empty toolbar** (`ToolbarItem(.principal){ Color.clear }`) to get the taller unified titlebar. Full rationale in Formrules §6.7.
+**Do:** use the real chrome directly. Keep views below the titlebar (no top `.ignoresSafeArea()`). For a toolbar-less window that must fill/zoom, use `.frame(maxWidth:.infinity, maxHeight:.infinity)` on its content and an **empty toolbar** (`ToolbarItem(.principal){ Color.clear }`) to get the taller unified titlebar. Full rationale in CODING_STANDARDS §6.7.
 
 ---
 

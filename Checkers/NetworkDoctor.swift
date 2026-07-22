@@ -9,6 +9,11 @@ struct NetworkDoctor: Doctor {
 
     /// Checks common developer ports to see if they are occupied by zombie processes and tests DNS resolution.
     ///
+    /// **Flow:**
+    /// 1. Iterates standard ports (3000, 8080, 5000, etc.) executing `lsof -i -sTCP:LISTEN`.
+    /// 2. Identifies exact process names bound to any occupied socket ports, ignoring macOS specifics like `ControlCenter`.
+    /// 3. Executes an ICMP ping to a highly available external IP (`8.8.8.8`) to confirm WAN connectivity.
+    ///
     /// - Returns: An array of `HealthIssue` detailing port conflicts or network outages.
     func run() async -> [HealthIssue] {
         var issues: [HealthIssue] = []
@@ -59,10 +64,15 @@ struct NetworkDoctor: Doctor {
     
     /// Attempts to forcefully terminate processes occupying required development ports.
     ///
+    /// **Gotchas:**
+    /// Requires executing `kill -9` dynamically derived from string parsing the `HealthIssue` title.
+    ///
     /// - Parameter issue: The network conflict issue containing the port.
     /// - Returns: A boolean indicating if the conflicting process was successfully terminated.
     func fix(_ issue: HealthIssue) async -> Bool {
-        // Routed by fixID; the port is still parsed from the title text.
+        /// Routed by fixID; the port is still parsed from the title text.
+        ///
+        /// **Gotchas:** The fix mechanism relies on brittle string parsing of the issue title because the `HealthIssue` struct lacks a dedicated payload field.
         if issue.fixID == .portInUse {
             if let portStr = issue.title.components(separatedBy: " ").dropFirst().first, let port = Int(portStr) {
                  do {

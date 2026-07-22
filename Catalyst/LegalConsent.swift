@@ -2,24 +2,26 @@ import SwiftUI
 import AppKit
 import Combine
 
-// Versioned Privacy Policy / Terms & Conditions consent.
-//
-// WHY: legal docs change; when they do, every user must re-accept. This file owns:
-//   • the "current" versions (fetched from a stable Vercel static JSON every 14 days, with a
-//     build-bundled fallback so we work offline / before the first fetch),
-//   • what the user has accepted on THIS Mac (persisted in ConfigStore → survives force-quit +
-//     relaunch), and
-//   • a blocking, non-dismissable sheet that gates the app until the user accepts.
-//
-// With no sign-in there is no consent checkbox, so the blocking sheet is the ONLY path and
-// catches everyone: fresh installs, existing installs with nothing stored yet, and later version
-// bumps alike. Version comparison is exact-match ("accepted != current" ⇒ must re-accept), so any
-// change on either axis re-prompts only for the doc(s) that changed.
-//
-// NETWORK NOTE: the versions JSON is served from theappfoundry.co at a path OUTSIDE `/catalyst/*`,
-// so it never invokes the Vercel Edge Middleware — it's a plain static asset. That means one Edge
-// Request per check and ZERO Edge Config reads (Hobby caps: 1,000,000 Edge Requests / 100,000 Edge
-// Config reads per month). At a 14-day cadence this is negligible.
+/// Versioned Privacy Policy / Terms & Conditions consent.
+///
+/// WHY: legal docs change; when they do, every user must re-accept. This file owns:
+///   • the "current" versions (fetched from a stable Vercel static JSON every 14 days, with a
+///     build-bundled fallback so we work offline / before the first fetch),
+///   • what the user has accepted on THIS Mac (persisted in ConfigStore → survives force-quit +
+///     relaunch), and
+///   • a blocking, non-dismissable sheet that gates the app until the user accepts.
+///
+/// With no sign-in there is no consent checkbox, so the blocking sheet is the ONLY path and
+/// catches everyone: fresh installs, existing installs with nothing stored yet, and later version
+/// bumps alike. Version comparison is exact-match ("accepted != current" ⇒ must re-accept), so any
+/// change on either axis re-prompts only for the doc(s) that changed.
+///
+/// NETWORK NOTE: the versions JSON is served from theappfoundry.co at a path OUTSIDE `/catalyst/*`,
+/// so it never invokes the Vercel Edge Middleware — it's a plain static asset. That means one Edge
+/// Request per check and ZERO Edge Config reads (Hobby caps: 1,000,000 Edge Requests / 100,000 Edge
+/// Config reads per month). At a 14-day cadence this is negligible.
+///
+/// **Rationale:** Guaranteeing absolute consent capture at the UI root level protects the publisher against GDPR/CCPA liability without requiring a centralized user account database.
 
 // MARK: - Config
 
@@ -44,6 +46,7 @@ enum LegalConfig {
 
 /// Shape of the remote versions JSON (see `theappfoundryco/public/legal/catalyst.json`).
 struct LegalVersions: Codable {
+    /// A single legal document definition enclosing a strict version string.
     struct Doc: Codable { let version: String }
     let privacy: Doc
     let terms: Doc
@@ -78,8 +81,10 @@ final class LegalConsentViewModel: ObservableObject {
     private let config = ConfigStore.shared
     private let session = URLSession(configuration: .ephemeral)
 
-    // Effective "current" versions: last-known remote (cached in ConfigStore) else this build's
-    // bundled values. URLs are stable constants, so they never need caching.
+    /// Effective "current" versions: last-known remote (cached in ConfigStore) else this build's
+    /// bundled values. URLs are stable constants, so they never need caching.
+    ///
+    /// **Gotchas:** Hardcoding dynamic URLs in the binary forces an app update every time a Notion page moves; caching only the version identifier keeps the routing fully dynamic.
     private var currentPrivacyVersion: String { config.cachedPrivacyVersion ?? LegalConfig.bundledPrivacyVersion }
     private var currentTermsVersion: String { config.cachedTermsVersion ?? LegalConfig.bundledTermsVersion }
 
@@ -132,6 +137,7 @@ final class LegalConsentViewModel: ObservableObject {
         await fetchRemote()
     }
 
+    /// Fetches the latest published document versions from the remote configuration file.
     private func fetchRemote() async {
         var req = URLRequest(url: LegalConfig.versionsURL)
         req.cachePolicy = .reloadIgnoringLocalCacheData
@@ -140,10 +146,14 @@ final class LegalConsentViewModel: ObservableObject {
             let (data, resp) = try await session.data(for: req)
             guard let http = resp as? HTTPURLResponse, http.statusCode == 200 else { return }
             let v = try JSONDecoder().decode(LegalVersions.self, from: data)
-            // Only stamps lastLegalCheck on success → a failed check retries next launch.
+            /// Only stamps lastLegalCheck on success → a failed check retries next launch.
+            ///
+            /// **Rationale:** Ensures offline planes/trains don't artificially exhaust the 14-day cooldown timer without ever actually verifying the remote JSON state.
             config.recordLegalRemote(privacy: v.privacy.version, terms: v.terms.version)
         } catch {
-            // Offline / bad payload → keep cached versions, don't stamp; retry next launch.
+            /// Offline / bad payload → keep cached versions, don't stamp; retry next launch.
+            ///
+            /// **Gotchas:** Wiping the cached versions on a 500 error would force users to agree to the baseline bundled version, and then agree AGAIN when the server recovers.
         }
     }
 }
@@ -264,7 +274,9 @@ struct LegalConsentSheet: View {
     }
 
     private var agreeLabel: String {
-        // Doc names are already listed in the rows above, so keep this short enough for one line.
+        /// Doc names are already listed in the rows above, so keep this short enough for one line.
+        ///
+        /// **Rationale:** Long wrapping disclaimer text pushes the primary "Accept" button below the fold on 13-inch MacBooks, preventing users from actually entering the app.
         (requirement.needsPrivacy && requirement.needsTerms)
             ? "I have read and agree to both documents above."
             : "I have read and agree to the \(docPhrase) above."

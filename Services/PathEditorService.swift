@@ -23,6 +23,7 @@ struct PathEntry: Identifiable, Sendable, Equatable {
     }
 }
 
+/// Aggregated environment trace capturing current configuration and metadata constraints.
 struct PathReport: Sendable {
     let entries: [PathEntry]
     var duplicateCount: Int { entries.filter { $0.isDuplicate }.count }
@@ -33,6 +34,11 @@ struct PathReport: Sendable {
 /// so it reflects what the user's terminals actually see; analysis is pure
 /// FileManager. Persistence (writing a curated PATH) is handled by the VM via
 /// `ShellConfigManager`, keeping shell-config mutation on the main actor.
+///
+/// ```swift
+/// let report = await PathEditorService.shared.scan()
+/// print("Found \(report.entries.count) PATH entries")
+/// ```
 final class PathEditorService: Sendable {
 
     static let shared = PathEditorService()
@@ -43,11 +49,19 @@ final class PathEditorService: Sendable {
     /// The block id used for the Catalyst-managed PATH override.
     static let managedBlockID = "path-order"
 
+    /// Orchestrates a high-level scan mapping the default `$PATH` out of a login shell.
+    ///
+    /// - Returns: A fully constructed ``PathReport`` categorizing all path chunks.
     func scan() async -> PathReport {
         PathReport(entries: analyze(await readPath()))
     }
 
     /// Reads the effective `$PATH` from a login shell, split into entries.
+    ///
+    /// **Gotchas:**
+    /// It's critical this specifies `useLoginShell: true` in the process runner; otherwise `printf` pulls from an incomplete non-interactive environment profile.
+    ///
+    /// - Returns: An array of unverified path string fragments.
     func readPath() async -> [String] {
         do {
             let r = try await runner.run(command: "printf '%s' \"$PATH\"", useLoginShell: true)
@@ -59,6 +73,9 @@ final class PathEditorService: Sendable {
     }
 
     /// Flags each entry: existence, directory-ness, and duplicates (by resolved path).
+    ///
+    /// - Parameter paths: The sequence of unvalidated string paths.
+    /// - Returns: A mapped array of comprehensive ``PathEntry`` entities.
     func analyze(_ paths: [String]) -> [PathEntry] {
         var seen = Set<String>()
         return paths.map { p in

@@ -99,6 +99,7 @@ struct GitGraphPrefs: Codable {
 enum GitGraphPrefsStore {
     private static let key = "com.shivanggulati.catalyst.gitgraph.prefs"
 
+    /// Hydrates user-specific Git rendering preferences from local persistent storage.
     static func load() -> GitGraphPrefs {
         guard let data = UserDefaults.standard.data(forKey: key),
               let prefs = try? JSONDecoder().decode(GitGraphPrefs.self, from: data) else {
@@ -107,6 +108,7 @@ enum GitGraphPrefsStore {
         return prefs
     }
 
+    /// Serializes updated Git rendering preferences to local persistent storage.
     static func save(_ prefs: GitGraphPrefs) {
         if let data = try? JSONEncoder().encode(prefs) {
             UserDefaults.standard.set(data, forKey: key)
@@ -119,7 +121,7 @@ enum GitGraphPrefsStore {
 /// Owns the currently-loaded repository, its read-only summary, and the computed commit
 /// graph. Heavy git work lives in `GitGraphService` (an actor, off the main thread) and
 /// the graph is laid out by the pure `GitGraphLayoutEngine`; this VM only holds
-/// `@Published` UI state and kicks off async loads (`Formrules.md` 1.3 — keep VMs thin).
+/// `@Published` UI state and kicks off async loads (`CODING_STANDARDS.md` 1.3 — keep VMs thin).
 @MainActor
 final class GitGraphViewModel: ObservableObject {
     /// The load lifecycle for the current repository's summary.
@@ -167,13 +169,17 @@ final class GitGraphViewModel: ObservableObject {
     private let logger = Logger.shared
     private var prefs: GitGraphPrefs
 
+    /// Initializes the ``GitGraphViewModel`` and loads historical preferences from UserDefaults.
     init() {
         let loaded = GitGraphPrefsStore.load()
         prefs = loaded
         recentRepos = loaded.recentPaths
     }
 
-    /// Present a folder picker and load the chosen repository.
+    /// Presents an `NSOpenPanel` folder picker and loads the chosen repository.
+    ///
+    /// **Rationale:**
+    /// Strict `canChooseDirectories` lock ensures users can only drop valid folder roots into the service.
     func chooseRepository() {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
@@ -185,11 +191,19 @@ final class GitGraphViewModel: ObservableObject {
         load(repoPath: url.path)
     }
 
-    /// Load (or reload) a repository by path.
+    /// Loads (or reloads) a repository by its absolute path.
     ///
-    /// Used by the folder picker, the drag-and-drop zone, and the recents list. The
-    /// summary appears first; the graph is read and laid out immediately after so a large
-    /// history never delays the summary card.
+    /// **Flow:**
+    /// 1. Toggles state to `.loading` immediately.
+    /// 2. Restores saved ``GraphOptions`` for this specific path.
+    /// 3. Dispatches a Task to read the repository's status via ``GitGraphService/summary(for:)``.
+    /// 4. If successful, renders the summary, saves to Recents, and immediately pipelines a full graph layout via ``GitGraphLayoutEngine``.
+    ///
+    /// **Gotchas:**
+    /// - The summary appears first; the graph is read and laid out immediately after so a large
+    ///   history never delays the summary card display.
+    ///
+    /// - Parameter repoPath: The absolute path to the local repository root.
     func load(repoPath: String) {
         self.repoPath = repoPath
         // Set `.loading` BEFORE restoring options so the options-change observer (which
@@ -216,7 +230,9 @@ final class GitGraphViewModel: ObservableObject {
         }
     }
 
-    /// Add a repo to the front of the recents (deduped, capped) and persist.
+    /// Adds a repo to the front of the recents list, deduplicating and capping at 12 items.
+    ///
+    /// - Parameter path: The absolute path to record.
     private func recordRecent(_ path: String) {
         var list = prefs.recentPaths.filter { $0 != path }
         list.insert(path, at: 0)
@@ -226,14 +242,16 @@ final class GitGraphViewModel: ObservableObject {
         GitGraphPrefsStore.save(prefs)
     }
 
-    /// Persist the current options for the loaded repo (called when options change).
+    /// Persists the current options for the loaded repo (called dynamically when UI bindings change).
     func persistOptions() {
         guard let repoPath else { return }
         prefs.optionsByPath[repoPath] = options
         GitGraphPrefsStore.save(prefs)
     }
 
-    /// Remove a repo from the recents list.
+    /// Removes a repository from the recents list and purges its stored options.
+    ///
+    /// - Parameter path: The path to drop.
     func removeRecent(_ path: String) {
         prefs.recentPaths.removeAll { $0 == path }
         prefs.optionsByPath[path] = nil
@@ -241,16 +259,17 @@ final class GitGraphViewModel: ObservableObject {
         GitGraphPrefsStore.save(prefs)
     }
 
-    /// Re-read the current repository (summary + graph), if one is loaded.
+    /// Re-reads the current repository (summary + graph), if one is actively loaded.
     func reload() {
         guard let repoPath else { return }
         load(repoPath: repoPath)
     }
 
-    /// Re-read **only** the commit graph, leaving the summary card in place.
+    /// Re-reads **only** the commit graph, leaving the summary card in place.
     ///
-    /// Keeps the current graph on screen (so the reference row stays visible) while the
-    /// refresh button shows a spinner, then swaps in the freshly-laid-out graph.
+    /// **Gotchas:**
+    /// - Keeps the current graph on screen (so the reference row stays visible) while the
+    ///   refresh button shows a spinner, then swaps in the freshly-laid-out graph instantaneously to avoid flicker.
     func reloadGraph() {
         guard let repoPath, case .loaded = state else { return }
         isGraphLoading = true
@@ -261,13 +280,15 @@ final class GitGraphViewModel: ObservableObject {
         }
     }
 
-    /// Re-fetch the graph because a fetch-affecting option changed. No-op unless loaded.
+    /// Re-fetches the graph because a fetch-affecting option changed. No-op unless fully loaded.
     func applyOptions() {
         guard case .loaded = state else { return }
         reloadGraph()
     }
 
-    /// Open the detail panel for a commit and load its details.
+    /// Opens the side detail panel for a commit and streams its payload.
+    ///
+    /// - Parameter commit: The clicked ``GraphCommit``.
     func select(_ commit: GraphCommit) {
         guard let repoPath else { return }
         selectedCommit = commit
@@ -279,7 +300,10 @@ final class GitGraphViewModel: ObservableObject {
         }
     }
 
-    /// Whether a commit matches the current search text (empty search matches all).
+    /// Synchronously evaluates if a commit matches the current UI search text.
+    ///
+    /// - Parameter commit: The node to evaluate.
+    /// - Returns: `true` if the subject, author, or hash contains the query.
     func matches(_ commit: GraphCommit) -> Bool {
         let q = searchText.trimmingCharacters(in: .whitespaces)
         guard !q.isEmpty else { return true }
@@ -295,8 +319,15 @@ final class GitGraphViewModel: ObservableObject {
         return graph.nodes.reduce(0) { $0 + (matches($1.commit) ? 1 : 0) }
     }
 
-    /// Handle a folder dropped onto the screen — resolves the URL and loads it.
-    /// Mirrors `VirtualEnvironmentsViewModel.handleDrop`.
+    /// Handles a drag-and-drop event onto the repository picker screen.
+    ///
+    /// **Flow:**
+    /// 1. Asserts the drop is a standard `fileURL`.
+    /// 2. Reads the `NSItemProvider` data.
+    /// 3. Bounces to the MainActor to call ``load(repoPath:)`` with the standardized file path.
+    ///
+    /// - Parameter providers: The OS drag payload.
+    /// - Returns: `true` if handled.
     func handleDrop(providers: [NSItemProvider]) -> Bool {
         guard let provider = providers.first,
               provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) else { return false }

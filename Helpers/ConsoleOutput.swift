@@ -31,6 +31,7 @@ final class ConsoleOutput: ObservableObject {
     private var flushTask: Task<Void, Never>?
 
     /// Append a chunk. Publishing is coalesced; callers can fire freely.
+    /// - Parameter chunk: A sequential slice of output targeting the buffer.
     func append(_ chunk: String) {
         guard !chunk.isEmpty else { return }
         pending += chunk
@@ -38,6 +39,7 @@ final class ConsoleOutput: ObservableObject {
     }
 
     /// Replace the whole buffer immediately (e.g. seeding or clearing).
+    /// - Parameter value: The explicit text replacing the current buffer.
     func set(_ value: String) {
         flushTask?.cancel()
         flushTask = nil
@@ -45,10 +47,13 @@ final class ConsoleOutput: ObservableObject {
         text = value
     }
 
+    /// Purges all active text from the terminal display.
+    /// - Returns: Nil. Executes buffer clearance.
     func clear() { set("") }
 
     var isEmpty: Bool { text.isEmpty && pending.isEmpty }
 
+    /// Throttles standard output rendering to preserve SwiftUI scrolling performance during burst updates.
     private func scheduleFlush() {
         guard flushTask == nil else { return }
         flushTask = Task { [weak self] in
@@ -59,6 +64,7 @@ final class ConsoleOutput: ObservableObject {
         }
     }
 
+    /// Applies pending stream data directly into the active UI state property.
     private func flush() {
         guard !pending.isEmpty else { return }
         text += pending
@@ -73,6 +79,10 @@ final class ConsoleOutput: ObservableObject {
 /// parent screen) holds the `@ObservedObject`, appends re-render only this card.
 /// Renders nothing until there's output, so the parent doesn't need to read the
 /// text to gate visibility.
+///
+/// ```swift
+/// ConsoleOutputView(console: vm.console, title: "Installation Output")
+/// ```
 struct ConsoleOutputView: View {
     @ObservedObject var console: ConsoleOutput
     var title: String = "Installation Output"

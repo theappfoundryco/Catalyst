@@ -1,5 +1,9 @@
 import SwiftUI
-
+/// A detailed view for a single Smart Shortcut, displaying its implementation, dependencies, and an installation form.
+///
+/// ```swift
+/// ShortcutDetailView(shortcutId: "git-clean", viewModel: smartShortcutsViewModel)
+/// ```
 struct ShortcutDetailView: View {
     let shortcutId: String
     @ObservedObject var viewModel: SmartShortcutsViewModel
@@ -18,6 +22,8 @@ struct ShortcutDetailView: View {
 
     /// The function name the user will actually type: the installed custom name,
     /// or the live text they're entering, falling back to the shortcut's default.
+    /// - Parameter detail: The localized shortcut configuration property block.
+    /// - Returns: The priority display name mapped to the user preference.
     private func effectiveName(_ detail: ShortcutDetail) -> String {
         if isInstalled { return viewModel.getCustomName(shortcutId) ?? detail.original_name }
         let typed = customName.trimmingCharacters(in: .whitespaces)
@@ -90,6 +96,8 @@ struct ShortcutDetailView: View {
 
     // MARK: - Hero (identity)
 
+    /// - Parameter item: The localized shortcut configuration property block.
+    /// - Returns: The active presentation hierarchy for the detail view.
     private func heroCard(_ item: ShortcutItem) -> some View {
         HStack(alignment: .center, spacing: 16) {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
@@ -121,6 +129,8 @@ struct ShortcutDetailView: View {
 
     // MARK: - Detail Error Card
 
+    /// - Parameter message: The human readable error message string.
+    /// - Returns: The active presentation hierarchy for the detail view.
     private func detailErrorCard(_ message: String) -> some View {
         VStack(spacing: 16) {
             Image(systemName: "wifi.exclamationmark")
@@ -195,6 +205,8 @@ struct ShortcutDetailView: View {
 
     // MARK: - Custom Name Card
 
+    /// - Parameter detail: The localized shortcut configuration property block.
+    /// - Returns: The active presentation hierarchy for the detail view.
     private func customNameCard(_ detail: ShortcutDetail) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Function name")
@@ -245,6 +257,8 @@ struct ShortcutDetailView: View {
 
     // MARK: - Dependencies Card
 
+    /// - Parameter detail: The localized shortcut configuration property block.
+    /// - Returns: The active presentation hierarchy for the detail view.
     private func dependenciesCard(_ detail: ShortcutDetail) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             Label("Dependencies", systemImage: "shippingbox")
@@ -275,6 +289,8 @@ struct ShortcutDetailView: View {
 
     // MARK: - Helpers
 
+    /// - Parameter color: The human readable color label targeted by the schema.
+    /// - Returns: The mapped multi-stop color layout.
     private func colorGradient(for color: String) -> LinearGradient {
         let colors: [Color] = {
             switch color {
@@ -293,6 +309,10 @@ struct ShortcutDetailView: View {
 }
 
 /// Compact dependency chips (Homebrew / pip) laid out in a simple flowing row.
+///
+/// ```swift
+/// WrapChips(brew: ["fzf"], pip: ["requests"])
+/// ```
 private struct WrapChips: View {
     let brew: [String]
     let pip: [String]
@@ -308,6 +328,13 @@ private struct WrapChips: View {
         }
     }
 
+    /// Organizes categorical tags within a wrapping layout container.
+    /// - Parameters:
+    ///   - title: The category header displayed above the tags.
+    ///   - icon: The related SF Symbol glyph.
+    ///   - tint: The base hue used to calculate chip backgrounds.
+    ///   - items: The collection of discrete string labels to display.
+    /// - Returns: The active presentation hierarchy for the detail view.
     private func chipRow(title: String, icon: String, tint: Color, items: [String]) -> some View {
         HStack(alignment: .center, spacing: 8) {
             Label(title, systemImage: icon)

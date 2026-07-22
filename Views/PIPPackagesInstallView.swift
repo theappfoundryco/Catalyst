@@ -1,13 +1,11 @@
-//
-//  PIPPackagesInstallView.swift
-//  Catalyst
-//
-//  Created by Shivang Gulati on 28/01/26.
-//
-
 import SwiftUI
 import Combine
 
+/// A view for searching the Python Package Index (PyPI) and installing new pip packages.
+///
+/// ```swift
+/// PIPPackagesInstallView(vm: installViewModel)
+/// ```
 struct PIPPackagesInstallView: View {
     @ObservedObject var vm: PIPPackagesInstallViewModel
     
@@ -81,7 +79,7 @@ struct PIPPackagesInstallView: View {
                                 }
                             }
                             .frame(maxHeight: 400)
-                            .scrollBounceBehavior(.basedOnSize) // toAvoid.md Rule 1
+                            .scrollBounceBehavior(.basedOnSize) // ANTI_PATTERNS.md Rule 1
                         } else {
                             // Initial State
                             EmptyStateView(icon: "magnifyingglass", message: "Search using the bar above")

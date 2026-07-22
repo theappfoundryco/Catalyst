@@ -1,5 +1,9 @@
 import SwiftUI
-
+/// A view for managing the system `$PATH` environment variable, allowing users to reorder, clean up, and remove entries.
+///
+/// ```swift
+/// PathEditorView(vm: pathEditorViewModel)
+/// ```
 struct PathEditorView: View {
     @ObservedObject var vm: PathEditorViewModel
 
@@ -150,6 +154,11 @@ struct PathEditorView: View {
         .cardStyle()
     }
 
+    /// Renders a single PATH configuration directory and its associated validation state.
+    /// - Parameters:
+    ///   - entry: The structured configuration detailing the directory route.
+    ///   - index: The numerical stack hierarchy denoting priority.
+    /// - Returns: The active presentation hierarchy for the detail view.
     private func entryRow(_ entry: PathEntry, index: Int) -> some View {
         HStack(spacing: 10) {
             Text("\(index + 1)")
@@ -188,6 +197,11 @@ struct PathEditorView: View {
         .padding(.vertical, 6)
     }
 
+    /// A stylized visual badge indicating contextual attributes of a PATH entry.
+    /// - Parameters:
+    ///   - text: The primary string label for the tag.
+    ///   - color: The designated semantic hue for background filling.
+    /// - Returns: The active presentation hierarchy for the detail view.
     private func tag(_ text: String, _ color: Color) -> some View {
         Text(text)
             .font(.caption2).fontWeight(.semibold)
@@ -202,7 +216,11 @@ struct PathEditorView: View {
         }.padding(40).frame(maxWidth: .infinity).padding(.horizontal)
     }
 }
-
+/// A summary metric tile used in the PATH Editor.
+///
+/// ```swift
+/// PathMetricTile(icon: "doc.on.doc", title: "Duplicates", value: "2", color: .orange)
+/// ```
 private struct PathMetricTile: View {
     let icon: String
     let title: String

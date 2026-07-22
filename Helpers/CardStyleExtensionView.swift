@@ -1,9 +1,3 @@
-//
-//  CardStyleExtensionView.swift
-//  Catalyst
-//
-//  Created by Shivang Gulati on 22/02/26.
-//
 import SwiftUI
 
 /// The size variant for a card's visual style.
@@ -11,6 +5,10 @@ import SwiftUI
 /// Use this enum to choose between two predefined card appearances:
 /// - ``standard``: A full-width section container with generous padding, rounded corners (12pt), and a subtle drop shadow.
 /// - ``compact``: A smaller inline element with tight padding, rounded corners (6pt), and a thin stroke border.
+///
+/// ```swift
+/// let size: CardSize = .standard
+/// ```
 enum CardSize {
     /// A full-width section container.
     ///
@@ -54,6 +52,10 @@ extension View {
     /// SomeView()
     ///     .cardStyle(padded: false)
     /// ```
+    /// - Parameters:
+    ///   - size: The targeted physical bound variant representing density.
+    ///   - padded: Indicates whether internal content insets should apply.
+    /// - Returns: The active presentation hierarchy for the detail view.
     func cardStyle(_ size: CardSize = .standard, padded: Bool = true) -> some View {
         self
             .modifier(CardStyleModifier(size: size, padded: padded))
@@ -79,6 +81,7 @@ extension View {
     ///     .frame(maxHeight: 200)
     ///     .codePanel()
     /// ```
+    /// - Returns: The active presentation hierarchy for the detail view.
     func codePanel() -> some View {
         self
             .padding(8)
@@ -93,6 +96,10 @@ extension View {
     /// **Single source of truth** for banner chrome so the profile sheet's manage/cancel
     /// banners and the sign-in window's error banners look identical. Pair with ``StatusBanner``
     /// for the common icon + message layout, or apply directly to a custom banner body.
+    /// - Parameters:
+    ///   - tint: The color mapping for the banner.
+    ///   - cornerRadius: The geometric softening applied to corners.
+    /// - Returns: The active presentation hierarchy for the detail view.
     func statusBannerChrome(tint: Color, cornerRadius: CGFloat = 12) -> some View {
         self
             .padding(.horizontal, 14).padding(.vertical, 12)
@@ -107,6 +114,10 @@ extension View {
 /// **Single source of truth** for one-line status call-outs. Richer banners that need a spinner
 /// or a dismiss button compose their own body and apply ``statusBannerChrome(tint:cornerRadius:)``
 /// instead.
+///
+/// ```swift
+/// StatusBanner(icon: "exclamationmark.triangle", tint: .orange, text: "Error")
+/// ```
 struct StatusBanner: View {
     let icon: String
     let tint: Color
@@ -136,6 +147,12 @@ struct StatusBanner: View {
 /// `NSScrollView`-backed and gives native momentum scrolling. The existing
 /// content is placed as a single chrome-free row, so the layout is unchanged —
 /// only the scroll engine differs.
+///
+/// ```swift
+/// SmoothPageScroll {
+///     VStack { Text("Content") }
+/// }
+/// ```
 struct SmoothPageScroll<Content: View>: View {
     @ViewBuilder var content: () -> Content
 
@@ -159,6 +176,8 @@ private struct CardStyleModifier: ViewModifier {
     let size: CardSize
     let padded: Bool
     
+    /// - Parameter content: The dynamic internal rendering hierarchy.
+    /// - Returns: The active presentation hierarchy for the detail view.
     func body(content: Content) -> some View {
         Group {
             switch size {

@@ -1,6 +1,10 @@
 import SwiftUI
 import Charts
-
+/// A chart visualizing the historical trend of system health scores.
+///
+/// ```swift
+/// HealthTrendChart(history: [snapshot1, snapshot2])
+/// ```
 struct HealthTrendChart: View {
     let history: [HealthSnapshot]
     

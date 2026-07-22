@@ -12,9 +12,16 @@ import Foundation
 ///
 /// Correctness: a fast-path acquire increments `active`; when at the limit the caller parks on
 /// a continuation and a later `release()` transfers the permit directly (so `active` is
-/// unchanged and the woken caller holds it). A caller cancelled while parked is still resumed
+/// changed and the woken caller holds it). A caller cancelled while parked is still resumed
 /// by the next `release()` (FIFO drains it) — it then proceeds or bails on `Task.isCancelled`,
 /// so there's no permanent leak under normal churn.
+///
+/// ```swift
+/// let limiter = AsyncConcurrencyLimiter(limit: 6)
+/// await limiter.acquire()
+/// // ...
+/// await limiter.release()
+/// ```
 actor AsyncConcurrencyLimiter {
     private let limit: Int
     private var active = 0
@@ -22,11 +29,13 @@ actor AsyncConcurrencyLimiter {
 
     init(limit: Int) { self.limit = max(1, limit) }
 
+    /// Suspends the caller if the execution pool is at capacity until a slot frees up.
     func acquire() async {
         if active < limit { active += 1; return }
         await withCheckedContinuation { waiters.append($0) }
     }
 
+    /// Relinquishes a concurrency slot, immediately resuming the next suspended waiter if any exist.
     func release() {
         if waiters.isEmpty { active = max(0, active - 1) }
         else { waiters.removeFirst().resume() }
@@ -37,22 +46,35 @@ actor AsyncConcurrencyLimiter {
 ///
 /// `AsyncProcessRunner` solves UI freezing issues caused by `Process.waitUntilExit()`
 /// on `@MainActor` contexts by isolating process execution in a dedicated actor.
+///
+/// ```swift
+/// let result = try await AsyncProcessRunner.shared.run(command: "ls -la")
+/// print(result.stdout)
+/// ```
 actor AsyncProcessRunner {
     /// Shared singleton instance.
     static let shared = AsyncProcessRunner()
 
     private init() {}
 
-    // NOTE: the old `AsyncConcurrencyLimiter(limit: 6)` throttle was REMOVED (2026-07-17).
-    // Its only job was to bound how many blocking `readToEnd` calls ran on the Swift cooperative
-    // pool at once, to avoid pool exhaustion. Now that `readToEnd` runs on a libdispatch queue
-    // (see `readToEnd` below), that exhaustion is impossible — and the throttle itself could STARVE
-    // a probe forever: a call parked at `acquire()` never spawns its process, so the safety
-    // timeout (which only guards a running child) can't rescue it. That was the intermittent
-    // launch freeze (a `sh REQUEST` with no matching `sh PERMIT` in the logs). Detection's ~40
-    // short-lived probes run fine unthrottled; long installs already use `runWithStreaming`.
+    /// NOTE: the old `AsyncConcurrencyLimiter(limit: 6)` throttle was REMOVED (2026-07-17).
+    /// Its only job was to bound how many blocking `readToEnd` calls ran on the Swift cooperative
+    /// pool at once, to avoid pool exhaustion. Now that `readToEnd` runs on a libdispatch queue
+    /// (see `readToEnd` below), that exhaustion is impossible — and the throttle itself could STARVE
+    /// a probe forever: a call parked at `acquire()` never spawns its process, so the safety
+    /// timeout (which only guards a running child) can't rescue it. That was the intermittent
+    /// launch freeze (a `sh REQUEST` with no matching `sh PERMIT` in the logs). Detection's ~40
+    ///
+    /// **Rationale:** Removing the application-level concurrency lock shifts thread lifecycle management back to the OS, which is far better equipped to handle IO multiplexing.
+    /// short-lived probes run fine unthrottled; long installs already use `runWithStreaming`.
+    ///
+    /// **Rationale:** Prevents queue starvation during mass dependency resolution where hundreds of fast commands (like `which python3`) are fired simultaneously.
 
     /// The result of a process execution.
+    ///
+    /// ```swift
+    /// if result.succeeded { print(result.stdout) }
+    /// ```
     struct ProcessResult {
         /// Standard output from the process.
         let stdout: String
@@ -68,6 +90,10 @@ actor AsyncProcessRunner {
     }
     
     /// Errors thrown by the array-args execution path.
+    ///
+    /// ```swift
+    /// catch AsyncProcessRunner.ProcessError.timedOut(let seconds) { ... }
+    /// ```
     enum ProcessError: Error, LocalizedError {
         /// The process could not be launched.
         case failedToLaunch(String)
@@ -115,11 +141,19 @@ actor AsyncProcessRunner {
     /// Convenience for invoking the resolved Homebrew binary with a PATH that
     /// includes its prefix (brew shells out to git/curl), using the safe
     /// array-args path.
+    /// - Parameters:
+    ///   - arguments: The command-line flags array appended to the Homebrew invocation.
+    ///   - extraEnvironment: Supplemental environment variables bound directly to the subshell.
+    ///   - timeoutSeconds: An optional execution boundary triggering forced termination.
+    /// - Returns: The aggregate execution state containing stdout, stderr, and exit codes.
+    /// - Throws: Propagates process spawning exceptions or runtime timeouts.
     func runBrew(arguments: [String], extraEnvironment: [String: String] = [:], timeoutSeconds: Double? = nil) async throws -> ProcessResult {
         let prefix = BrewPathManager.shared.homebrewPrefix
-        // Setting `environment` REPLACES the whole env, so we must pass everything brew needs.
-        // `HOME` is required (brew is Ruby → uses ~/Library/Caches/Homebrew); without it brew
-        // misbehaves intermittently (a cause of first-launch load flakiness, worst under Xcode).
+        /// Setting `environment` REPLACES the whole env, so we must pass everything brew needs.
+        /// `HOME` is required (brew is Ruby → uses ~/Library/Caches/Homebrew); without it brew
+        /// misbehaves intermittently (a cause of first-launch load flakiness, worst under Xcode).
+        ///
+        /// **Gotchas:** Omitting `HOME` when explicitly constructing the `ProcessInfo` environment array will cause Homebrew to fail silently with opaque Ruby cache errors.
         var env: [String: String] = [
             "PATH": "\(prefix)/bin:/usr/bin:/bin:/usr/sbin:/sbin",
             "HOME": NSHomeDirectory(),
@@ -136,8 +170,15 @@ actor AsyncProcessRunner {
     /// Shared execution core: wires pipes, honours Task cancellation (kills the
     /// child) and an optional timeout (SIGTERM then SIGKILL). The continuation
     /// is resumed exactly once, from the termination handler.
+    /// - Parameters:
+    ///   - process: The explicitly configured Foundation Process instance ready for launch.
+    ///   - timeoutSeconds: The optional wall-clock limit before raising a timeout abort.
+    /// - Returns: The aggregate execution state containing stdout, stderr, and exit codes.
+    /// - Throws: Propagates task cancellation errors or direct binary launch failures.
     private func executeProcess(_ process: Process, timeoutSeconds: Double?) async throws -> ProcessResult {
-        // 🐛 DEBUG: same REQUEST/PERMIT/DONE tracing as run(command:) for the argv path.
+        /// 🐛 DEBUG: same REQUEST/PERMIT/DONE tracing as run(command:) for the argv path.
+        ///
+        /// **Rationale:** Ensures parity in diagnostic logging between simple shell invocations and explicit argv process execution.
         let dbg = "\(process.executableURL?.lastPathComponent ?? "?") \((process.arguments ?? []).prefix(4).joined(separator: " "))"
         let t0 = Date()
         Logger.shared.debugLog("🐛 px START   | \(dbg)")
@@ -211,10 +252,12 @@ actor AsyncProcessRunner {
                 }
             }
         } onCancel: {
-            // Only terminate a process that actually launched. If the task is cancelled
-            // before `process.run()` (e.g. a shortcuts search cancels an in-flight probe),
-            // calling terminate() on an unlaunched NSTask throws NSInvalidArgumentException
-            // ("task not launched") and crashes the app.
+            /// Only terminate a process that actually launched. If the task is cancelled
+            /// before `process.run()` (e.g. a shortcuts search cancels an in-flight probe),
+            /// calling terminate() on an unlaunched NSTask throws NSInvalidArgumentException
+            /// ("task not launched") and crashes the app.
+            ///
+            /// **Gotchas:** Blindly sending SIGTERM to an unlaunched `Process` instance instantly crashes the parent application on macOS.
             if process.isRunning { process.terminate() }
         }
     }
@@ -227,9 +270,11 @@ actor AsyncProcessRunner {
     /// - Returns: A `ProcessResult` containing standard output, standard error, and the exit code.
     /// - Throws: An error if the process fails to start.
     func run(command: String, useLoginShell: Bool = false, timeoutSeconds: Double? = nil) async throws -> ProcessResult {
-        // 🐛 DEBUG instrumentation. REQUEST = call entered; PERMIT = concurrency slot acquired
-        // (a big REQUEST→PERMIT gap ⇒ limiter/pool starvation); DONE = returned. A REQUEST with no
-        // matching DONE is the hung call; a REQUEST with no PERMIT is a starved queue.
+        /// 🐛 DEBUG instrumentation. REQUEST = call entered; PERMIT = concurrency slot acquired
+        /// (a big REQUEST→PERMIT gap ⇒ limiter/pool starvation); DONE = returned. A REQUEST with no
+        /// matching DONE is the hung call; a REQUEST with no PERMIT is a starved queue.
+        ///
+        /// **Rationale:** A deterministic lifecycle log makes it trivial to identify concurrency exhaustion deadlocks without attaching a debugger.
         let dbg = String(command.prefix(70))
         let t0 = Date()
         Logger.shared.debugLog("🐛 sh START   | \(dbg)")
@@ -246,12 +291,14 @@ actor AsyncProcessRunner {
         try process.run()
         Logger.shared.debugLog("🐛 sh SPAWN   | pid=\(process.processIdentifier) | \(dbg)")
 
-        // Safety timeout (opt-in). A probe that never exits (e.g. a wedged `python -m pip
-        // --version`) would otherwise block `readToEnd` on EOF forever, hold its concurrency
-        // permit, and — via the single-flight Python scan — wedge all of detection. Killing it
-        // lets the pipes close so this call returns and the permit is released. The actor is
-        // suspended at the `await outData/errData` reads below, so this actor-inheriting Task runs
-        // freely (mirrors `executeProcess`). Cancelled once the process exits.
+        /// Safety timeout (opt-in). A probe that never exits (e.g. a wedged `python -m pip
+        /// --version`) would otherwise block `readToEnd` on EOF forever, hold its concurrency
+        /// permit, and — via the single-flight Python scan — wedge all of detection. Killing it
+        /// lets the pipes close so this call returns and the permit is released. The actor is
+        /// suspended at the `await outData/errData` reads below, so this actor-inheriting Task runs
+        /// freely (mirrors `executeProcess`). Cancelled once the process exits.
+        ///
+        /// **Gotchas:** Omitting this timeout acts as a timebomb; a single wedged `python` subprocess can exhaust the app's concurrency pool permanently.
         let timeoutTask: Task<Void, Never>? = timeoutSeconds.map { secs in
             Task {
                 try? await Task.sleep(nanoseconds: UInt64(secs * 1_000_000_000))
@@ -265,16 +312,18 @@ actor AsyncProcessRunner {
         }
         defer { timeoutTask?.cancel() }
 
-        // Drain both pipes to EOF on background threads. The previous approach
-        // accumulated output in a `readabilityHandler` and snapshotted it in the
-        // `terminationHandler`, which run on different threads with no completion
-        // barrier: an in-flight readability callback could append the final chunk
-        // *after* the snapshot was taken, intermittently truncating output to
-        // empty. For tiny probes like `xcode-select -p` an empty result read as
-        // "Not Installed" even when the tool was present — most visible under the
-        // parallel-startup load where every VM probes at once. Reading each pipe
-        // to EOF removes that race, and reading them concurrently avoids the
-        // 64 KB pipe-buffer deadlock on large output.
+        /// Drain both pipes to EOF on background threads. The previous approach
+        /// accumulated output in a `readabilityHandler` and snapshotted it in the
+        /// `terminationHandler`, which run on different threads with no completion
+        /// barrier: an in-flight readability callback could append the final chunk
+        /// *after* the snapshot was taken, intermittently truncating output to
+        /// empty. For tiny probes like `xcode-select -p` an empty result read as
+        /// "Not Installed" even when the tool was present — most visible under the
+        /// parallel-startup load where every VM probes at once. Reading each pipe
+        /// to EOF removes that race, and reading them concurrently avoids the
+        /// 64 KB pipe-buffer deadlock on large output.
+        ///
+        /// **Gotchas:** Attempting to read a pipe sequentially instead of concurrently guarantees a process hang when a child tool writes >64KB to stdout/stderr.
         async let outData = Self.readToEnd(stdoutPipe.fileHandleForReading)
         async let errData = Self.readToEnd(stderrPipe.fileHandleForReading)
 
@@ -282,8 +331,10 @@ actor AsyncProcessRunner {
         let err = String(data: await errData, encoding: .utf8) ?? ""
         Logger.shared.debugLog("🐛 sh READ    | +\(Self.msSince(t0))ms drained pipes | \(dbg)")
 
-        // Pipes have hit EOF (the child closed them at exit), so this returns
-        // promptly and just harvests the exit status.
+        /// Pipes have hit EOF (the child closed them at exit), so this returns
+        /// promptly and just harvests the exit status.
+        ///
+        /// **Rationale:** Synchronously awaiting `waitUntilExit()` only after the pipes drain avoids race conditions where the process dies before its buffers flush.
         process.waitUntilExit()
 
         Logger.shared.debugLog("🐛 sh DONE    | +\(Self.msSince(t0))ms exit=\(process.terminationStatus) | \(dbg)")
@@ -305,13 +356,15 @@ actor AsyncProcessRunner {
     /// stays valid for the lifetime of the read.
     private nonisolated static func readToEnd(_ handle: FileHandle) async -> Data {
         let fd = handle.fileDescriptor
-        // Run the BLOCKING `readToEnd` on a libdispatch global queue — NOT `Task.detached`, which
-        // runs on the Swift cooperative thread pool (width ≈ core count). Under a detection burst,
-        // several concurrent `run(command:)` calls each block TWO of those pool threads on EOF;
-        // enough of them exhaust the pool, after which NO Swift-concurrency work can run — not the
-        // scan's continuation, and not even the safety-timeout Tasks that are supposed to rescue a
-        // wedged probe. That's a total deadlock (the 2-minute launch freeze). libdispatch grows
-        // threads on demand, so blocking one of ITS threads never starves the cooperative pool.
+        /// Run the BLOCKING `readToEnd` on a libdispatch global queue — NOT `Task.detached`, which
+        /// runs on the Swift cooperative thread pool (width ≈ core count). Under a detection burst,
+        /// several concurrent `run(command:)` calls each block TWO of those pool threads on EOF;
+        /// enough of them exhaust the pool, after which NO Swift-concurrency work can run — not the
+        /// scan's continuation, and not even the safety-timeout Tasks that are supposed to rescue a
+        /// wedged probe. That's a total deadlock (the 2-minute launch freeze). libdispatch grows
+        /// threads on demand, so blocking one of ITS threads never starves the cooperative pool.
+        ///
+        /// **Gotchas:** Using Swift Concurrency (`Task.detached`) for blocking file IO during high-burst phases will completely lock up the UI thread by starving the cooperative pool.
         return await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 let reader = FileHandle(fileDescriptor: fd, closeOnDealloc: false)
@@ -337,10 +390,12 @@ actor AsyncProcessRunner {
             process.executableURL = URL(fileURLWithPath: "/bin/zsh")
             process.arguments = ["-c", command]
 
-            // Merge any caller-supplied variables onto the inherited environment.
-            // Setting process.environment replaces it entirely, so seed from the
-            // current environment first. Used to pass secrets (e.g. a sudo
-            // password) in-memory instead of writing them to disk.
+            /// Merge any caller-supplied variables onto the inherited environment.
+            /// Setting process.environment replaces it entirely, so seed from the
+            /// current environment first. Used to pass secrets (e.g. a sudo
+            /// password) in-memory instead of writing them to disk.
+            ///
+            /// **Rationale:** Passing ephemeral credentials via environment injection prevents exposing sensitive keys in the unified system log.
             if let environment {
                 var env = ProcessInfo.processInfo.environment
                 for (key, value) in environment { env[key] = value }

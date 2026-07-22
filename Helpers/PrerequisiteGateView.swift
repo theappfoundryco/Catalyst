@@ -1,10 +1,6 @@
-//
-//  PrerequisiteGateView.swift
-//  Catalyst
-//
-//  Full-view replacement when a prerequisite tool is not installed.
-//  Cosmetics match SSDSetupCard exactly.
-//
+/// Full-view replacement when a prerequisite tool is not installed.
+/// Cosmetics match SSDSetupCard exactly.
+
 import SwiftUI
 
 /// A full-view gate card shown when a prerequisite tool (Homebrew, Python) is not installed.
@@ -59,6 +55,7 @@ struct PrerequisiteGateView: View {
     }
     
     /// Homebrew not installed preset.
+    /// - Returns: A dedicated interface intercepting Homebrew prerequisite failures.
     static func brewMissing() -> PrerequisiteGateView {
         PrerequisiteGateView(
             icon: "mug",
@@ -69,6 +66,7 @@ struct PrerequisiteGateView: View {
     }
     
     /// Python with pip not available preset.
+    /// - Returns: A dedicated interface intercepting Python prerequisite failures.
     static func pythonMissing() -> PrerequisiteGateView {
         PrerequisiteGateView(
             icon: "shippingbox",

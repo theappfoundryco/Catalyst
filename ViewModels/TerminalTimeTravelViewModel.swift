@@ -3,13 +3,30 @@ import SwiftUI
 import AppKit
 import Combine
 
+/// A view model that coordinates parsing and presenting local shell history files.
+///
+/// It scans `~/.zsh_history` (or `~/.bash_history`) safely off the main thread, strips
+/// binary artifacts or bad encodings, and reverses the timeline so the most recent
+/// commands surface at the top.
+///
+/// **Caveats:**
+/// - Loading requires detached tasks. Shell history files can contain literal null bytes,
+///   ANSI codes, and mangled UTF-8 that crash simplistic decoders.
+///
+/// ```swift
+/// @StateObject var vm = TerminalTimeTravelViewModel()
+/// await vm.refresh()
+/// ```
 @MainActor
 final class TerminalTimeTravelViewModel: ObservableObject {
     
     // MARK: - Published Properties
     
+    /// The decoded, reversed array of history commands.
     @Published var commands: [HistoryCommand] = []
+    /// Indicates whether a history sweep is actively running.
     @Published var isRefreshing = false
+    /// Surfaceable error text if the file is missing or utterly unreadable.
     @Published var errorMessage: String?
     
     // MARK: - Models
@@ -31,12 +48,23 @@ final class TerminalTimeTravelViewModel: ObservableObject {
     
     // MARK: - Public Methods
     
+    /// Manually triggers a reload of the history file.
+    ///
+    /// - Parameter forceRefresh: Optional flag to dictate cache bypassing (unused logically, maintained for protocol conformance).
     func refresh(forceRefresh: Bool = false) async {
         isRefreshing = true
         await loadHistory()
         isRefreshing = false
     }
     
+    /// Scans the file system for `.zsh_history` or `.bash_history` and decodes it.
+    ///
+    /// **Flow:**
+    /// 1. Detaches a `.userInitiated` background task to avoid blocking the main thread with heavy file I/O.
+    /// 2. Reads the raw data blob from `~/.zsh_history` (or bash fallback).
+    /// 3. Sequentially attempts to decode as `UTF-8`, `ISO-Latin-1`, or lossy ASCII to survive malformed bytes.
+    /// 4. Parses the ZSH timestamp headers (`: 1612345678:0;`) out of the string if present.
+    /// 5. Reverses the chronology (newest first) and limits to the last 500 commands.
     func loadHistory() async {
         errorMessage = nil
         
@@ -82,6 +110,8 @@ final class TerminalTimeTravelViewModel: ObservableObject {
                 var parsedCommands: [HistoryCommand] = []
                 
                 // Helper parsing logic (inline to be safe in detached task context)
+                /// - Parameter line: The raw unparsed text output from the terminal stream.
+                /// - Returns: A sanitized text representation safe for presentation.
                 func parseLine(_ line: String) -> String {
                     if line.hasPrefix(": ") && line.contains(";") {
                         if let semicolonIndex = line.firstIndex(of: ";") {
@@ -120,6 +150,9 @@ final class TerminalTimeTravelViewModel: ObservableObject {
         self.errorMessage = result.1
     }
     
+    /// Copies a specific history command strictly to the macOS general pasteboard.
+    ///
+    /// - Parameter command: The raw shell string to copy.
     func copyToClipboard(_ command: String) {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
@@ -127,6 +160,9 @@ final class TerminalTimeTravelViewModel: ObservableObject {
         Logger.shared.log("📋 Copied command to clipboard")
     }
     
+    /// Invokes the shared terminal service to open a new window executing the command.
+    ///
+    /// - Parameter command: The literal string to inject and run.
     func runInTerminal(_ command: String) {
         TerminalService.shared.runCommand(command)
     }

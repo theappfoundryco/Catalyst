@@ -34,7 +34,11 @@ struct DrLiveMetrics: Equatable {
         isRosetta = issues.contains(where: { $0.title == "App Running via Rosetta" })
     }
 }
-
+/// A grid displaying real-time metrics derived from Dr. Catalyst's diagnostic scans.
+///
+/// ```swift
+/// LiveMetricsGrid(vm: viewModel)
+/// ```
 struct LiveMetricsGrid: View {
     @ObservedObject var vm: DrCatalystViewModel
 
@@ -98,7 +102,11 @@ struct LiveMetricsGrid: View {
         }
     }
 }
-
+/// A styled card presenting a single live metric with an icon and subtext.
+///
+/// ```swift
+/// MetricCard(icon: "cpu", gradient: gradient, label: "Silicon", value: "Native", subtext: "Optimized")
+/// ```
 struct MetricCard: View {
     let icon: String
     let gradient: LinearGradient

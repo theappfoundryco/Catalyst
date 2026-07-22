@@ -1,5 +1,9 @@
 import SwiftUI
-
+/// A styled grid card representing a single Smart Shortcut in the catalog.
+///
+/// ```swift
+/// ShortcutCard(shortcut: shortcut, isInstalled: true, customName: "my_cmd")
+/// ```
 struct ShortcutCard: View {
     let shortcut: ShortcutItem
     let isInstalled: Bool

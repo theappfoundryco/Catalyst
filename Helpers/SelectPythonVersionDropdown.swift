@@ -1,10 +1,3 @@
-//
-//  SelectPythonVersionDropdown.swift
-//  Catalyst
-//
-//  Created by Shivang Gulati on 15/02/26.
-//
-
 import SwiftUI
 
 /// A card-styled Python version picker with optional info, warning, and PEP 668 banners.
@@ -88,8 +81,10 @@ struct SelectPythonVersionDropdown: View {
                     Text("Python \(python.version)").tag(python as PythonInstallation?)
                 }
             }
-            // Label hidden (redundant with the "Select Python Version" header) so the menu control
-            // fills the full width instead of pinning right with a gap on macOS 26 (Tahoe).
+            /// Label hidden (redundant with the "Select Python Version" header) so the menu control
+            /// fills the full width instead of pinning right with a gap on macOS 26 (Tahoe).
+            ///
+            /// **Gotchas:** Attempting to use a visible empty label `Text("")` still reserves horizontal layout space in macOS 14+, ruining the full-width alignment.
             .labelsHidden()
             .frame(maxWidth: .infinity)
             .onChange(of: selection) { _, _ in
@@ -183,7 +178,9 @@ struct SelectPythonVersionDropdown: View {
                 .fixedSize()
             }
 
-            // Exact flag that will be appended to pip — transparent and copyable.
+            /// Exact flag that will be appended to pip — transparent and copyable.
+            ///
+            /// **Rationale:** Exposing the exact CLI arguments the GUI generates builds trust and helps power users learn modern python packaging rules.
             HStack(spacing: 6) {
                 Text("Adds flag")
                     .font(.caption2)

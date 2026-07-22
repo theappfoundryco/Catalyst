@@ -1,14 +1,13 @@
-//
-//  DrCatalystCards.swift
-//  Catalyst
-//
-//  Subview components extracted from DrCatalystView for better modularity.
-//
+/// Subview components extracted from DrCatalystView for better modularity.
 
 import SwiftUI
 
 // MARK: - Diagnostic Grid
-
+/// A grid layout displaying multiple system diagnostic statuses.
+///
+/// ```swift
+/// DiagnosticGrid(statuses: statuses, issues: issues) { await refresh() }
+/// ```
 struct DiagnosticGrid: View {
     let statuses: [DoctorStatus]
     let issues: [HealthIssue]
@@ -69,7 +68,11 @@ struct DiagnosticGrid: View {
 }
 
 // MARK: - Diagnostic Status Card
-
+/// A card representing the status of a specific diagnostic category.
+///
+/// ```swift
+/// DiagnosticStatusCard(status: status, issues: categoryIssues)
+/// ```
 struct DiagnosticStatusCard: View {
     let status: DoctorStatus
     let issues: [HealthIssue]
@@ -221,7 +224,11 @@ struct DiagnosticStatusCard: View {
 }
 
 // MARK: - Enhanced Healthy State View
-
+/// A celebratory view displayed when all Dr. Catalyst checks pass.
+///
+/// ```swift
+/// EnhancedHealthyStateView()
+/// ```
 struct EnhancedHealthyStateView: View {
     @State private var pulse = false
     
@@ -265,7 +272,11 @@ struct EnhancedHealthyStateView: View {
 }
 
 // MARK: - Ghost Buster View
-
+/// A view dedicated to scanning for and terminating ghost processes holding network ports.
+///
+/// ```swift
+/// GhostBusterView(vm: viewModel)
+/// ```
 struct GhostBusterView: View {
     @ObservedObject var vm: GhostBusterViewModel
     @State private var isRefreshing = false
@@ -356,7 +367,11 @@ struct GhostBusterView: View {
 }
 
 // MARK: - Ghost Process Card
-
+/// A card displaying details of a single ghost process with a kill action.
+///
+/// ```swift
+/// GhostProcessCard(ghost: process) { kill() }
+/// ```
 struct GhostProcessCard: View {
     let ghost: GhostProcess
     let onKill: () -> Void

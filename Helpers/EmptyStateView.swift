@@ -1,9 +1,5 @@
-//
-//  EmptyStateView.swift
-//  Catalyst
-//
-//  Centralized empty/no-results state placeholder.
-//
+/// Centralized empty/no-results state placeholder.
+
 import SwiftUI
 
 /// A reusable placeholder view for empty or no-results states.

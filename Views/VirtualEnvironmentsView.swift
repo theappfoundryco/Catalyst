@@ -1,6 +1,10 @@
 import SwiftUI
 import UniformTypeIdentifiers
-
+/// A view for managing and discovering Python virtual environments and projects.
+///
+/// ```swift
+/// VirtualEnvironmentsView(viewModel: virtualEnvViewModel)
+/// ```
 struct VirtualEnvironmentsView: View {
     @ObservedObject var viewModel: VirtualEnvironmentsViewModel
     @State private var projectToRemove: Project?
@@ -147,6 +151,7 @@ struct VirtualEnvironmentsView: View {
         }
     }
     
+    /// Renders a single workspace entry containing a tracked Python virtual environment.
     struct ProjectRow: View {
         let project: Project
         let isMissing: Bool
@@ -253,6 +258,7 @@ struct VirtualEnvironmentsView: View {
         }
     }
     
+    /// Defines the active drag-and-drop boundary for registering new workspaces.
     struct VirtualProjectDropZone: View {
         var isTargeted: Bool
         var action: () -> Void

@@ -9,6 +9,10 @@ struct PermissionsCheck: Doctor {
 
     /// Evaluates application support paths and excessive historical backups.
     ///
+    /// **Flow:**
+    /// 1. Fetches write flags for `~/Library/Application Support/com.shivanggulati.catalyst`.
+    /// 2. Iterates explicit `.zshrc.catalyst.backup` footprints stored directly in `$HOME`.
+    ///
     /// - Returns: An array of `HealthIssue` detailing permission failures or redundant clutter.
     func run() async -> [HealthIssue] {
         var issues: [HealthIssue] = []
@@ -58,6 +62,9 @@ struct PermissionsCheck: Doctor {
     }
     
     /// Clears permission constraints or cleans excessive backup items.
+    ///
+    /// **Gotchas:**
+    /// Evaluates file creation dates across raw URLs, keeping the 3 most recent configurations intact.
     ///
     /// - Parameter issue: The permission finding isolated on execution.
     /// - Returns: A boolean describing the final cleanup execution status.

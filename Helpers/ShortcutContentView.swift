@@ -1,17 +1,12 @@
-//
-//  ShortcutContentView.swift
-//  Catalyst
-//
-//  Native, reusable renderer for a shortcut's structured detail content.
-//  Replaces MarkdownUI: predefined, native components — no markdown parsing,
-//  no raw code reveal, no nested scroll views.
-//
-//  Redesign (2026-07): the sections are consolidated into a SINGLE card with
-//  light sub-headers and hairline dividers (instead of one heavy card per
-//  section), for a calmer, more concise detail page. It also substitutes the
-//  installed/custom function name into the usage, examples and sample output so
-//  what's shown matches what the user will actually type.
-//
+/// Native, reusable renderer for a shortcut's structured detail content.
+/// Replaces MarkdownUI: predefined, native components — no markdown parsing,
+/// no raw code reveal, no nested scroll views.
+/// Redesign (2026-07): the sections are consolidated into a SINGLE card with
+/// light sub-headers and hairline dividers (instead of one heavy card per
+/// section), for a calmer, more concise detail page. It also substitutes the
+/// installed/custom function name into the usage, examples and sample output so
+/// what's shown matches what the user will actually type.
+
 import SwiftUI
 
 /// Renders a ``ShortcutContent`` as one cohesive, lightly-sectioned card.
@@ -21,12 +16,17 @@ import SwiftUI
 ///   name the user chose (or the installed one).
 /// - `showsSummaryAndUsage`: set false when the host view already surfaces the
 ///   summary + usage (e.g. a detail hero) so they aren't duplicated here.
+///
+/// ```swift
+/// ShortcutContentView(content: shortcut.content)
+/// ```
 struct ShortcutContentView: View {
     let content: ShortcutContent
     var originalName: String = ""
     var effectiveName: String = ""
     var showsSummaryAndUsage: Bool = true
 
+    /// Logical groupings used for internal navigation and list segmentation.
     private enum Section: Hashable { case overview, usage, steps, params, examples, output, notes }
 
     private var present: [Section] {
@@ -58,6 +58,8 @@ struct ShortcutContentView: View {
     // MARK: - Sections
 
     @ViewBuilder
+    /// - Parameter sec: The segmented grouping mapped to UI hierarchy.
+    /// - Returns: The active presentation hierarchy for the detail view.
     private func sectionView(_ sec: Section) -> some View {
         switch sec {
         case .overview:
@@ -177,6 +179,8 @@ struct ShortcutContentView: View {
     // MARK: - Name substitution
 
     /// Rewrite standalone occurrences of the default function name to the chosen one.
+    /// - Parameter s: The literal string representing Apple script definition.
+    /// - Returns: A transformed script assigning localized identities.
     private func applyingName(_ s: String) -> String {
         guard !originalName.isEmpty, originalName != effectiveName, !effectiveName.isEmpty else { return s }
         let pattern = "(?<![\\w-])" + NSRegularExpression.escapedPattern(for: originalName) + "(?![\\w-])"
@@ -198,8 +202,10 @@ private struct CommandChip: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
-            // Command text sizes to its content so the copy button sits right beside
-            // it (not pushed to the far edge); the Spacer fills the rest of the row.
+            /// Command text sizes to its content so the copy button sits right beside
+            /// it (not pushed to the far edge); the Spacer fills the rest of the row.
+            ///
+            /// **Rationale:** Anchoring the copy button directly to the text ensures visual proximity regardless of the parent window width.
             Text(command)
                 .font(.caption.monospaced())
                 .foregroundColor(.primary)
@@ -259,6 +265,8 @@ private struct NoteRow: View {
     }
 
     /// Strip a leading cue emoji so it isn't duplicated next to the icon.
+    /// - Parameter s: The raw target text block.
+    /// - Returns: A simplified string eliminating layout markers.
     private func cleaned(_ s: String) -> String {
         var out = s
         for cue in ["⚠️", "⚠", "🚫", "💡", "🔍"] {

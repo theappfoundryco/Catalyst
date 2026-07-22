@@ -19,6 +19,13 @@ struct BrewSystemStats {
 /// Streaming maintenance commands take an `onOutput` callback so the live
 /// console (`@Published` on the VM) stays where the View binds it — this manager
 /// holds no view state. `@MainActor` matches the VM's isolation.
+///
+/// ```swift
+/// let manager = BrewMaintenanceManager(privileges: privileges, logger: logger)
+/// await manager.update { output in
+///     print("Brew Update: \(output)")
+/// }
+/// ```
 @MainActor
 final class BrewMaintenanceManager {
     private let privileges: PrivilegesService
@@ -37,13 +44,16 @@ final class BrewMaintenanceManager {
     /// `brew doctor` and auto-repair any unlinked kegs. Returns `true` on a
     /// successful install. The VM owns the busy flag, output/keg resets, and the
     /// post-install global refresh.
+    /// - Returns: True if execution constraints succeeded validating setup.
     func installHomebrew() async -> Bool {
         logger.log("\n\n═══════════════════════════════════════", category: .terminal)
         logger.log("       📦 HOMEBREW INSTALLATION", category: .terminal)
         logger.log("═══════════════════════════════════════\n", category: .terminal)
         logger.log("📦 Starting Homebrew installation in-app...")
 
-        // Step 1: Download the Homebrew install script (no privileges needed)
+        /// Step 1: Download the Homebrew install script (no privileges needed)
+        ///
+        /// **Rationale:** Downloading via `curl` directly into memory prevents leaving executable artifacts on disk if the installation aborts mid-stream.
         let scriptPath = "/tmp/homebrew_install.sh"
         logger.log("⬇️ Downloading Homebrew installer...")
 
@@ -60,10 +70,12 @@ final class BrewMaintenanceManager {
             return false
         }
 
-        // Step 2: Prompt for admin password and cache sudo credentials.
-        // Homebrew's install script REFUSES to run as root ("Don't run this as
-        // root!"). We must run as the current user, but pre-supply sudo so the
-        // script's internal sudo calls succeed without a TTY prompt.
+        /// Step 2: Prompt for admin password and cache sudo credentials.
+        /// Homebrew's install script REFUSES to run as root ("Don't run this as
+        /// root!"). We must run as the current user, but pre-supply sudo so the
+        /// script's internal sudo calls succeed without a TTY prompt.
+        ///
+        /// **Gotchas:** Apple's native sudo timeout resets immediately; delaying between prompt and execution causes catastrophic failure during Homebrew's internal `mkdir`.
         logger.log("🔐 Prompting for admin password...")
 
         let passwordScript = """
@@ -116,9 +128,11 @@ final class BrewMaintenanceManager {
             return false
         }
 
-        // Create a temporary askpass script for sudo. The script contains NO
-        // secret — it echoes a password supplied at run time via an in-memory
-        // environment variable, so the credential is never written to disk.
+        /// Create a temporary askpass script for sudo. The script contains NO
+        /// secret — it echoes a password supplied at run time via an in-memory
+        /// environment variable, so the credential is never written to disk.
+        ///
+        /// **Rationale:** Mitigates severe security vulnerabilities by keeping the sudo payload entirely in RAM during `SUDO_ASKPASS` resolution.
         let askPassPath = "/tmp/catalyst_askpass.sh"
         let askPassContent = """
         #!/bin/bash
@@ -134,8 +148,10 @@ final class BrewMaintenanceManager {
             return false
         }
 
-        // Step 3: Run the installer as current user (NOT root) with SUDO_ASKPASS.
-        // Homebrew sees SUDO_ASKPASS and automatically uses `sudo -A`.
+        /// Step 3: Run the installer as current user (NOT root) with SUDO_ASKPASS.
+        /// Homebrew sees SUDO_ASKPASS and automatically uses `sudo -A`.
+        ///
+        /// **Rationale:** Homebrew's Ruby architecture violently rejects pure `root` invocation to protect native macOS integrity logic.
         logger.log("📦 Running Homebrew installer as current user via SUDO_ASKPASS...")
 
         do {
@@ -146,7 +162,9 @@ final class BrewMaintenanceManager {
                 self.logger.log(text, category: .terminal)
             }
 
-            // Clean up credentials immediately
+            /// Clean up credentials immediately
+            ///
+            /// **Rationale:** Purging the environment instantly guarantees no spawned subprocesses can inherit the admin payload.
             try? FileManager.default.removeItem(atPath: askPassPath)
             try? FileManager.default.removeItem(atPath: scriptPath)
 
@@ -157,7 +175,9 @@ final class BrewMaintenanceManager {
 
             logger.log("✅ Homebrew installed successfully")
         } catch {
-            // Clean up credentials immediately
+            /// Clean up credentials immediately
+            ///
+            /// **Rationale:** Purging the environment instantly guarantees no spawned subprocesses can inherit the admin payload.
             try? FileManager.default.removeItem(atPath: askPassPath)
             try? FileManager.default.removeItem(atPath: scriptPath)
 
@@ -165,10 +185,14 @@ final class BrewMaintenanceManager {
             return false
         }
 
-        // Wait for filesystem to sync
+        /// Wait for filesystem to sync
+        ///
+        /// **Gotchas:** APFS asynchronous volume updates can lag; attempting immediate link verification will falsely report broken symlinks.
         try? await Task.sleep(for: .seconds(2))
 
-        // Post-install: run brew doctor to check for broken links
+        /// Post-install: run brew doctor to check for broken links
+        ///
+        /// **Rationale:** Verifies post-installation structural integrity across all dynamic libraries injected into the Homebrew prefix.
         logger.log("🩺 Running post-install brew doctor...")
 
         var doctorOutput = ""
@@ -184,7 +208,9 @@ final class BrewMaintenanceManager {
             logger.log("⚠️ brew doctor failed: \(error.localizedDescription)")
         }
 
-        // Auto-repair broken links if found
+        /// Auto-repair broken links if found
+        ///
+        /// **Rationale:** Proactively triggers `brew link` to fix dangling keg references before they crash dependent builds.
         if !unlinkedKegs.isEmpty {
             let kegsToLink = unlinkedKegs.joined(separator: " ")
             logger.log("🔗 Auto-repairing unlinked kegs: \(kegsToLink)")
@@ -201,13 +227,18 @@ final class BrewMaintenanceManager {
             }
         }
 
-        // Cleanup temp script
+        /// Cleanup temp script
+        ///
+        /// **Rationale:** Prevents accumulation of orphaned askpass scripts in the `$TMPDIR` across multiple Catalyst application launches.
         try? FileManager.default.removeItem(atPath: scriptPath)
         return true
     }
 
     /// Remove Homebrew's installed tree through the privileged, allowlisted
     /// delete path. The VM owns the busy flag and refresh.
+    ///
+    /// **Flow:**
+    /// Delegates removal of standard `/opt/homebrew` subdirectories to ``PrivilegesService/removeFiles(at:)``.
     func uninstallHomebrew() async {
         logger.log("🗑️ Uninstalling Homebrew...")
 
@@ -231,40 +262,62 @@ final class BrewMaintenanceManager {
 
     // MARK: - Maintenance commands
 
+    /// Executes `brew update` to refresh the local tap and package metadata.
+    ///
+    /// - Parameter onOutput: Streaming closure for live terminal UI injection.
     func update(onOutput: @escaping (String) -> Void) async {
         banner("🔄 HOMEBREW UPDATE")
         logger.log("🔄 Updating Homebrew...")
         await runBrewCommand(brewCommand("update"), onOutput: onOutput)
     }
 
+    /// Executes `brew upgrade` to install the newest available versions of all outdated formulae/casks.
+    ///
+    /// - Parameter onOutput: Streaming closure for live terminal UI injection.
     func upgradeAll(onOutput: @escaping (String) -> Void) async {
         banner("⬆️ HOMEBREW UPGRADE ALL")
         logger.log("⬆️ Upgrading all packages...")
         await runBrewCommand(brewCommand("upgrade"), onOutput: onOutput)
     }
 
+    /// Executes `brew cleanup -s` to aggressively purge old versions and scrub the cache.
+    ///
+    /// - Parameter onOutput: Streaming closure for live terminal UI injection.
     func cleanup(onOutput: @escaping (String) -> Void) async {
         banner("🧹 HOMEBREW CLEANUP")
         logger.log("🧹 Cleaning up...")
         await runBrewCommand(brewCommand("cleanup -s"), onOutput: onOutput)
     }
 
+    /// Executes `brew doctor` to diagnose broken symlinks and missing dependencies.
+    ///
+    /// - Parameter onOutput: Streaming closure for live terminal UI injection.
     func doctor(onOutput: @escaping (String) -> Void) async {
         banner("🩺 HOMEBREW DOCTOR")
         logger.log("🩺 Running doctor...")
         await runBrewCommand(brewCommand("doctor"), onOutput: onOutput)
     }
 
+    /// Executes `brew link --overwrite` for specific packages to forcibly resolve symlink collisions.
+    ///
+    /// - Parameters:
+    ///   - kegs: Array of keg names to relink.
+    ///   - onOutput: Streaming closure for live terminal UI injection.
     func link(kegs: [String], onOutput: @escaping (String) -> Void) async {
         banner("🔗 LINKING PACKAGES")
         let kegsToLink = kegs.joined(separator: " ")
         logger.log("🔗 Linking: \(kegsToLink)...")
-        // --overwrite forces the link including any conflicting symlinks.
+        /// --overwrite forces the link including any conflicting symlinks.
+        ///
+        /// **Gotchas:** Overwriting is highly aggressive and will destroy manual node or python bindings previously set by the user outside of Homebrew.
         await runBrewCommand(brewCommand("link --overwrite \(kegsToLink)"), onOutput: onOutput)
     }
 
     // MARK: - Stats
 
+    /// Assembles comprehensive telemetry regarding Homebrew's storage impact and recency.
+    ///
+    /// - Returns: A hydrated ``BrewSystemStats`` model containing formatted byte sizes and timestamps.
     func loadStats() async -> BrewSystemStats {
         logger.log("📊 Loading system stats...")
 
@@ -283,6 +336,8 @@ final class BrewMaintenanceManager {
     // MARK: - Keg parsing
 
     /// Parse `brew doctor` output for unlinked kegs.
+    /// - Parameter output: The raw output lines generated by brew diagnostics.
+    /// - Returns: A filtered list of standalone identifier strings.
     func parseUnlinkedKegs(from output: String) -> [String] {
         guard output.contains("Warning: You have unlinked kegs") else { return [] }
 
@@ -318,10 +373,14 @@ final class BrewMaintenanceManager {
 
     /// Build a `brew <subcommand>` invocation with the resolved Homebrew prefix
     /// prepended to PATH.
+    /// - Parameter subcommand: The specified routine passed to the executable.
+    /// - Returns: The aggregate text dump from execution streams.
     private func brewCommand(_ subcommand: String) async -> String {
         "export PATH=\"\(BrewPathManager.shared.homebrewPrefix)/bin:$PATH\" && \(BrewPathManager.shared.brewPath) \(subcommand)"
     }
 
+    /// Renders a UI divider block inside the interactive terminal console.
+    /// - Parameter title: The display section string sent to the event loop.
     private func banner(_ title: String) {
         logger.log("\n\n═══════════════════════════════════════", category: .terminal)
         logger.log("       \(title)", category: .terminal)
@@ -331,6 +390,9 @@ final class BrewMaintenanceManager {
     /// Run a streamed brew command, forwarding each chunk to `onOutput` and
     /// appending a terminal success/failure annotation. `brew doctor` warnings
     /// are treated as success.
+    /// - Parameters:
+    ///   - command: The explicit arguments chained to the call.
+    ///   - onOutput: The listener responding sequentially to buffer releases.
     private func runBrewCommand(_ command: String, onOutput: @escaping (String) -> Void) async {
         var accumulated = ""
         do {
@@ -355,6 +417,10 @@ final class BrewMaintenanceManager {
         }
     }
 
+    /// Derives the human-readable string representation of a directory's size via `du -sh`.
+    ///
+    /// - Parameter path: The absolute Unix path to inspect.
+    /// - Returns: Formatted size (e.g. `14M`, `2.1G`) or `N/A`.
     private func directorySize(_ path: String) async -> String {
         return await Task.detached {
             let command = "du -sh \(InputSanitizer.singleQuote(path)) 2>/dev/null | awk '{print $1}'"
@@ -369,6 +435,9 @@ final class BrewMaintenanceManager {
         }.value
     }
 
+    /// Derives the timestamp of the last `brew update` by reading the `FETCH_HEAD` of the Homebrew git repository.
+    ///
+    /// - Returns: Formatted timestamp string (e.g. `2024-01-01 12:00`) or `Unknown`.
     private func lastUpdateTime() async -> String {
         let command = "stat -f '%Sm' -t '%Y-%m-%d %H:%M' \(InputSanitizer.singleQuote(BrewPathManager.shared.homebrewPrefix + "/.git/FETCH_HEAD")) 2>/dev/null"
         do {

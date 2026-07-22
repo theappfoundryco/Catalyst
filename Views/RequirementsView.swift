@@ -1,14 +1,11 @@
-//
-//  RequirementsView.swift
-//  Catalyst
-//
-//  Created by Shivang Gulati on 28/01/26.
-//
-
 import SwiftUI
 import UniformTypeIdentifiers
 import Combine
-
+/// A view for batch-installing Python packages from a `requirements.txt` file.
+///
+/// ```swift
+/// RequirementsView(vm: requirementsViewModel)
+/// ```
 struct RequirementsView: View {
     @ObservedObject var vm: RequirementsViewModel
     /// Observed so the Install button re-enables the instant the global install
@@ -84,7 +81,7 @@ struct RequirementsView: View {
                                         .frame(maxWidth: .infinity, alignment: .leading)
                                 }
                                 .frame(maxHeight: 150)
-                                .scrollBounceBehavior(.basedOnSize) // toAvoid.md Rule 1
+                                .scrollBounceBehavior(.basedOnSize) // ANTI_PATTERNS.md Rule 1
                                 .codePanel()
                             }
                         }
@@ -243,7 +240,7 @@ struct RequirementsView: View {
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                 }
                                 .frame(maxHeight: 100)
-                                .scrollBounceBehavior(.basedOnSize) // toAvoid.md Rule 1
+                                .scrollBounceBehavior(.basedOnSize) // ANTI_PATTERNS.md Rule 1
                                 .padding(8)
                                 .background(
                                     RoundedRectangle(cornerRadius: 6)

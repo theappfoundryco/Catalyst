@@ -3,6 +3,13 @@ import Foundation
 /// An operational service dictating the retrieval and interpretation of SMART drive health constraints.
 ///
 /// Orchestrates the prerequisite toolchain dependencies and parses `smartctl` console streams.
+///
+/// ```swift
+/// let ssdHealth = SSDHealthService.shared
+/// if let disk = await ssdHealth.detectBootDisk() {
+///     let report = try await ssdHealth.scan(disk: disk, privileges: privService)
+/// }
+/// ```
 final class SSDHealthService: Sendable {
     
     static let shared = SSDHealthService()
@@ -50,22 +57,28 @@ final class SSDHealthService: Sendable {
     /// - Returns: The string format device descriptor.
     func detectBootDisk() async -> String? {
         await Task.detached {
-            // Resolve the *physical* whole disk backing "/". On APFS, "/" is a
-            // synthesized volume (e.g. disk3s1s1) whose container's physical store
-            // is the real NVMe device (e.g. disk0) — that's what smartctl needs.
-            // Parse `diskutil info -plist` rather than regex-stripping the node.
+            /// Resolve the *physical* whole disk backing "/". On APFS, "/" is a
+            /// synthesized volume (e.g. disk3s1s1) whose container's physical store
+            /// is the real NVMe device (e.g. disk0) — that's what smartctl needs.
+            /// Parse `diskutil info -plist` rather than regex-stripping the node.
+            ///
+            /// **Rationale:** Prevents catastrophic disk-wiping bugs by relying on Apple's native property list structure instead of fragile text parsing.
             do {
                 let result = try await AsyncProcessRunner.shared.run(command: "diskutil info -plist /")
                 if let data = result.stdout.data(using: .utf8),
                    let plist = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any] {
 
-                    // Prefer the APFS physical store (the real disk), e.g. "disk0s2".
+                    /// Prefer the APFS physical store (the real disk), e.g. "disk0s2".
+                    ///
+                    /// **Rationale:** Target SMART metrics exist exclusively on hardware partitions, not on virtual synthesized APFS volumes.
                     if let stores = plist["APFSPhysicalStores"] as? [[String: Any]],
                        let dev = stores.first?["APFSPhysicalStore"] as? String,
                        let whole = Self.wholeDisk(from: dev) {
                         return "/dev/\(whole)"
                     }
-                    // Otherwise the parent whole disk of the volume.
+                    /// Otherwise the parent whole disk of the volume.
+                    ///
+                    /// **Gotchas:** External HFS+ hard drives lack APFS containers, so falling back to the whole disk ensures we still capture SATA metrics.
                     if let parent = plist["ParentWholeDisk"] as? String,
                        let whole = Self.wholeDisk(from: parent) {
                         return "/dev/\(whole)"
@@ -86,6 +99,9 @@ final class SSDHealthService: Sendable {
 
     /// Reduces a device identifier/node to its whole-disk id, anchored on the
     /// `diskN` prefix (e.g. "/dev/disk0s2" or "disk3s1s1" → "disk0"/"disk3").
+    ///
+    /// - Parameter identifier: The raw `diskutil` identifier string node.
+    /// - Returns: Trimmed path descriptor excluding slice details.
     static func wholeDisk(from identifier: String) -> String? {
         let name = (identifier as NSString).lastPathComponent
         guard let match = name.range(of: "^disk[0-9]+", options: .regularExpression) else { return nil }
@@ -98,6 +114,11 @@ final class SSDHealthService: Sendable {
     ///   - disk: The targeted system partition descriptor string.
     ///   - privileges: The execution wrapper required to prompt system access limits.
     /// - Returns: A structured `SSDHealthReport` aggregating returned hardware data.
+    /// - Parameters:
+    ///   - disk: The primary system node identifier.
+    ///   - privileges: The bridging layer providing administrative subshells.
+    /// - Returns: The complete hardware specification payload mapped to storage health.
+    /// - Throws: Authorization faults and subshell terminal failures.
     func scan(disk: String, privileges: PrivilegesService) async throws -> SSDHealthReport? {
         try await Task.detached {
             let sanitizedDisk = InputSanitizer.singleQuote(disk)
@@ -111,20 +132,24 @@ final class SSDHealthService: Sendable {
                 return nil
             }
             
-            // Capture smartctl's exit code explicitly. The osascript/`do shell
-            // script` wrapper swallows the child's status, and the previous
-            // `|| true` forced it to 0 — masking real failures (permission
-            // denied, device busy, unsupported bus). Echo the status on a
-            // trailing marker line and branch on it. smartctl uses a bit-coded
-            // exit status: bits 0–1 (mask 0x03) mean "command line error" or
-            // "device open failed" — i.e. we never got valid data. Higher bits
-            // are SMART health conditions where the data is still valid.
+            /// Capture smartctl's exit code explicitly. The osascript/`do shell
+            /// script` wrapper swallows the child's status, and the previous
+            /// `|| true` forced it to 0 — masking real failures (permission
+            /// denied, device busy, unsupported bus). Echo the status on a
+            /// trailing marker line and branch on it. smartctl uses a bit-coded
+            /// exit status: bits 0–1 (mask 0x03) mean "command line error" or
+            /// "device open failed" — i.e. we never got valid data. Higher bits
+            /// are SMART health conditions where the data is still valid.
+            ///
+            /// **Gotchas:** Failing to parse the bitmask causes fully functional but heavily degraded SSDs to appear as "permission denied" rather than "failing".
             let exitMarker = "__CATALYST_SMARTCTL_EXIT__"
             let command = "\(InputSanitizer.singleQuote(smartctlPath)) -a \(sanitizedDisk); printf '\\n\(exitMarker)%d' \"$?\""
 
             let (_, rawOutput) = try await privileges.runWithPrivileges(command: command)
 
-            // Split the exit marker back off the output.
+            /// Split the exit marker back off the output.
+            ///
+            /// **Rationale:** Ensures the core SMART parser receives pristine JSON payloads without trailing shell markers causing JSON decoding crashes.
             var output = rawOutput
             var smartctlExit: Int32 = 0
             if let range = rawOutput.range(of: exitMarker) {
@@ -149,10 +174,12 @@ final class SSDHealthService: Sendable {
                 return nil
             }
 
-            // The parser only understands NVMe SMART logs. SATA/ATA and
-            // USB-bridge drives produce the ATA attribute table instead, which
-            // every NVMe key misses — yielding an all-zeros report shown as
-            // real data. Reject non-NVMe drives explicitly.
+            /// The parser only understands NVMe SMART logs. SATA/ATA and
+            /// USB-bridge drives produce the ATA attribute table instead, which
+            /// every NVMe key misses — yielding an all-zeros report shown as
+            /// real data. Reject non-NVMe drives explicitly.
+            ///
+            /// **Gotchas:** Accepting SATA payloads silently zeros out TBW metrics, leading developers to falsely believe their SSD has zero wear.
             let isNVMe = output.contains("NVMe Log")
                 || output.contains("NVMe Version")
                 || output.contains("Number of Namespaces")
@@ -254,9 +281,14 @@ final class SSDHealthService: Sendable {
     /// Assembles the capacity snapshot: boot-volume usage from the filesystem and
     /// the drive's advertised raw NVM capacity parsed from the smartctl identify
     /// block (the `[…]` human-readable form, e.g. "500 GB").
+    ///
+    /// - Parameter lines: An array containing pre-split output lines from `smartctl`.
+    /// - Returns: A unified `StorageInfo` struct calculating raw bytes vs formatted bytes.
     private func buildStorageInfo(from lines: [String]) -> StorageInfo {
-        // Volume capacity. Prefer the APFS-purgeable-aware resource keys (same
-        // approach as StorageDoctor) so "free" reflects what's actually usable.
+        /// Volume capacity. Prefer the APFS-purgeable-aware resource keys (same
+        /// approach as StorageDoctor) so "free" reflects what's actually usable.
+        ///
+        /// **Rationale:** Time Machine local snapshots bloat `systemFreeSize` artificially; APFS volume keys yield correct disk availability.
         var total: Int64 = 0
         var free: Int64 = 0
         let homeURL = URL(fileURLWithPath: NSHomeDirectory())
@@ -272,10 +304,12 @@ final class SSDHealthService: Sendable {
             free = (attrs[.systemFreeSize] as? Int64) ?? 0
         }
 
-        // Raw NVM capacity. smartctl prints e.g.
-        //   Total NVM Capacity:  500,107,862,016 [500 GB]
-        //   Namespace 1 Size/Capacity: 500,107,862,016 [500 GB]
-        // Pull the bracketed human-readable form; fall back to "Unknown".
+        /// Raw NVM capacity. smartctl prints e.g.
+        ///   Total NVM Capacity:  500,107,862,016 [500 GB]
+        ///   Namespace 1 Size/Capacity: 500,107,862,016 [500 GB]
+        /// Pull the bracketed human-readable form; fall back to "Unknown".
+        ///
+        /// **Gotchas:** Parsing bytes dynamically causes integer overflow on massive RAID arrays; pulling the pre-computed bracketed string is inherently safer.
         let rawCapacity = extractValue(from: lines, key: "Total NVM Capacity")
             ?? extractValue(from: lines, key: "Namespace 1 Size/Capacity")
         var nvmCapacity = "Unknown"
@@ -332,6 +366,11 @@ final class SSDHealthService: Sendable {
     /// matching let short keys collide with longer labels (e.g. "Temperature"
     /// matching "Warning Comp. Temperature" or "Temperature Sensor 1"). Callers
     /// may pass the key with or without a trailing colon.
+    ///
+    /// - Parameters:
+    ///   - lines: Parsed lines array from STDOUT buffer.
+    ///   - key: Identifier representing a specific performance string header.
+    /// - Returns: The targeted data integer if successfully matched via suffix.
     private func extractValue(from lines: [String], key: String) -> String? {
         let targetField = (key.hasSuffix(":") ? String(key.dropLast()) : key)
             .trimmingCharacters(in: .whitespaces)
@@ -346,18 +385,33 @@ final class SSDHealthService: Sendable {
         return nil
     }
     
+    /// Extracts a trailing percentage value from SMART output telemetry.
+    /// - Parameters:
+    ///   - lines: The extracted standard output payload segmented linearly.
+    ///   - key: The structural text targeting SMART criteria.
+    /// - Returns: The isolated integer percentage.
     private func extractPercentage(from lines: [String], key: String) -> Int {
         guard let value = extractValue(from: lines, key: key) else { return 0 }
         let digits = value.replacingOccurrences(of: "[^0-9]", with: "", options: .regularExpression)
         return Int(digits) ?? 0
     }
     
+    /// Parses a raw integer value safely from a matched controller key block.
+    /// - Parameters:
+    ///   - lines: The complete sequence of output logs mapping SMART tools.
+    ///   - key: The text fragment representing the target criteria.
+    /// - Returns: The localized integer value assigned by diagnostics.
     private func extractIntFromLine(_ lines: [String], key: String) -> Int {
         guard let value = extractValue(from: lines, key: key) else { return 0 }
         let digits = value.components(separatedBy: .whitespaces).first ?? "0"
         return Int(digits) ?? 0
     }
     
+    /// Reconstructs large integer readouts containing formatted numeric commas.
+    /// - Parameters:
+    ///   - lines: The target array mapping all unparsed standard output lines.
+    ///   - key: The specific text string representing the queried data attribute.
+    /// - Returns: The unformatted pure integer representation.
     private func extractIntWithCommas(from lines: [String], key: String) -> Int {
         guard let value = extractValue(from: lines, key: key) else { return 0 }
         let cleaned = value.replacingOccurrences(of: ",", with: "")
@@ -365,6 +419,11 @@ final class SSDHealthService: Sendable {
         return Int(cleaned) ?? 0
     }
     
+    /// Reconstructs a full 64-bit precision counter containing formatting commas.
+    /// - Parameters:
+    ///   - lines: The text lines detailing structural output.
+    ///   - key: The explicit data type bound.
+    /// - Returns: The massive numerical scalar associated with the payload.
     private func extractInt64WithCommas(from lines: [String], key: String) -> Int64 {
         guard let value = extractValue(from: lines, key: key) else { return 0 }
         let cleaned = value.replacingOccurrences(of: ",", with: "")
@@ -372,6 +431,11 @@ final class SSDHealthService: Sendable {
         return Int64(cleaned) ?? 0
     }
     
+    /// Decodes a base-16 encoded hex identifier into a system integer.
+    /// - Parameters:
+    ///   - lines: The target execution payload representing raw data.
+    ///   - key: The explicitly bounded target matching hex codes.
+    /// - Returns: The normalized decimal translation derived from hexadecimal.
     private func extractHexValue(from lines: [String], key: String) -> Int {
         guard let value = extractValue(from: lines, key: key) else { return 0 }
         let hex = value.trimmingCharacters(in: .whitespaces)
@@ -381,6 +445,11 @@ final class SSDHealthService: Sendable {
         return Int(hex) ?? 0
     }
     
+    /// Isolates the bracketed byte count within a SMART telemetry unit string.
+    /// - Parameters:
+    ///   - lines: The complete payload bound generated by SMART diagnostics.
+    ///   - key: The explicitly captured data boundary line identifier.
+    /// - Returns: The exact measurement mapped to standard bytes.
     private func extractDataUnits(from lines: [String], key: String) -> Int64 {
         guard let value = extractValue(from: lines, key: key) else { return 0 }
         let numberPart = value.components(separatedBy: "[").first ?? value
@@ -389,6 +458,11 @@ final class SSDHealthService: Sendable {
         return Int64(cleaned) ?? 0
     }
     
+    /// Cleans and trims raw unformatted text chunks matched to a target controller key.
+    /// - Parameters:
+    ///   - lines: The sequence of raw terminal representations.
+    ///   - key: The attribute requested for final conversion.
+    /// - Returns: The finalized human-readable formatting block.
     private func extractFormattedData(from lines: [String], key: String) -> String {
         guard let value = extractValue(from: lines, key: key) else { return "N/A" }
         if let start = value.firstIndex(of: "["),

@@ -1,30 +1,34 @@
-//
-//  SnapshotSecretsService.swift
-//  Catalyst
-//
-//  The encrypted-secrets step, deliberately extracted OUT of the restore pipeline.
-//
-//  WHY THIS IS STANDALONE: applying secrets needs only three things — the
-//  ciphertext, the passphrase, and placeholder lines still present in `~/.zshrc`.
-//  It needs no diff, no plan, no dependency ordering, no Homebrew, no Python. When
-//  it lived only inside `SnapshotRestoreService.apply`, a user who skipped the
-//  passphrase (or mistyped it) had to redo the entire Migrate journey to try again.
-//  That was an artificial dependency, not a real one. Everything here is callable
-//  from the restore pipeline AND directly from a standalone "unlock" entry point.
-//
-//  IDEMPOTENT BY CONSTRUCTION: `apply` only rewrites lines whose value is still the
-//  exact Catalyst placeholder, so running it twice is harmless and a value the user
-//  has already set by hand is never clobbered. A failed attempt leaves the
-//  placeholders intact, which is what makes retry-forever possible.
-//
+/// /
+/// /  The encrypted-secrets step, deliberately extracted OUT of the restore pipeline.
+/// /
+/// /  WHY THIS IS STANDALONE: applying secrets needs only three things — the
+/// /  ciphertext, the passphrase, and placeholder lines still present in `~/.zshrc`.
+/// /  It needs no diff, no plan, no dependency ordering, no Homebrew, no Python. When
+/// /  it lived only inside `SnapshotRestoreService.apply`, a user who skipped the
+/// /  passphrase (or mistyped it) had to redo the entire Migrate journey to try again.
+/// /  That was an artificial dependency, not a real one. Everything here is callable
+/// /  from the restore pipeline AND directly from a standalone "unlock" entry point.
+/// /
+/// /  IDEMPOTENT BY CONSTRUCTION: `apply` only rewrites lines whose value is still the
+/// /  exact Catalyst placeholder, so running it twice is harmless and a value the user
+/// /  has already set by hand is never clobbered. A failed attempt leaves the
+/// /  placeholders intact, which is what makes retry-forever possible.
+/// /
+/// / **Rationale:** Decoupling cryptographic operations ensures the application can attempt password retries instantaneously without tearing down the entire environment state matrix.
 
 import Foundation
 
+/// Orchestrates the extraction and decryption of sensitive environment variables during snapshot capture.
 struct SnapshotSecretsService {
     static let shared = SnapshotSecretsService()
 
     /// The outcome of applying secrets. Only `writeFailed` is a genuine error —
     /// everything else is a normal, recoverable state the user can retry from.
+    ///
+    /// ```swift
+    /// let secretsService = SnapshotSecretsService.shared
+    /// let outcome = await secretsService.apply(snapshot.secrets, passphrase: "mypassword")
+    /// ```
     enum ApplyOutcome: Sendable, Equatable {
         /// `applied` of `total` placeholders filled.
         case applied(Int, total: Int)
@@ -58,6 +62,11 @@ struct SnapshotSecretsService {
     ///
     /// Runs off the main actor — PBKDF2 at 210k rounds takes ~0.2s and would
     /// visibly hitch the UI if done inline on every Validate tap.
+    ///
+    /// - Parameters:
+    ///   - sealed: The `EncryptedSecrets` payload container carrying secure bits.
+    ///   - passphrase: Raw candidate string entered by the user.
+    /// - Returns: A count of unlocked keys if decryption passes, or `nil` natively.
     func validate(_ sealed: EncryptedSecrets, passphrase: String) async -> Int? {
         guard !passphrase.isEmpty else { return nil }
         return await Task.detached(priority: .userInitiated) {
@@ -73,6 +82,8 @@ struct SnapshotSecretsService {
     /// placeholder string is distinctive and self-describing, so we can always tell
     /// there's unfinished business and prompt for it — the user never has to
     /// remember that they skipped the passphrase.
+    ///
+    /// - Returns: The total integer count of identified placeholders.
     func pendingPlaceholderCount() -> Int {
         guard let text = try? String(contentsOf: ShellConfigManager.shared.zshrcPath, encoding: .utf8) else { return 0 }
         let placeholder = ShellSecretScrubber.placeholderValue
@@ -84,6 +95,11 @@ struct SnapshotSecretsService {
     // MARK: - Apply
 
     /// Decrypt and write the real values over the placeholders in `~/.zshrc`.
+    ///
+    /// - Parameters:
+    ///   - sealed: The AES-encrypted backup configuration block.
+    ///   - passphrase: The verified text entry key.
+    /// - Returns: Enumerated explicit status defining apply progression constraints.
     func apply(_ sealed: EncryptedSecrets?, passphrase: String?) async -> ApplyOutcome {
         guard let sealed else { return .noSecrets }
         guard let passphrase, !passphrase.isEmpty else { return .noPassphrase }
@@ -97,7 +113,9 @@ struct SnapshotSecretsService {
         var restored = 0
         let placeholder = ShellSecretScrubber.placeholderValue
         let updated = current.components(separatedBy: "\n").map { line -> String in
-            // Only lines still holding the EXACT placeholder are ours to touch.
+            /// Only lines still holding the EXACT placeholder are ours to touch.
+            ///
+            /// **Gotchas:** Replacing arbitrary lines without placeholder validation risks destroying user modifications made manually post-restore.
             guard line.hasSuffix(placeholder) else { return line }
             let head = String(line.dropLast(placeholder.count))
             guard !head.isEmpty, head.hasSuffix("=") else { return line }

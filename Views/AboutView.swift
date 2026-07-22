@@ -46,6 +46,8 @@ enum CatalystLink: String, CaseIterable {
 
     /// The stable URL, with `version` appended for capture routes. The Vercel middleware
     /// forwards these onto the real destination for prefill.
+    /// - Parameter version: The major minor semantic version string targeting the changelog.
+    /// - Returns: The resolved URL endpoint targeting the GitHub releases page.
     func url(version: String) -> URL? {
         var comps = URLComponents(string: Self.base + rawValue)
         if prefills {
@@ -54,7 +56,11 @@ enum CatalystLink: String, CaseIterable {
         return comps?.url
     }
 }
-
+/// The main About screen providing app version information, changelog highlights, and contact links.
+///
+/// ```swift
+/// AboutView(vm: aboutViewModel)
+/// ```
 struct AboutView: View {
     @ObservedObject var vm: AboutViewModel
     @State private var isHovering = false
@@ -109,7 +115,7 @@ struct AboutView: View {
 
                         SectionDivider()
                         
-                        // Flattened (was a nested ScrollView — toAvoid.md Rule 1).
+                        // Flattened (was a nested ScrollView — ANTI_PATTERNS.md Rule 1).
                         // Capped at `highlightLimit` with an inline expander so a
                         // long changelog can't blow up the card or the page.
                         VStack(alignment: .leading, spacing: 12) {
@@ -241,7 +247,11 @@ struct AboutView: View {
     // Config, not the app), so they're always available — no longer gated on a fetched about.json.
     private var hasAnyLinks: Bool { true }
 }
-
+/// A simple row displaying an icon, a label, and a corresponding value for the About screen.
+///
+/// ```swift
+/// InfoRow(icon: "person.fill", label: "Developer", value: "Shivang Gulati")
+/// ```
 struct InfoRow: View {
     let icon: String
     let label: String

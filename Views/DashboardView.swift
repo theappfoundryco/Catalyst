@@ -1,5 +1,9 @@
 import SwiftUI
-
+/// The main dashboard view providing a high-level overview of the system status, Python installations, and Homebrew health.
+///
+/// ```swift
+/// DashboardView(vm: dashboardViewModel)
+/// ```
 struct DashboardView: View {
     @ObservedObject var vm: DashboardViewModel
     @State private var showUninstallBrewConfirmation = false

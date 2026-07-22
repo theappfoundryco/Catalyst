@@ -1,5 +1,9 @@
 import SwiftUI
-
+/// A sheet for configuring and initializing a new Python virtual environment for a project.
+///
+/// ```swift
+/// VirtualEnvCreationSheet(viewModel: creationVM, isPresented: $showSheet) { await handleCreate() }
+/// ```
 struct VirtualEnvCreationSheet: View {
     @ObservedObject var viewModel: VirtualEnvCreationViewModel
     @Binding var isPresented: Bool
@@ -175,6 +179,12 @@ struct VirtualEnvCreationSheet: View {
         }
     }
 
+    /// Constructs a standardized label-value pair for Git metadata visualization.
+    /// - Parameters:
+    ///   - icon: The SF Symbol representing the context line.
+    ///   - label: The primary display title mapped to the value.
+    ///   - value: The read-only underlying configuration property.
+    /// - Returns: The active presentation hierarchy for the detail view.
     private func gitDetailRow(icon: String, label: String, value: String) -> some View {
         HStack(spacing: 10) {
             Image(systemName: icon)
@@ -358,7 +368,7 @@ struct VirtualEnvCreationSheet: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .frame(maxHeight: 100)
-                .scrollBounceBehavior(.basedOnSize) // toAvoid.md Rule 1
+                .scrollBounceBehavior(.basedOnSize) // ANTI_PATTERNS.md Rule 1
                 .padding(8)
                 .background(
                     RoundedRectangle(cornerRadius: 6)
@@ -407,7 +417,7 @@ struct VirtualEnvCreationSheet: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .frame(maxHeight: 150)
-                .scrollBounceBehavior(.basedOnSize) // toAvoid.md Rule 1
+                .scrollBounceBehavior(.basedOnSize) // ANTI_PATTERNS.md Rule 1
                 .padding(8)
                 .background(
                     RoundedRectangle(cornerRadius: 6)
@@ -469,7 +479,7 @@ struct VirtualEnvCreationSheet: View {
                             .id("logOutput")
                     }
                     .frame(height: 220)
-                    .scrollBounceBehavior(.basedOnSize) // toAvoid.md Rule 1
+                    .scrollBounceBehavior(.basedOnSize) // ANTI_PATTERNS.md Rule 1
                     .background(Color.black.opacity(0.8))
                     .cornerRadius(6)
                     .onChange(of: viewModel.creationOutput) { _ in
@@ -515,6 +525,11 @@ struct VirtualEnvCreationSheet: View {
 }
 
 // Simple Badge Helper
+/// A small badge used to display the detection status of project files like `requirements.txt`.
+///
+/// ```swift
+/// Badge(text: "requirements.txt", isDetected: true)
+/// ```
 struct Badge: View {
     let text: String
     let isDetected: Bool

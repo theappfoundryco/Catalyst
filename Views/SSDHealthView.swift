@@ -1,5 +1,9 @@
 import SwiftUI
-
+/// A view for analyzing and displaying the physical health and wear level of an NVMe SSD.
+///
+/// ```swift
+/// SSDHealthView(vm: ssdHealthViewModel) { onNavigateToDashboard() }
+/// ```
 struct SSDHealthView: View {
     @ObservedObject var vm: SSDHealthViewModel
     var onNavigateToDashboard: () -> Void
@@ -123,6 +127,8 @@ struct SSDHealthView: View {
     
     // MARK: - Report Content (The Main View)
     
+    /// - Parameter report: The compiled host storage telemetry payload.
+    /// - Returns: The active presentation hierarchy for the detail view.
     private func reportContent(_ report: SSDHealthReport) -> some View {
         VStack(spacing: 24) {
             // 1. Tip Banner (AliasView Style - Fixed Width)
@@ -246,6 +252,9 @@ struct SSDHealthView: View {
         )
     }
     
+    /// Renders the primary status indicator and overall health percentage.
+    /// - Parameter report: The compiled host storage telemetry payload.
+    /// - Returns: The active presentation hierarchy for the detail view.
     private func dashboardHero(_ report: SSDHealthReport) -> some View {
         let issues = collectIssues(report)
         // Single pass instead of three separate filter+count passes.
@@ -310,6 +319,9 @@ struct SSDHealthView: View {
     }
     
     @ViewBuilder
+    /// Groups active hardware warnings and critical SMART controller failures.
+    /// - Parameter report: The compiled host storage telemetry payload.
+    /// - Returns: The active presentation hierarchy for the detail view.
     private func statusIssuesSection(_ report: SSDHealthReport) -> some View {
         let issues = collectIssues(report)
         if !issues.isEmpty {
@@ -324,11 +336,15 @@ struct SSDHealthView: View {
         }
     }
     
+    /// Defines a specific hardware failure state identified during SMART telemetry parsing.
     private struct Issue {
         let message: String
         let severity: SSDStatusBadge.BadgeStatus
     }
     
+    /// Aggregates boolean failure flags into a standardized array of renderable issue models.
+    /// - Parameter report: The compiled host storage telemetry payload.
+    /// - Returns: The active presentation hierarchy for the detail view.
     private func collectIssues(_ report: SSDHealthReport) -> [Issue] {
         var issues: [Issue] = []
         
@@ -362,6 +378,9 @@ struct SSDHealthView: View {
         return issues
     }
     
+    /// Displays low-level data integrity and media error tracking statistics.
+    /// - Parameter report: The compiled host storage telemetry payload.
+    /// - Returns: The active presentation hierarchy for the detail view.
     private func integritySection(_ report: SSDHealthReport) -> some View {
         HStack {
             Image(systemName: "shield.checkered")
@@ -454,6 +473,8 @@ struct SSDHealthView: View {
     }
     
     // MARK: - Error View
+    /// - Parameter message: The human readable error message string.
+    /// - Returns: The active presentation hierarchy for the detail view.
     private func errorView(_ message: String) -> some View {
         VStack(spacing: 16) {
             Image(systemName: "exclamationmark.triangle.fill").font(.largeTitle).foregroundColor(.orange)
@@ -475,17 +496,52 @@ struct SSDHealthView: View {
     }
 
     // MARK: - Helpers (Same as before)
+    /// - Parameter temp: The current disk temperature reported in Celsius.
+    /// - Returns: The resolved threshold alert color.
     private func temperatureColor(_ temp: Int) -> Color { temp > 70 ? .red : (temp > 60 ? .orange : .green) }
+    /// Maps thermal metrics to a semantic warning color gradient.
+    /// - Parameter temp: The current disk temperature reported in Celsius.
+    /// - Returns: A UI gradient reflecting standard operating thresholds.
     private func temperatureGradient(_ temp: Int) -> [Color] { temp > 70 ? [.red, .orange] : (temp > 60 ? [.orange, .yellow] : [.green, .mint]) }
+    /// Maps thermal metrics to a human-readable operating state.
+    /// - Parameter temp: The current disk temperature reported in Celsius.
+    /// - Returns: A localized status label summarizing thermal safety.
     private func temperatureDescription(_ temp: Int) -> String { temp > 70 ? "Running Hot" : (temp > 60 ? "Warm" : "Normal") }
+    /// Evaluates the remaining flash spare blocks against a critical threshold.
+    /// - Parameter spare: The percentage of available flash substitution blocks.
+    /// - Returns: The resolved threshold alert color.
     private func spareColor(_ spare: Int) -> Color { spare < 50 ? .red : (spare < 90 ? .orange : .green) }
+    /// Evaluates total block wear percentage to determine component lifespan.
+    /// - Parameter used: The percentage of aggregate program/erase degradation.
+    /// - Returns: The resolved threshold alert color.
     private func wearColor(_ used: Int) -> Color { used > 50 ? .red : (used > 10 ? .orange : .green) }
+    /// Translates total block wear into a semantic warning color gradient.
+    /// - Parameter used: The percentage of aggregate program/erase degradation.
+    /// - Returns: A UI gradient reflecting component lifecycle.
     private func wearGradient(_ used: Int) -> [Color] { used > 50 ? [.red, .orange] : (used > 10 ? [.orange, .yellow] : [.green, .cyan]) }
+    /// Translates total block wear into a human-readable state.
+    /// - Parameter used: The percentage of aggregate program/erase degradation.
+    /// - Returns: A localized status label summarizing drive longevity.
     private func wearDescription(_ used: Int) -> String { used > 80 ? "End of Life Near" : (used > 50 ? "Significant Wear" : (used > 10 ? "Normal Wear" : "Like New")) }
+    /// Evaluates the frequency of unexpected power losses.
+    /// - Parameter count: The total historical frequency of unexpected power drops.
+    /// - Returns: The resolved threshold alert color.
     private func unsafeShutdownColor(_ count: Int) -> Color { count > 30 ? .orange : .green }
+    /// Translates unsafe power loss events into a semantic warning color gradient.
+    /// - Parameter count: The total historical frequency of unexpected power drops.
+    /// - Returns: A UI gradient reflecting the severity of power issues.
     private func unsafeShutdownGradient(_ count: Int) -> [Color] { count > 30 ? [.orange, .red] : [.green, .mint] }
+    /// Translates unsafe power loss events into a human-readable frequency state.
+    /// - Parameter count: The total historical frequency of unexpected power drops.
+    /// - Returns: A localized status label summarizing shutdown safety.
     private func unsafeShutdownDescription(_ count: Int) -> String { count > 30 ? "High" : (count > 10 ? "Moderate" : "Low") }
+    /// Standardizes large integer displays using localized decimal separators.
+    /// - Parameter n: The raw scalar value to be formatted.
+    /// - Returns: A string localized with appropriate grouping separators.
     private func formatNumber(_ n: Int) -> String { NumberFormatter.localizedString(from: NSNumber(value: n), number: .decimal) }
+    /// Converts raw power-on hours into a formatted temporal duration string.
+    /// - Parameter hours: The cumulative operational time scalar.
+    /// - Returns: A formatted string resolving days and leftover hours.
     private func formatUptime(_ hours: Int) -> String {
         let days = hours / 24
         let remainingHours = hours % 24

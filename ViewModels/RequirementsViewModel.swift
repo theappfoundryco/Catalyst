@@ -1,21 +1,36 @@
-//
-//  RequirementsViewModel.swift
-//  Catalyst
-//
-//  Created by Shivang Gulati on 28/01/26.
-//
+/// /
 
 import Foundation
 import SwiftUI
 import UniformTypeIdentifiers
 import Combine
 
+/// A view model that coordinates batch installation of Python packages from a `requirements.txt` file.
+///
+/// It parses raw text, invokes `pip install -r`, streams the output to a dedicated console view,
+/// and independently verifies the final installation status of each requested package via
+/// `pip list --format=freeze`.
+///
+/// **Caveats:**
+/// - `pip install -r` can sometimes report a partial failure but still exit 0, or vice versa.
+///   Therefore, `verifyInstallation` acts as the definitive source of truth for the UI rather than
+///   trusting the shell exit code alone.
+///
+/// ```swift
+/// @StateObject var vm = RequirementsViewModel(pythonService: ..., logger: ...)
+/// await vm.installPackages()
+/// ```
 @MainActor
 final class RequirementsViewModel: ObservableObject {
+    /// The URL of the user-selected requirements file.
     @Published var selectedFileURL: URL?
+    /// The raw textual contents of the requirements file.
     @Published var fileContents: String = ""
+    /// Discovered Python environments capable of running pip.
     @Published var availablePythonVersions: [PythonInstallation] = []
+    /// The target Python interpreter for the batch install.
     @Published var selectedPythonVersion: PythonInstallation?
+    /// Indicates whether a `pip install -r` operation is actively running.
     @Published var isInstalling = false
     /// Install/verify log on its own observable so appends re-render only the
     /// console, not the parsed-requirements list (R2). Bridge keeps `+=` sites.
@@ -24,10 +39,15 @@ final class RequirementsViewModel: ObservableObject {
         get { console.text }
         set { console.set(newValue) }
     }
+    /// A subset of requested packages that failed post-install verification.
     @Published var failedPackages: [String] = []
+    /// A subset of requested packages that passed post-install verification.
     @Published var successfulPackages: [String] = []
+    /// Indicates whether the verification sweep is currently running.
     @Published var isVerifying = false
+    /// Indicates whether the full install cycle (including verification) has finished.
     @Published var verificationComplete = false
+    /// The version string of the global system python (used to warn the user).
     @Published var systemPythonVersion: String? = nil
     /// Short, user-facing error surfaced as a banner when the install command
     /// itself fails (P3). Per-package failures use the `failedPackages` UI.
@@ -37,6 +57,7 @@ final class RequirementsViewModel: ObservableObject {
     private let pythonService: PythonService
     private let logger: Logger
     
+    /// The total number of valid (non-empty, non-comment) package lines detected.
     var packageCount: Int {
         fileContents.components(separatedBy: .newlines)
             .filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty && !$0.hasPrefix("#") }
@@ -48,6 +69,7 @@ final class RequirementsViewModel: ObservableObject {
         self.logger = logger
     }
     
+    /// Clears execution state and forces a reload of Python environments.
     func reset() async {
         isInstalling = false
         isVerifying = false
@@ -55,6 +77,12 @@ final class RequirementsViewModel: ObservableObject {
         await loadPythonVersions()
     }
     
+    /// Discovers system and managed Pythons, attempting to flag the "System Python" specifically.
+    ///
+    /// **Flow:**
+    /// 1. Scrapes `/usr/bin/python3 --version` to extract the exact OS-bundled version string.
+    /// 2. Queries ``PythonService`` for the full roster.
+    /// 3. Defaults selection to the first valid environment.
     func loadPythonVersions() async {
         logger.log("🔍 Loading Python versions...")
         
@@ -85,7 +113,10 @@ final class RequirementsViewModel: ObservableObject {
         }
     }
     
-    // Check if the selected Python is System Python
+    /// Checks if the selected Python is the managed Apple System Python.
+    ///
+    /// - Parameter python: The model to test.
+    /// - Returns: `true` if its major/minor tuple matches the known OS version.
     func isSystemPython(for python: PythonInstallation) -> Bool {
         guard let systemVersion = systemPythonVersion else { return false }
         
@@ -100,13 +131,16 @@ final class RequirementsViewModel: ObservableObject {
         return systemMajorMinor == installedMajorMinor
     }
     
-    // Check if Python requires --break-system-packages (Python 3.12+)
+    /// Checks if Python requires `--break-system-packages` (Python 3.12+).
+    ///
+    /// - Parameter python: The Python model.
     func requiresBreakSystemPackages(_ python: PythonInstallation) -> Bool {
         VersionComparator.requiresBreakSystemPackages(pythonVersion: python.version)
     }
     
     // Helper to check if install should be disabled.
     //
+
     // On an externally-managed interpreter (3.12+) we only block when the global
     // install mode is Protected — that's the futile state where pip would refuse
     // to write and add no override flag. Enabling a User space / System-wide
@@ -125,6 +159,11 @@ final class RequirementsViewModel: ObservableObject {
         return requiresBreakSystemPackages(python) && InstallPreferences.shared.mode == .protected
     }
     
+    /// Presents a macOS `NSOpenPanel` restricted to text files.
+    ///
+    /// **Gotchas:**
+    /// - Halts the runloop awaiting the panel response.
+    /// - Asynchronously routes the selected URL into ``loadFileContents(_:)``.
     func selectFile() {
         let panel = NSOpenPanel()
         panel.allowsMultipleSelection = false
@@ -146,6 +185,7 @@ final class RequirementsViewModel: ObservableObject {
         }
     }
     
+    /// Drops the current selection and resets all parsed view state.
     func removeFile() {
         selectedFileURL = nil
         fileContents = ""
@@ -154,6 +194,7 @@ final class RequirementsViewModel: ObservableObject {
         failedPackages = []
     }
     
+    /// Reads the raw URL string off disk.
     private func loadFileContents(_ url: URL) {
         do {
             let contents = try String(contentsOf: url, encoding: .utf8)
@@ -165,6 +206,13 @@ final class RequirementsViewModel: ObservableObject {
         }
     }
     
+    /// Orchestrates the parsing, execution (`pip install -r`), and verification loop.
+    ///
+    /// **Flow:**
+    /// 1. Extracts individual target names from the text blob via ``parsePackageNames(from:)``.
+    /// 2. Assembles `pip install -r` combined with environment-specific PEP 668 overrides.
+    /// 3. Executes via ``AsyncProcessRunner``, capturing line-by-line output to `installationOutput`.
+    /// 4. Dispatches ``verifyInstallation(python:)`` as the definitive success/fail oracle.
     func installPackages() async {
         guard let fileURL = selectedFileURL,
               let python = selectedPythonVersion else {
@@ -219,10 +267,12 @@ final class RequirementsViewModel: ObservableObject {
         isInstalling = false
     }
 
+    /// Clears the streaming console output view for subsequent operations.
     func clearOutput() {
         installationOutput = ""
     }
     
+    /// Extracts raw package strings and strips version specifiers.
     private func parsePackageNames(from contents: String) -> [String] {
         contents.components(separatedBy: .newlines)
             .map { $0.trimmingCharacters(in: .whitespaces) }
@@ -234,6 +284,7 @@ final class RequirementsViewModel: ObservableObject {
             }
     }
     
+    /// Normalizes a string according to PEP 503 rules.
     private func normalizePackageName(_ name: String) -> String {
         // Normalize according to PEP 503: lowercase and replace [-_.] with single dash
         name.lowercased()
@@ -241,6 +292,14 @@ final class RequirementsViewModel: ObservableObject {
             .replacingOccurrences(of: ".", with: "-")
     }
 
+    /// Freezes the installed environment and tests it against `allRequestedPackages`.
+    ///
+    /// **Rationale:**
+    /// Batch installs can report `exit 0` even if half the packages failed due to dependency conflicts.
+    /// By freezing the environment and manually mapping the presence of *each* requested package,
+    /// we can accurately split them into `successfulPackages` and `failedPackages` arrays.
+    ///
+    /// - Parameter python: The targeted environment.
     private func verifyInstallation(python: PythonInstallation) async {
         isVerifying = true
         
@@ -296,6 +355,12 @@ final class RequirementsViewModel: ObservableObject {
         isVerifying = false
     }
 
+    /// Individually executes `pip install` on the subset of packages that failed verification.
+    ///
+    /// **Flow:**
+    /// 1. Iterates over the `failedPackages` array.
+    /// 2. Synthesizes a discrete `pip install [package]` call for each one.
+    /// 3. Resets arrays and re-runs the full ``verifyInstallation(python:)`` sweep.
     func retryFailedPackages() async {
         guard let python = selectedPythonVersion, !failedPackages.isEmpty else {
             return
@@ -348,6 +413,7 @@ final class RequirementsViewModel: ObservableObject {
         isInstalling = false
     }
 
+    /// Prompts the user with an `NSSavePanel` to export `failedPackages` to a text file.
     func exportFailedPackages() {
         guard !failedPackages.isEmpty else { return }
         

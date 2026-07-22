@@ -2,6 +2,16 @@ import Foundation
 import SwiftUI
 import Combine
 
+/// A view model governing the `Dr. Catalyst` diagnostic suite.
+///
+/// It coordinates parallel health checks (`HealthCheckService`), SSD status scans (`StorageDoctor`),
+/// and zombie process checks (`GhostBusterViewModel`), aggregating their results into a unified score.
+///
+/// ```swift
+/// @StateObject var drVM = DrCatalystViewModel()
+/// await drVM.scan()
+/// print(drVM.currentScore)
+/// ```
 @MainActor
 final class DrCatalystViewModel: ObservableObject {
     @Published var isScanning = false
@@ -28,9 +38,12 @@ final class DrCatalystViewModel: ObservableObject {
     @Published private(set) var infoCount = 0
     @Published private(set) var liveMetrics = DrLiveMetrics()
 
-    /// Recompute all `issues`-derived values once per change. Previously each of
-    /// these was a computed property filtering `issues` inside `body`, so a view
-    /// that read several of them did many array passes per render (R3).
+    /// Recomputes all `issues`-derived values once per state change.
+    ///
+    /// **Rationale:**
+    /// Previously each of these was a computed property filtering `issues` inside `body`. If a View
+    /// read several of them, it triggered many full array passes per render. Hoisting them into `@Published`
+    /// variables updated in `didSet` cuts CPU overhead dramatically.
     private func recomputeDerived() {
         criticalCount = issues.filter { $0.severity == .critical }.count
         warningCount = issues.filter { $0.severity == .warning }.count
@@ -38,10 +51,22 @@ final class DrCatalystViewModel: ObservableObject {
         liveMetrics = DrLiveMetrics(issues: issues)
     }
 
+    /// Initializes ``DrCatalystViewModel`` and eagerly loads historical records from disk.
     init() {
         refreshHistory()
     }
     
+    /// Kicks off a parallel scan across the system's environments, SSD, and active ports.
+    ///
+    /// **Flow:**
+    /// 1. Toggles ``isScanning``.
+    /// 2. Fires off ``HealthCheckService/runFullScan()``, ``StorageDoctor/scan()``, and ``GhostBusterViewModel/scan()`` concurrently.
+    /// 3. Awaits the tuple and pushes results to `@Published` properties.
+    /// 4. Flushes the new snapshot to the historical disk store.
+    ///
+    /// **Caveats:**
+    /// - SSD Storage scans run detached off the MainActor because `FileManager` operations block
+    ///   synchronously and can freeze the UI when scanning large DerivedData directories.
     func scan() async {
         isScanning = true
         
@@ -72,6 +97,9 @@ final class DrCatalystViewModel: ObservableObject {
         isScanning = false
     }
     
+    /// Executes the embedded auto-fixer for a given issue, then triggers a re-scan.
+    ///
+    /// - Parameter issue: The ``HealthIssue`` containing the actionable repair payload.
     func fix(_ issue: HealthIssue) async {
         let success = await service.fix(issue: issue)
         if success {
@@ -83,6 +111,7 @@ final class DrCatalystViewModel: ObservableObject {
         }
     }
     
+    /// Reloads the user's historical snapshot array from disk.
     private func refreshHistory() {
         history = historyStore.loadHistory()
         if let last = history.last {

@@ -49,6 +49,12 @@ struct GitRepoInfo {
 }
 
 /// A directory traversal service extracting configuration metadata and environmental hints from codebase roots.
+///
+/// ```swift
+/// let scanner = ProjectScannerService.shared
+/// let metadata = await scanner.scan(url: URL(fileURLWithPath: "/path/to/project"))
+/// print(metadata.recommendedPythonVersion)
+/// ```
 actor ProjectScannerService {
     static let shared = ProjectScannerService()
     private let logger = Logger.shared
@@ -56,6 +62,11 @@ actor ProjectScannerService {
     private init() {}
     
     /// Executes a static analysis sequence across the indicated path to infer build mechanics and python specifications.
+    ///
+    /// **Flow:**
+    /// 1. Synchronously checks for indicator files (`requirements.txt`, `Pipfile`, etc.) utilizing `FileManager`.
+    /// 2. Reads file contents for `.python-version` or `runtime.txt` to parse target runtime version rules.
+    /// 3. Initiates a concurrent sub-scan `gatherGitInfo()` if a `.git` index directory is present.
     ///
     /// - Parameter url: The absolute URL locating the target project root.
     /// - Returns: A `ProjectMetadata` payload describing dependency and runtime architectures.
@@ -117,8 +128,14 @@ actor ProjectScannerService {
     /// Collect fixed Git facts in one pass. Each subcommand is best-effort; a
     /// missing/failed value simply falls back to a sensible default so a brand
     /// new repo (no commits, no remote) still scans cleanly.
+    ///
+    /// - Parameter url: The localized directory path to probe using `git -C`.
+    /// - Returns: An encapsulated ``GitRepoInfo`` container.
     private func gatherGitInfo(at url: URL) async -> GitRepoInfo {
-        func git(_ args: String) async -> String? {
+        /// Invokes the system Git binary inside the project path.
+    /// - Parameter args: The comprehensive sequence of parameters mapping to the Git binary.
+    /// - Returns: The textual payload returned to standard output, or nil on failure.
+    func git(_ args: String) async -> String? {
             let command = "git -C \(InputSanitizer.singleQuote(url.path)) \(args) 2>/dev/null"
             guard let result = try? await AsyncProcessRunner.shared.run(command: command),
                   result.succeeded else { return nil }

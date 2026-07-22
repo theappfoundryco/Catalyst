@@ -1,6 +1,11 @@
 import Foundation
 
 /// A persistent data object representing a tracked developer repository or workspace.
+///
+/// ```swift
+/// let project = Project(name: "Catalyst", path: "/Users/dev/Catalyst")
+/// ProjectStore.shared.add(project)
+/// ```
 struct Project: Identifiable, Codable, Hashable, Sendable {
     /// A unique identifier ensuring safe list enumeration and persistence.
     let id: UUID

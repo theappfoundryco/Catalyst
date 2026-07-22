@@ -9,6 +9,9 @@ struct NodeDoctor: Doctor, AvailabilityCheckable {
 
     /// Verifies the availability of the Node runtime.
     ///
+    /// **Flow:**
+    /// 1. Executes `node -v` inside an interactive login shell, matching user configurations.
+    ///
     /// - Returns: A boolean indicating if the run command executes successfully.
     func checkAvailability() async -> Bool {
         do {
@@ -20,6 +23,11 @@ struct NodeDoctor: Doctor, AvailabilityCheckable {
     }
     
     /// Scans the local environment for conflicting version managers and permission boundaries.
+    ///
+    /// **Flow:**
+    /// 1. Flags simultaneous inclusion of `nvm` and `brew node` binaries.
+    /// 2. Queries `npm root -g` to find global boundaries.
+    /// 3. Cross-references POSIX directory ownership to warn against `root`-owned generic repositories preventing safe installations.
     ///
     /// - Returns: An array of `HealthIssue` detailing active Node conflicts and permission warnings.
     func run() async -> [HealthIssue] {
@@ -69,6 +77,9 @@ struct NodeDoctor: Doctor, AvailabilityCheckable {
     }
     
     /// Attempts to apply fixes for identified Node environment issues.
+    ///
+    /// **Gotchas:**
+    /// Altering standard global node `root` boundaries via `chown` causes security cascade failures and requires raw administrative passwords. Not currently fixable via non-sudo APIs.
     ///
     /// - Parameter issue: The health issue identified.
     /// - Returns: A boolean indicating if the automated fix was successful.

@@ -5,6 +5,11 @@ import Foundation
 /// `HealthCheckService` runs every `Doctor` in a single array, aggregates their
 /// issues, and derives both the per-category status and auto-fix routing from that
 /// one source of truth — no per-module wiring in multiple places.
+///
+/// ```swift
+/// let result = await HealthCheckService.shared.runFullScan()
+/// print("Found \(result.issues.count) issues")
+/// ```
 final class HealthCheckService {
     /// The shared singleton instance.
     static let shared = HealthCheckService()
@@ -34,14 +39,22 @@ final class HealthCheckService {
 
     /// Initiates a complete health scan traversing all configured diagnostic modules asynchronously.
     ///
+    /// **Flow:**
+    /// 1. Iterates over the `doctors` array concurrently via a `TaskGroup`.
+    /// 2. Evaluates `AvailabilityCheckable` conformance to skip unavailable doctors (e.g. missing tools).
+    /// 3. Flattens individual module `HealthIssue` arrays into a single unified list.
+    /// 4. Computes per-category statuses based on aggregated issue counts.
+    ///
     /// - Returns: A `ScanResult` payload containing the issues found and a status row per category.
     func runFullScan() async -> ScanResult {
         Logger.shared.log("🩺 Dr. Catalyst: Starting full system scan...")
 
         let doctors = self.doctors
         return await Task.detached {
-            // Run every doctor concurrently. Availability-gated doctors
-            // (Docker/Java/Node) report unavailable instead of running.
+            /// Run every doctor concurrently. Availability-gated doctors
+            /// (Docker/Java/Node) report unavailable instead of running.
+            ///
+            /// **Rationale:** Prevents the UI from blocking while attempting to probe heavy CLI tools (like Docker) that aren't even installed on the user's system.
             let runs = await withTaskGroup(of: (HealthCategory, [HealthIssue], Bool).self) { group -> [(HealthCategory, [HealthIssue], Bool)] in
                 for doctor in doctors {
                     group.addTask {
@@ -62,10 +75,14 @@ final class HealthCheckService {
             }
 
             let allIssues = runs.flatMap { $0.1 }
-            // Categories whose (only) doctor is an unavailable tool.
+            /// Categories whose (only) doctor is an unavailable tool.
+            ///
+            /// **Gotchas:** Without this filter, Catalyst will render empty status groups for missing toolchains, confusing users with blank "Java" or "Node" sections.
             let unavailable = Set(runs.filter { !$0.2 }.map { $0.0 })
 
-            // One status row per category, in stable order.
+            /// One status row per category, in stable order.
+            ///
+            /// **Rationale:** SwiftUI's declarative diffing demands stable iteration order; relying on randomized dictionary keys causes the UI sections to thrash wildly.
             var statuses: [DoctorStatus] = []
             for category in HealthCategory.allCases {
                 if unavailable.contains(category) {

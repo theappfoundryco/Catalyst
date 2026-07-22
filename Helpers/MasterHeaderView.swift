@@ -1,9 +1,5 @@
-//
-//  MasterHeaderView.swift
-//  Catalyst
-//
-//  Shared page header with icon, title, and subtitle.
-//
+/// Shared page header with icon, title, and subtitle.
+
 import SwiftUI
 
 /// A centered page header displaying a gradient icon, bold title, and secondary subtitle.

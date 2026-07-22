@@ -1,7 +1,11 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-// MARK: - Main Shell View
+/// The main view for the Cruft Sweeper feature, managing the scan configuration and results display.
+///
+/// ```swift
+/// CruftSweeperView(vm: cruftSweeperViewModel)
+/// ```
 struct CruftSweeperView: View {
     let vm: CruftSweeperViewModel
     
@@ -13,7 +17,11 @@ struct CruftSweeperView: View {
     }
 }
 
-// MARK: - Content View (Observes ViewModel)
+/// The internal content view for the Cruft Sweeper, observing the view model and managing local scan state.
+///
+/// ```swift
+/// CruftSweeperContent(vm: cruftSweeperViewModel)
+/// ```
 struct CruftSweeperContent: View {
     @ObservedObject var vm: CruftSweeperViewModel
     

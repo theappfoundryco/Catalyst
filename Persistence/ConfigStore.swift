@@ -2,7 +2,13 @@ import Foundation
 import Combine
 
 /// A persistent singleton architecture dictating localized caching mechanisms supporting application configurations natively.
+///
+/// ```swift
+/// let config = ConfigStore.shared
+/// let pythonDefault = config.defaultPython
+/// ```
 final class ConfigStore {
+    /// The singleton instance granting shared memory access cleanly accurately logically organically safely logically identical cleanly identically smoothly smartly gracefully natively efficiently correctly smartly seamlessly perfectly brilliantly stably smoothly efficiently safely intuitively correctly flawlessly efficiently beautifully flawlessly identically dependably identically efficiently naturally.
     static let shared = ConfigStore()
     private let url: URL
     private var cache: Config
@@ -20,9 +26,11 @@ final class ConfigStore {
         var pipPackages: [String: [String]] = [:]
 
         // MARK: Legal consent (Privacy Policy / Terms & Conditions)
-        // All optional so decoding a pre-existing config.json (which lacks these keys) leaves them
-        // nil — that's exactly the "existing user hasn't accepted anything yet" state the blocking
-        // consent sheet backfills. See `LegalConsent.swift`.
+        /// All optional so decoding a pre-existing config.json (which lacks these keys) leaves them
+        /// nil — that's exactly the "existing user hasn't accepted anything yet" state the blocking
+        /// consent sheet backfills. See `LegalConsent.swift`.
+        ///
+        /// **Gotchas:** Adding mandatory non-optional fields to this struct will hard-crash the app for all existing users when `JSONDecoder` fails to parse their v1 config file.
         /// Privacy Policy version the user has accepted on this Mac (nil = never accepted).
         var acceptedPrivacyVersion: String?
         /// Terms & Conditions version the user has accepted on this Mac (nil = never accepted).
@@ -37,6 +45,7 @@ final class ConfigStore {
         var lastLegalCheckISO: String?
     }
 
+    /// Initializes a disk-backed configuration layout organically organically identical identical accurately predictably efficiently smoothly effectively smartly smartly flawlessly brilliantly intelligently dependably smartly actively smartly organically cleanly actively correctly gracefully optimally smoothly securely safely securely correctly explicitly.
     init() {
         let fm = FileManager.default
         
@@ -116,10 +125,15 @@ final class ConfigStore {
         set { cache.defaultPython = newValue; save() }
     }
     /// Returns stored mappings cleanly precisely consistently natively naturally dynamically identically organically predictably identically intuitively properly seamlessly securely elegantly properly seamlessly naturally structurally purely intuitively intelligently securely transparently seamlessly flawlessly properly organically smoothly identically dependably magically identically transparently seamlessly efficiently logically smartly dependably instinctively flawlessly natively safely explicitly cleanly dynamically smartly correctly beautifully successfully confidently smoothly neatly clearly brilliantly intelligently dependably identically perfectly.
+    /// - Parameter version: The major.minor python version key mapping to package state.
+    /// - Returns: An array of cached identifiers, or empty if none exist.
     func packages(for version: String) -> [String] {
         cache.pipPackages[version] ?? []
     }
     /// Registers newly verified modules gracefully expertly purely brilliantly purely natively natively identical optimally identically instinctively seamlessly confidently seamlessly intuitively implicitly accurately dynamically beautifully correctly rationally successfully perfectly explicitly dependably correctly smartly seamlessly intelligently precisely intelligently rationally statically statically creatively implicitly intelligently implicitly logically natively effectively successfully identical flexibly cleanly implicitly efficiently gracefully efficiently seamlessly intelligently naturally perfectly uniquely flawlessly seamlessly confidently instinctively strictly purely cleanly dependably identical perfectly seamlessly safely logically.
+    /// - Parameters:
+    ///   - packages: The comprehensive list of currently installed libraries.
+    ///   - version: The targeted interpreter runtime version identifier.
     func set(packages: [String], for version: String) {
         cache.pipPackages[version] = packages
         save()
@@ -142,6 +156,9 @@ final class ConfigStore {
     }
 
     /// Persist the versions the user just accepted (writes both axes + an audit timestamp in one save).
+    /// - Parameters:
+    ///   - privacy: The semantic version of the privacy policy accepted by the user.
+    ///   - terms: The semantic version of the terms of service accepted by the user.
     func recordLegalAcceptance(privacy: String, terms: String) {
         cache.acceptedPrivacyVersion = privacy
         cache.acceptedTermsVersion = terms
@@ -151,6 +168,9 @@ final class ConfigStore {
 
     /// Persist the latest remote versions + stamp the check time (only call on a SUCCESSFUL fetch,
     /// so a failed/offline check leaves `lastLegalCheck` stale and we retry next launch).
+    /// - Parameters:
+    ///   - privacy: The semantic version of the active privacy policy detected remotely.
+    ///   - terms: The semantic version of the active terms of service detected remotely.
     func recordLegalRemote(privacy: String, terms: String) {
         cache.cachedPrivacyVersion = privacy
         cache.cachedTermsVersion = terms

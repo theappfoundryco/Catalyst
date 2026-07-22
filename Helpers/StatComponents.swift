@@ -1,9 +1,4 @@
-//
-//  StatComponents.swift
-//  Catalyst
-//
-//  Shared stat display components used across DrCatalyst and SSD Health views.
-//
+/// Shared stat display components used across DrCatalyst and SSD Health views.
 
 import SwiftUI
 

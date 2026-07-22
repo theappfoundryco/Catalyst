@@ -1,10 +1,5 @@
-//
-//  UpdateResultsSummaryCard.swift
-//  Catalyst
-//
-//  Shared card displayed after batch package updates, showing successful
-//  and failed packages with a retry option for failures.
-//
+/// Shared card displayed after batch package updates, showing successful
+/// and failed packages with a retry option for failures.
 
 import SwiftUI
 
@@ -57,8 +52,10 @@ struct UpdateResultsSummaryCard: View {
                     Text(headerTitle)
                         .font(.headline)
 
-                    // Counts only — the status icon lives in the header above, so
-                    // we don't repeat a second green checkmark here.
+                    /// Counts only — the status icon lives in the header above, so
+                    /// we don't repeat a second green checkmark here.
+                    ///
+                    /// **Rationale:** Aggressive deduplication of visual iconography prevents the summary card from looking like a cluttered Christmas tree.
                     HStack(spacing: 6) {
                         Text("\(successfulPackages.count) updated")
                         if !failedPackages.isEmpty {
@@ -89,7 +86,9 @@ struct UpdateResultsSummaryCard: View {
             
             SectionDivider()
             
-            // Failed packages with retry
+            /// Failed packages with retry
+            ///
+            /// **Rationale:** Providing an immediate inline retry mechanism for transient network failures prevents users from having to restart the entire update flow.
             if !failedPackages.isEmpty {
                 ResultDisclosureGroup(
                     title: "Failed Updates (\(failedPackages.count))",
@@ -103,9 +102,11 @@ struct UpdateResultsSummaryCard: View {
                 )
             }
             
-            // Held-back packages — a newer version exists but pip won't install it
-            // in this environment. Amber, with the reason, so it reads as "blocked"
-            // rather than "failed".
+            /// Held-back packages — a newer version exists but pip won't install it
+            /// in this environment. Amber, with the reason, so it reads as "blocked"
+            /// rather than "failed".
+            ///
+            /// **Rationale:** Differentiating between hard failures and dependency conflicts (PEP 668) stops users from reporting bugs when the package manager is working exactly as designed.
             if !heldBackPackages.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Held back (\(heldBackPackages.count))")
@@ -139,8 +140,10 @@ struct UpdateResultsSummaryCard: View {
                 )
             }
 
-            // Successful packages — shown inline as a readable, wrapping paragraph
-            // on an alternate surface, so results are glanceable without expanding.
+            /// Successful packages — shown inline as a readable, wrapping paragraph
+            /// on an alternate surface, so results are glanceable without expanding.
+            ///
+            /// **Rationale:** A dense typographic paragraph handles 50 successful updates far better than a 50-row vertical list that demands scrolling.
             if !successfulPackages.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Updated (\(successfulPackages.count))")

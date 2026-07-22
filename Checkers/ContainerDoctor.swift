@@ -20,6 +20,11 @@ struct ContainerDoctor: Doctor, AvailabilityCheckable {
     
     /// Primary execution routine that evaluates the local Docker daemon status, exited containers, and dangling images.
     ///
+    /// **Flow:**
+    /// 1. Confirms Docker app/CLI components exist on disk.
+    /// 2. Pings the daemon (`docker info`) to verify active background readiness.
+    /// 3. Queries counts for zombie containers and dangling metadata to identify cruft.
+    ///
     /// - Returns: An array of `HealthIssue` representing Docker-related hygiene problems.
     func run() async -> [HealthIssue] {
         var issues: [HealthIssue] = []
@@ -78,6 +83,9 @@ struct ContainerDoctor: Doctor, AvailabilityCheckable {
     }
     
     /// Attempts to programmatically remediate Docker-related hygiene issues.
+    ///
+    /// **Gotchas:**
+    /// The Docker daemon must be actively running and accessible without `sudo`.
     ///
     /// - Parameter issue: The Docker issue to resolve, such as zombie containers or dangling images.
     /// - Returns: A boolean indicating whether the prune operation was successful.

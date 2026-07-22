@@ -1,9 +1,5 @@
-//
-//  BannerView.swift
-//  Catalyst
-//
-//  Standardized banner for warnings, tips, and information.
-//
+/// Standardized banner for warnings, tips, and information.
+
 import SwiftUI
 
 /// A standardized banner view for displaying contextual messages.

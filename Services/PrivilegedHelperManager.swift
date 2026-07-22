@@ -10,6 +10,14 @@ import ServiceManagement
 ///
 /// See `PrivilegedHelper/README.md` for the Xcode target + signing setup that
 /// makes `register()` succeed.
+///
+/// ```swift
+/// let manager = PrivilegedHelperManager.shared
+/// if !manager.isInstalled {
+///     try manager.install()
+/// }
+/// let (code, output) = try await manager.runShell("ls -la /var/root")
+/// ```
 final class PrivilegedHelperManager: @unchecked Sendable {
 
     static let shared = PrivilegedHelperManager()
@@ -28,6 +36,8 @@ final class PrivilegedHelperManager: @unchecked Sendable {
 
     /// Registers the bundled daemon with launchd. The user is asked to approve
     /// once (in System Settings › Login Items) — never again afterward.
+    ///
+    /// - Throws: Any error raised by `SMAppService` during the registration block.
     func install() throws {
         let service = SMAppService.daemon(plistName: CatalystHelperConstants.daemonPlistName)
         switch service.status {
@@ -39,6 +49,8 @@ final class PrivilegedHelperManager: @unchecked Sendable {
     }
 
     /// Removes the helper daemon.
+    ///
+    /// - Throws: Any error raised by `SMAppService` during the unregistration sequence.
     func uninstall() throws {
         let service = SMAppService.daemon(plistName: CatalystHelperConstants.daemonPlistName)
         try service.unregister()
@@ -47,6 +59,7 @@ final class PrivilegedHelperManager: @unchecked Sendable {
 
     // MARK: - XPC
 
+    /// - Returns: A dedicated bridging connection mapped to the privileged daemon.
     private func connection() -> NSXPCConnection {
         lock.lock(); defer { lock.unlock() }
         if let c = _connection { return c }
@@ -60,12 +73,16 @@ final class PrivilegedHelperManager: @unchecked Sendable {
         return c
     }
 
+    /// Severs the active XPC connection and resets the internal listener proxy.
     private func invalidateConnection() {
         lock.lock(); defer { lock.unlock() }
         _connection = nil
     }
 
     /// Runs a shell command as root through the helper.
+    ///
+    /// - Parameter command: The raw string of the command line interface block.
+    /// - Returns: A tuple of the termination `exitCode` and the raw `output` string.
     /// - Throws: the XPC error if the helper is unreachable.
     func runShell(_ command: String) async throws -> (exitCode: Int32, output: String) {
         try await withCheckedThrowingContinuation { continuation in
@@ -83,6 +100,8 @@ final class PrivilegedHelperManager: @unchecked Sendable {
     }
 
     /// The installed helper's reported version (for staleness checks).
+    ///
+    /// - Returns: The version string, or `nil` if the daemon proxy is disconnected or non-responsive.
     func installedVersion() async -> String? {
         try? await withCheckedThrowingContinuation { continuation in
             let proxy = connection().remoteObjectProxyWithErrorHandler { error in

@@ -80,6 +80,7 @@ struct ShortcutContent: Codable {
     /// Illustrative terminal output. Optional.
     let sampleOutput: String?
 
+    /// JSON mapping keys matching the remote schema.
     enum CodingKeys: String, CodingKey {
         case summary, usage, notes, parameters, examples
         case whatItDoes = "what_it_does"

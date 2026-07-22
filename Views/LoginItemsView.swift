@@ -1,5 +1,9 @@
 import SwiftUI
-
+/// A view for managing user login items and launch agents, and inspecting system daemons.
+///
+/// ```swift
+/// LoginItemsView(vm: loginItemsViewModel)
+/// ```
 struct LoginItemsView: View {
     @ObservedObject var vm: LoginItemsViewModel
 
@@ -69,6 +73,8 @@ struct LoginItemsView: View {
     // MARK: - Report
 
     @ViewBuilder
+    /// - Parameter report: The compiled structural report outlining daemon metadata.
+    /// - Returns: The active presentation hierarchy for the detail view.
     private func reportContent(_ report: LoginItemsReport) -> some View {
         VStack(spacing: 24) {
             LazyVGrid(columns: metricColumns, spacing: 16) {
@@ -114,6 +120,8 @@ struct LoginItemsView: View {
 
     // MARK: - Rows
 
+    /// - Parameter item: The structured payload capturing active daemon state.
+    /// - Returns: The active presentation hierarchy for the detail view.
     private func loginItemRow(_ item: LoginItem) -> some View {
         HStack(spacing: 12) {
             Image(systemName: "app.fill").foregroundColor(.blue).frame(width: 22)
@@ -144,6 +152,11 @@ struct LoginItemsView: View {
         .padding(.vertical, 6)
     }
 
+    /// Visualizes a single background launch daemon and its current execution state.
+    /// - Parameters:
+    ///   - agent: The structured payload capturing the XML launch daemon.
+    ///   - manageable: Determines if administrative privileges currently allow toggling.
+    /// - Returns: The active presentation hierarchy for the detail view.
     private func agentRow(_ agent: LaunchAgentItem, manageable: Bool) -> some View {
         HStack(spacing: 12) {
             Circle()
@@ -247,6 +260,8 @@ private enum RemovalTarget {
     }
 
     @MainActor
+    /// Executes a standardized state transition for the underlying view model.
+    /// - Parameter vm: The active view model instance driving interface mutations.
     func perform(_ vm: LoginItemsViewModel) async {
         switch self {
         case .agent(let a): await vm.removeAgent(a)
@@ -256,7 +271,11 @@ private enum RemovalTarget {
 }
 
 // MARK: - Metric tile
-
+/// A metric tile displaying an icon, title, and count for startup item categories.
+///
+/// ```swift
+/// StartupMetricTile(icon: "gearshape.2.fill", title: "User Agents", value: "5", color: .orange)
+/// ```
 private struct StartupMetricTile: View {
     let icon: String
     let title: String

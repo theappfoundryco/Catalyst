@@ -1,14 +1,13 @@
-//
-//  DashboardCards.swift
-//  Catalyst
-//
-//  Subview components extracted from DashboardView for better modularity.
-//
+/// Subview components extracted from DashboardView for better modularity.
 
 import SwiftUI
 
 // MARK: - System Status Card
-
+/// A dashboard card displaying the health and installation status of core system tools.
+///
+/// ```swift
+/// SystemStatusCard(vm: viewModel, showSystemPythonErrorPopover: $showError)
+/// ```
 struct SystemStatusCard: View {
     @ObservedObject var vm: DashboardViewModel
     @Binding var showSystemPythonErrorPopover: Bool
@@ -138,7 +137,11 @@ struct SystemStatusCard: View {
 }
 
 // MARK: - Installed Pythons Card
-
+/// A dashboard card listing all detected Python installations and offering pip repair/upgrade actions.
+///
+/// ```swift
+/// InstalledPythonsCard(vm: viewModel)
+/// ```
 struct InstalledPythonsCard: View {
     @ObservedObject var vm: DashboardViewModel
     /// Observed so pip-upgrade rows re-render when the global tier changes.
@@ -198,6 +201,10 @@ struct InstalledPythonsCard: View {
 /// instead of the whole `@ObservedObject` VM (R1-row), and is `Equatable` so
 /// SwiftUI skips re-rendering rows whose inputs didn't change when an unrelated
 /// part of the dashboard updates. Closures are intentionally excluded from `==`.
+///
+/// ```swift
+/// PythonInstallationRow(python: py, isRepairing: false, isUpgrading: false, ...)
+/// ```
 struct PythonInstallationRow: View, Equatable {
     let python: PythonInstallation
     let isRepairing: Bool
@@ -414,7 +421,11 @@ struct PythonInstallationRow: View, Equatable {
 }
 
 // MARK: - Install Python Card
-
+/// A dashboard card providing the interface to install new Python versions via Homebrew.
+///
+/// ```swift
+/// InstallPythonCard(vm: viewModel, showInstallConfirmation: $showConfirm)
+/// ```
 struct InstallPythonCard: View {
     @ObservedObject var vm: DashboardViewModel
     @Binding var showInstallConfirmation: Bool
@@ -501,7 +512,11 @@ struct InstallPythonCard: View {
 }
 
 // MARK: - Uninstall Card
-
+/// A dashboard card for uninstalling Homebrew and selected Python versions.
+///
+/// ```swift
+/// UninstallCard(vm: viewModel, showUninstallBrewConfirmation: $showBrew, showUninstallPythonConfirmation: $showPy)
+/// ```
 struct UninstallCard: View {
     @ObservedObject var vm: DashboardViewModel
     @Binding var showUninstallBrewConfirmation: Bool
@@ -601,7 +616,11 @@ struct UninstallCard: View {
 }
 
 // MARK: - Homebrew Maintenance Components
-
+/// A dashboard card grouping Homebrew maintenance operations like update, upgrade, cleanup, and doctor.
+///
+/// ```swift
+/// BrewMaintenanceCard(vm: viewModel)
+/// ```
 struct BrewMaintenanceCard: View {
     @ObservedObject var vm: DashboardViewModel
     
@@ -715,6 +734,10 @@ struct BrewMaintenanceCard: View {
 /// closure instead of the whole `@ObservedObject` VM (R1-row); `Equatable` so
 /// SwiftUI skips re-rendering rows whose inputs didn't change. Closure excluded
 /// from `==`.
+///
+/// ```swift
+/// MaintenanceOperationRow(icon: "trash", title: "Cleanup", description: "...", color: .orange, ...)
+/// ```
 struct MaintenanceOperationRow: View, Equatable {
     let icon: String
     let title: String
@@ -765,6 +788,11 @@ struct MaintenanceOperationRow: View, Equatable {
     }
 }
 
+/// A vertical statistic display showing a label and its corresponding value.
+///
+/// ```swift
+/// StatColumn(label: "Cache Size", value: "1.2 GB")
+/// ```
 struct StatColumn: View {
     let label: String
     let value: String
@@ -783,6 +811,11 @@ struct StatColumn: View {
     }
 }
 
+/// A dashboard section warning the user about unlinked Homebrew kegs and providing a link action.
+///
+/// ```swift
+/// UnlinkedKegsSection(kegs: ["python@3.11"], isLinking: false) { link() }
+/// ```
 struct UnlinkedKegsSection: View {
     let kegs: [String]
     let isLinking: Bool

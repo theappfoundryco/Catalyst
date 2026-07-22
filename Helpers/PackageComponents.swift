@@ -1,9 +1,5 @@
-//
-//  PackageComponents.swift
-//  Catalyst
-//
-//  Shared package row components used across list and search views.
-//
+/// Shared package row components used across list and search views.
+
 import SwiftUI
 
 // MARK: - Installed Package Row
@@ -39,8 +35,10 @@ struct InstalledPackageRow: View, Equatable {
     /// Called when the Uninstall button is tapped.
     let onUninstall: () -> Void
 
-    // R1-row: compare only the value inputs (closure ignored) so the row skips
-    // body when an unrelated @Published on the parent VM changes.
+    /// R1-row: compare only the value inputs (closure ignored) so the row skips
+    /// body when an unrelated @Published on the parent VM changes.
+    ///
+    /// **Gotchas:** Including closures in `Equatable` compliance forces SwiftUI to re-render the row on every parent state change, tanking scrolling performance on large lists.
     static func == (lhs: InstalledPackageRow, rhs: InstalledPackageRow) -> Bool {
         lhs.name == rhs.name &&
         lhs.version == rhs.version &&
@@ -269,8 +267,10 @@ struct PopularPackageRow: View, Equatable {
     /// Called when the Install button is tapped.
     let onInstall: () -> Void
 
-    // R1-row: compare only the value inputs (closure ignored) so the row skips
-    // body when an unrelated @Published on the parent VM changes.
+    /// R1-row: compare only the value inputs (closure ignored) so the row skips
+    /// body when an unrelated @Published on the parent VM changes.
+    ///
+    /// **Gotchas:** Including closures in `Equatable` compliance forces SwiftUI to re-render the row on every parent state change, tanking scrolling performance on large lists.
     static func == (lhs: PopularPackageRow, rhs: PopularPackageRow) -> Bool {
         lhs.package == rhs.package &&
         lhs.rank == rhs.rank &&

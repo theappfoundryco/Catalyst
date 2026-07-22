@@ -1,6 +1,10 @@
 import Foundation
 
 /// A data model representing a software package to be rendered within the UI.
+///
+/// ```swift
+/// let item = PackageItem(name: "requests", description: "Python HTTP for Humans", isInstalled: true)
+/// ```
 struct PackageItem: Identifiable {
     /// A unique identifier for the package instance.
     let id = UUID()

@@ -2,6 +2,10 @@ import SwiftUI
 import Combine
 
 /// Status indicator bar shown at the bottom of the sidebar
+///
+/// ```swift
+/// StatusIndicatorView(networkMonitor: networkMonitor)
+/// ```
 struct StatusIndicatorView: View {
     @ObservedObject var networkMonitor: NetworkMonitor
     @ObservedObject private var installPrefs = InstallPreferences.shared
@@ -49,6 +53,10 @@ struct StatusIndicatorView: View {
 }
 
 /// Expanded status popover with detailed system information
+///
+/// ```swift
+/// StatusPopoverView(networkMonitor: networkMonitor)
+/// ```
 struct StatusPopoverView: View {
     @ObservedObject var networkMonitor: NetworkMonitor
     @ObservedObject private var installPrefs = InstallPreferences.shared
@@ -108,7 +116,7 @@ struct StatusPopoverView: View {
             SectionDivider()
 
             // App-wide install mode (PEP 668 override). Switching away from Protected
-            // requires explicit consent; reverting to Protected is immediate (Formrules 2.7).
+            // requires explicit consent; reverting to Protected is immediate (CODING_STANDARDS 2.7).
             installModeSection
 
             SectionDivider()
@@ -192,6 +200,7 @@ struct StatusPopoverView: View {
     }
 
     /// Apply a mode: Protected is immediate; any override asks for confirmation first.
+    /// - Parameter mode: The target operational state representing the user selection.
     private func selectMode(_ mode: PipInstallMode) {
         if mode == .protected {
             installPrefs.mode = .protected
@@ -203,6 +212,10 @@ struct StatusPopoverView: View {
 }
 
 /// Individual status row in the popover
+///
+/// ```swift
+/// StatusRow(icon: "network", label: "Network", status: "Online", color: .green)
+/// ```
 struct StatusRow: View {
     let icon: String
     let label: String

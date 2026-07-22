@@ -2,6 +2,7 @@ import Foundation
 import SwiftUI
 import Combine
 
+/// Represents a Python package with an available upstream version update.
 struct OutdatedPackage: Identifiable, Hashable {
     let id = UUID()
     let name: String
@@ -55,6 +56,7 @@ extension OutdatedUpdating {
         return OutdatedScanDateFormat.formatter.string(from: date) + " " + (TimeZone.current.abbreviation() ?? "")
     }
 
+    /// Clears the transient state mapping of previously attempted package updates.
     func resetUpdateResults() {
         failedPackages = []
         successfulPackages = []
@@ -63,6 +65,7 @@ extension OutdatedUpdating {
         showUpdateResults = false
     }
 
+    /// Verifies outbound connectivity to PyPI before attempting package resolution.
     func hasNetworkConnection() async -> Bool {
         do {
             let result = try await AsyncProcessRunner.shared.run(command: "curl -s --connect-timeout 3 https://pypi.org > /dev/null 2>&1")
@@ -72,6 +75,7 @@ extension OutdatedUpdating {
         }
     }
 
+    /// Concurrently processes a batch update sequence for the specified Python packages.
     func updateFiltered(_ packages: [OutdatedPackage]) async {
         guard await hasNetworkConnection() else {
             Logger.shared.log("❌ No network connection")
@@ -93,22 +97,52 @@ extension OutdatedUpdating {
     }
 }
 
+/// A view model that coordinates detecting and upgrading outdated Python pip packages.
+///
+/// `OutdatedPIPViewModel` conforms to `OutdatedUpdating`, providing the pip-specific
+/// implementation of `updatePackage`. It checks updates exclusively on a *per-interpreter* basis,
+/// using `pip list --outdated` directly, avoiding false positives from global PyPI lookups.
+///
+/// **Caveats:**
+/// - Unlike Brew, `pip` provides specific feedback when a package is "held back" (e.g., requires
+///   a higher Python version). These are gracefully diverted to `heldBackPackages` rather than
+///   being flagged as hard failures.
+/// - The view model must re-query `detectPythons()` dynamically to stay in sync with the global
+///   Python environment cache.
+///
+/// ```swift
+/// await vm.checkForPipUpdates()
+/// if !vm.outdatedPackages.isEmpty { await vm.updateFiltered(vm.outdatedPackages) }
+/// ```
 @MainActor
 final class OutdatedPIPViewModel: ObservableObject, OutdatedUpdating {
+    /// The master list of outdated pip packages for the selected Python version.
     @Published var outdatedPackages: [OutdatedPackage] = []
+    /// Indicates if `pip list --outdated` is actively running.
     @Published var isLoading = false
+    /// Indicates if a batch update is actively running.
     @Published var isUpdatingAll = false
+    /// The name of the package currently running through `pip install --upgrade`.
     @Published var updatingPackage: String?
+    /// Flag indicating whether the view has scanned at least once.
     @Published var hasScannedOnce = false
+    /// The timestamp of the last successful scan.
     @Published var lastScanDate: Date? = nil
 
     // Update results tracking
+    /// The list of discovered Python interpreters capable of running pip.
     @Published var availablePythonVersions: [PythonInstallation] = []
+    /// The specific interpreter currently being queried for outdated packages.
     @Published var selectedPythonVersion: PythonInstallation?
+    /// Packages that threw an error during upgrade or remained outdated afterwards.
     @Published var failedPackages: [OutdatedPackage] = []
+    /// Packages verified to be fully upgraded.
     @Published var successfulPackages: [OutdatedPackage] = []
+    /// Packages that pip refused to upgrade due to constraints (e.g. Requires-Python).
     @Published var heldBackPackages: [OutdatedPackage] = []
+    /// Human-readable reasons mapping to the held back package names.
     @Published var heldBackReasons: [String: String] = [:]
+    /// Toggles the UI overlay showing success/fail results.
     @Published var showUpdateResults = false
 
     private let logger: Logger
@@ -135,6 +169,8 @@ final class OutdatedPIPViewModel: ObservableObject, OutdatedUpdating {
         if let pyInventoryObserver { NotificationCenter.default.removeObserver(pyInventoryObserver) }
     }
     
+    /// Populates ``availablePythonVersions`` via the central ``PythonService``.
+    /// Automatically selects the first valid interpreter upon successful load.
     func loadPythonVersions() async {
         do {
             availablePythonVersions = try await pythonService.detectPythons().filter { $0.pipAvailable }
@@ -152,7 +188,15 @@ final class OutdatedPIPViewModel: ObservableObject, OutdatedUpdating {
     
     // MARK: - Check Updates
     
-    /// Check only pip updates
+    /// Check only pip updates for the `selectedPythonVersion`.
+    ///
+    /// **Flow:**
+    /// 1. Resets prior update results.
+    /// 2. If `force`, invalidates the Python global cache.
+    /// 3. Refreshes available Pythons to ensure the selector isn't stale.
+    /// 4. Calls ``getOutdatedPip()`` to scrape the actual packages.
+    ///
+    /// - Parameter force: If true, flushes the global python cache.
     func checkForPipUpdates(force: Bool = false) async {
         resetUpdateResults() // Clear previous results
         
@@ -178,6 +222,16 @@ final class OutdatedPIPViewModel: ObservableObject, OutdatedUpdating {
         isLoading = false
     }
     
+    /// Invokes `pip list --outdated --format=json` against the selected Python interpreter.
+    ///
+    /// **Gotchas:**
+    /// - **Singleton Truth:** This is the *only* source of truth. Querying PyPI's `info.version` globally
+    ///   would surface releases that dropped support for this specific Python (e.g. numpy 2.x on Python 3.8).
+    ///   `pip` internally respects `Requires-Python` constraints.
+    /// - **Self-Reporting Bug:** Pip can report *itself* as outdated due to stale metadata (like Homebrew symlinks).
+    ///   We cross-reference pip's version string actively to prevent un-upgradable phantoms.
+    ///
+    /// - Returns: A decoded array of ``OutdatedPackage`` objects.
     private func getOutdatedPip() async -> [OutdatedPackage] {
         // Use selected Python only
         guard let python = selectedPythonVersion else {
@@ -198,6 +252,7 @@ final class OutdatedPIPViewModel: ObservableObject, OutdatedUpdating {
         do {
             let result = try await AsyncProcessRunner.shared.run(command: command)
 
+            /// Decodes the JSON payload emitted by the `pip list --outdated` command.
             struct PipOutdated: Codable {
                 let name: String
                 let version: String
@@ -238,11 +293,18 @@ final class OutdatedPIPViewModel: ObservableObject, OutdatedUpdating {
         }
     }
 
-    /// Order the list so packages needing attention float to the top: failed
-    /// first, then held-back, then the rest — each group alphabetical.
+    /// Orders the list so packages needing attention float to the top.
+    ///
+    /// **Rationale:**
+    /// Sorting hierarchy is: Failed -> Held-back -> Normal.
+    /// Each sub-group is ordered alphabetically.
+    ///
+    /// - Parameter packages: The raw unordered package array.
+    /// - Returns: The grouped and sorted array.
     private func problemsFirst(_ packages: [OutdatedPackage]) -> [OutdatedPackage] {
         let failedNames = Set(failedPackages.map(\.name))
         let heldNames = Set(heldBackPackages.map(\.name))
+        /// Computes a heuristic sort weighting based on semantic versioning disparities.
         func rank(_ p: OutdatedPackage) -> Int {
             if failedNames.contains(p.name) { return 0 }
             if heldNames.contains(p.name) { return 1 }
@@ -257,12 +319,22 @@ final class OutdatedPIPViewModel: ObservableObject, OutdatedUpdating {
     
     // MARK: - Update Methods
     
+    /// Upgrades a single pip package using `pip install --upgrade`.
+    ///
+    /// - Parameters:
+    ///   - name: The target package name.
+    ///   - type: Must be `.pip`.
     func updatePackage(_ name: String, type: PackageType) async {
         guard type == .pip else { return }
         await updatePipPackage(name)
     }
 
-    /// pip re-scans after a batch update (brew's equivalent does not).
+    /// Refreshes the pip state post-batch update.
+    ///
+    /// **Gotchas:**
+    /// - Refreshes the outdated list to reflect the new environment, but explicitly **KEEPS** the
+    ///   per-package verdicts (successful / failed / held-back) so the summary card and the red/amber
+    ///   row states survive the rescan UI wipe.
     func rescanAfterUpdates() async {
         // Refresh the outdated list to reflect the new environment, but KEEP the
         // per-package verdicts (successful / failed / held-back) so the summary
@@ -273,6 +345,17 @@ final class OutdatedPIPViewModel: ObservableObject, OutdatedUpdating {
         lastScanDate = Date()
     }
     
+    /// Performs the heavy-lifting subshell execution to run `pip install --upgrade`.
+    ///
+    /// **Flow:**
+    /// 1. Drops any prior verdicts for this package.
+    /// 2. Sanitizes input and validates network connectivity.
+    /// 3. Appends PEP 668 flags if necessary via ``InstallPreferences``.
+    /// 4. Executes the upgrade via ``runUpgradeCapturing(_:)``.
+    /// 5. Re-runs `verifyUpdate()` as the ultimate source of truth.
+    /// 6. Parses standard output strictly if the update failed, to deduce if the package was merely "held back".
+    ///
+    /// - Parameter name: The package to upgrade.
     private func updatePipPackage(_ name: String) async {
         updatingPackage = name
         
@@ -357,7 +440,9 @@ final class OutdatedPIPViewModel: ObservableObject, OutdatedUpdating {
         updatingPackage = nil
     }
 
-    /// Drop any existing verdict for a package (used before a fresh attempt/retry).
+    /// Drops any existing verdict for a package (used before a fresh attempt or retry).
+    ///
+    /// - Parameter name: Package identifier.
     private func clearVerdict(for name: String) {
         failedPackages.removeAll { $0.name == name }
         heldBackPackages.removeAll { $0.name == name }
@@ -365,8 +450,15 @@ final class OutdatedPIPViewModel: ObservableObject, OutdatedUpdating {
         heldBackReasons[name] = nil
     }
 
-    /// Best-effort explanation for why pip held a package back. Surfaces pip's own
-    /// incompatibility line when present; otherwise a generic but honest reason.
+    /// Extracts a best-effort explanation for why pip refused to upgrade a package.
+    ///
+    /// **Rationale:**
+    /// Surfaces pip's own incompatibility string when present (e.g., dependency limits); otherwise provides a generic honest fallback.
+    ///
+    /// - Parameters:
+    ///   - name: The package name.
+    ///   - output: The stdout payload from pip.
+    /// - Returns: A human-readable diagnostic string.
     private func heldBackReason(for name: String, output: String) -> String {
         let needle = name.lowercased()
         if let line = output
@@ -381,6 +473,16 @@ final class OutdatedPIPViewModel: ObservableObject, OutdatedUpdating {
         return "A newer version exists but isn't installable on this Python (dependency constraint or Requires-Python)."
     }
 
+    /// Verifies if a package successfully dropped off the `pip list --outdated` array post-upgrade.
+    ///
+    /// **Gotchas:**
+    /// - Forces a 500ms delay to allow pip to stabilize its internal `.dist-info` structures.
+    /// - Fail-closed: If the verification command crashes, we assume the upgrade failed.
+    ///
+    /// - Parameters:
+    ///   - name: The package name.
+    ///   - pythonPath: The absolute path to the Python environment.
+    /// - Returns: `true` if the package is **NO LONGER** outdated.
     private func verifyUpdate(_ name: String, pythonPath: String?) async -> Bool {
         logger.log("🔍 Verifying update for \(name)...")
         
@@ -398,6 +500,7 @@ final class OutdatedPIPViewModel: ObservableObject, OutdatedUpdating {
         do {
             let result = try await AsyncProcessRunner.shared.run(command: command)
             
+            /// A minimal package definition used for internal PyPI resolution lookups.
             struct PipPackage: Codable {
                 let name: String
             }
@@ -425,9 +528,10 @@ final class OutdatedPIPViewModel: ObservableObject, OutdatedUpdating {
         }
     }
 
-    /// Run an upgrade command, returning success plus the combined output so the
-    /// caller can classify the outcome (upgraded / held back / failed). Network
-    /// connectivity is checked by the caller.
+    /// Runs an upgrade command, capturing and logging output.
+    ///
+    /// - Parameter command: The pip execution string.
+    /// - Returns: A tuple containing the exit status and the raw output stream.
     private func runUpgradeCapturing(_ command: String) async -> (ok: Bool, output: String) {
         do {
             let result = try await AsyncProcessRunner.shared.run(command: command)
@@ -441,8 +545,10 @@ final class OutdatedPIPViewModel: ObservableObject, OutdatedUpdating {
         }
     }
     
-    /// Reset all cached state so the view re-evaluates from scratch.
-    /// Called by `fullRefresh()` after install/uninstall.
+    /// Resets all cached state so the view re-evaluates from scratch.
+    ///
+    /// **Rationale:**
+    /// Called by `fullRefresh()` or global actions after a package install/uninstall forces the state out of sync.
     func reset() async {
         hasScannedOnce = false
         outdatedPackages = []

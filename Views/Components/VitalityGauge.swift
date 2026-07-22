@@ -1,5 +1,9 @@
 import SwiftUI
-
+/// A circular gauge representing an overall vitality score out of 100.
+///
+/// ```swift
+/// VitalityGauge(score: 95)
+/// ```
 struct VitalityGauge: View {
     let score: Int
     

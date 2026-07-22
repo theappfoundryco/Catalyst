@@ -2,6 +2,18 @@ import Foundation
 import SwiftUI
 import Combine
 
+/// A view model representing the "Install Packages" screen for Homebrew formulae and casks.
+///
+/// Unlike `BrewFormulaeCaskViewModel` (which powers the "Installed" tabs), this VM is dedicated
+/// to catalog browsing, searching Cloudflare JSON payloads, and executing new installations.
+///
+/// **Gotchas:**
+/// - `installationOutput` uses a direct `ConsoleOutput` binding, bypassing Swift UI throttling.
+///   This ensures log parsing (like checking for "it's just not linked") works perfectly without missed text.
+///
+/// ```swift
+/// await vm.install(package: "wget", type: .formulae)
+/// ```
 @MainActor
 final class FormulaeCaskInstallViewModel: ObservableObject {
     // Formulae State
@@ -40,21 +52,30 @@ final class FormulaeCaskInstallViewModel: ObservableObject {
     private let formulaeURL = NetworkConfig.APIEndpoint.brewFormulaeURL
     private let casksURL = NetworkConfig.APIEndpoint.brewCasksURL
     
+    /// Defines an installable Homebrew formula or cask candidate mapped to the core tap.
     struct PackageItem: Codable {
         let name: String
         let fetched_at: String
     }
     
+    /// Initializes ``FormulaeCaskInstallViewModel`` with injected services.
+    ///
+    /// - Parameters:
+    ///   - brewService: Controls Homebrew operations.
+    ///   - logger: Reusable terminal output stream.
     init(brewService: BrewService, logger: Logger) {
         self.brewService = brewService
         self.logger = logger
     }
     
+    /// Evaluates if Homebrew is present before attempting to list/install.
+    /// Synchronously caches the boolean from ``BrewPathManager``.
     func checkPrerequisites() async {
         isBrewInstalled = BrewPathManager.shared.isInstalled
         logger.log("Prerequisites: Brew=\(isBrewInstalled)")
     }
     
+    /// Completely resets search state and re-fetches the catalog from Cloudflare JSON endpoints.
     func reset() async {
         searchQuery = ""
         formulaeSearchResults = []
@@ -67,6 +88,11 @@ final class FormulaeCaskInstallViewModel: ObservableObject {
     
     // MARK: - Data Loading
     
+    /// Dispatches parallel loading tasks to pull the JSON catalogs and the local installed lists.
+    ///
+    /// **Flow:**
+    /// 1. Verifies prerequisites.
+    /// 2. Executes 4 tasks inside a `TaskGroup` to fetch local arrays and network JSON simultaneously.
     func loadAllData() async {
         await checkPrerequisites()
         
@@ -79,6 +105,10 @@ final class FormulaeCaskInstallViewModel: ObservableObject {
         }
     }
     
+    /// Pulls the Homebrew formulae catalog from the backend API.
+    ///
+    /// **Gotchas:**
+    /// - Bails instantly if `allFormulae` is populated to avoid redundant network hits during tab switching.
     func loadFormulae() async {
         guard allFormulae.isEmpty else { return } // Avoid reloading if already loaded
         logger.log("📥 Loading Homebrew formulae list...")
@@ -94,6 +124,10 @@ final class FormulaeCaskInstallViewModel: ObservableObject {
         }
     }
     
+    /// Pulls the Homebrew casks catalog from the backend API.
+    ///
+    /// **Gotchas:**
+    /// - Follows the exact same caching strategy as ``loadFormulae()``.
     func loadCasks() async {
         guard allCasks.isEmpty else { return } // Avoid reloading if already loaded
         logger.log("📥 Loading Homebrew casks list...")
@@ -109,6 +143,8 @@ final class FormulaeCaskInstallViewModel: ObservableObject {
         }
     }
     
+    /// Runs `brew list --formula` to get the true current state of local formulae.
+    /// Parses stdout and normalizes elements to lowercase to build the ``installedFormulae`` set.
     func loadInstalledFormulae() async {
         let brewPath = InputSanitizer.singleQuote(BrewPathManager.shared.brewPath)
         let command = "\(brewPath) list --formula"
@@ -125,6 +161,8 @@ final class FormulaeCaskInstallViewModel: ObservableObject {
         }
     }
     
+    /// Runs `brew list --cask` to get the true current state of local casks.
+    /// Mirrors ``loadInstalledFormulae()``.
     func loadInstalledCasks() async {
         let brewPath = InputSanitizer.singleQuote(BrewPathManager.shared.brewPath)
         let command = "\(brewPath) list --cask"
@@ -143,6 +181,13 @@ final class FormulaeCaskInstallViewModel: ObservableObject {
     
     // MARK: - Search
     
+    /// Filters both the formulae and cask caches using `searchQuery`.
+    ///
+    /// **Rationale:**
+    /// Searches both arrays simultaneously even if the user is only on one tab. This ensures that switching tabs
+    /// feels instantaneous without triggering a re-search.
+    ///
+    /// - Parameter type: The active tab.
     func search(type: FormulaeCaskInstallView.InstallType) {
         guard !searchQuery.isEmpty else {
             formulaeSearchResults = []
@@ -179,6 +224,18 @@ final class FormulaeCaskInstallViewModel: ObservableObject {
     
     // MARK: - Installation
     
+    /// Executes a streaming `brew install` for a given package and type.
+    ///
+    /// **Flow:**
+    /// 1. Sanitizes inputs.
+    /// 2. Initiates ``AsyncProcessRunner/runWithStreaming`` to capture chunks directly to ``installationOutput``.
+    /// 3. Checks standard output text for Homebrew's famous "it's just not linked" warning.
+    /// 4. If found, automatically appends and runs `brew link`.
+    /// 5. Refreshes the local installed lists upon completion.
+    ///
+    /// - Parameters:
+    ///   - package: The desired target name.
+    ///   - type: Formula or Cask.
     func install(package: String, type: FormulaeCaskInstallView.InstallType) async {
         installError = nil
 
@@ -260,6 +317,7 @@ final class FormulaeCaskInstallViewModel: ObservableObject {
         installingPackage = nil
     }
     
+    /// Clears the streaming console output view string.
     func clearOutput() {
         installationOutput = ""
     }

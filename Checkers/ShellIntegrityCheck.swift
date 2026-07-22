@@ -9,6 +9,10 @@ struct ShellIntegrityCheck: Doctor {
     
     /// Inspects the primary zsh configuration for presence of the Catalyst hooks and valid syntax.
     ///
+    /// **Flow:**
+    /// 1. Reads the primary `.zshrc` verifying `.zshrc_catalyst` integration hooks.
+    /// 2. Executes a dry-run syntax check utilizing `zsh -n ~/.zshrc`.
+    ///
     /// - Returns: An array of `HealthIssue` denoting syntax errors or missing configurations.
     func run() async -> [HealthIssue] {
         var issues: [HealthIssue] = []
@@ -61,6 +65,9 @@ struct ShellIntegrityCheck: Doctor {
     }
     
     /// Resolves shell integrity issues by injecting required Catalyst configurations.
+    ///
+    /// **Gotchas:**
+    /// Re-sourcing the config does not clear syntax errors; it only remedies missing configuration injections. Syntax errors require user file editing.
     ///
     /// - Parameter issue: The shell configuration failure.
     /// - Returns: A boolean tracking if the `.zshrc` hook injection succeeded.

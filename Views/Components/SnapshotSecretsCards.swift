@@ -1,23 +1,16 @@
-//
-//  SnapshotSecretsCards.swift
-//  Catalyst
-//
-//  The surfaces that front the encrypted-secrets flow in Snapshot & Migrate:
-//  `SnapshotSecretsCaptureSheet` (asked at capture time), `SnapshotSecretsUnlockCard`
-//  (Migrate, with Validate), and `SnapshotSecretsPendingCard` +
-//  `SnapshotSecretsUnlockSheet` (the standalone "I remembered it later" path).
-//
-//  They live here rather than inline in `SnapshotView` for the same reason the
-//  Dashboard/Cruft cards do: `SnapshotView` is already a long file of flow logic,
-//  and these two are pure presentation over a couple of bindings. Both are driven
-//  entirely by `@Binding`, so they hold no state of their own and never touch the
-//  view model — the passphrase string is owned by `SnapshotViewModel` and cleared
-//  there the moment it's been used.
-//
-//  Both reuse the app's shared building blocks (`CompactInputField`, `cardStyle()`,
-//  `SectionDivider`) so they match every other input surface in Catalyst instead of
-//  introducing a second, bespoke text-field look.
-//
+/// The surfaces that front the encrypted-secrets flow in Snapshot & Migrate:
+/// `SnapshotSecretsCaptureSheet` (asked at capture time), `SnapshotSecretsUnlockCard`
+/// (Migrate, with Validate), and `SnapshotSecretsPendingCard` +
+/// `SnapshotSecretsUnlockSheet` (the standalone "I remembered it later" path).
+/// They live here rather than inline in `SnapshotView` for the same reason the
+/// Dashboard/Cruft cards do: `SnapshotView` is already a long file of flow logic,
+/// and these two are pure presentation over a couple of bindings. Both are driven
+/// entirely by `@Binding`, so they hold no state of their own and never touch the
+/// view model — the passphrase string is owned by `SnapshotViewModel` and cleared
+/// there the moment it's been used.
+/// Both reuse the app's shared building blocks (`CompactInputField`, `cardStyle()`,
+/// `SectionDivider`) so they match every other input surface in Catalyst instead of
+/// introducing a second, bespoke text-field look.
 
 import SwiftUI
 
@@ -133,6 +126,10 @@ struct SecretsPassphraseField: View {
 /// Asked at the moment Capture is clicked. Encryption is opt-in by *typing a
 /// passphrase* — there's no separate toggle to forget, and the "capture without"
 /// path is always one click away.
+///
+/// ```swift
+/// SnapshotSecretsCaptureSheet(passphrase: $passphrase) { capture() } onCancel: { cancel() }
+/// ```
 struct SnapshotSecretsCaptureSheet: View {
     @Binding var passphrase: String
     var isWorking: Bool = false
@@ -187,6 +184,10 @@ struct SnapshotSecretsCaptureSheet: View {
 /// Framed as optional throughout: a blank or wrong passphrase marks that single
 /// row "skipped" and leaves every other step of the restore untouched — and the
 /// placeholders stay in `~/.zshrc`, so it can be applied later.
+///
+/// ```swift
+/// SnapshotSecretsUnlockCard(count: 3, passphrase: $passphrase) { validate() }
+/// ```
 struct SnapshotSecretsUnlockCard: View {
     let count: Int
     @Binding var passphrase: String
@@ -225,6 +226,10 @@ struct SnapshotSecretsUnlockCard: View {
 /// This exists so the app finds the user rather than the reverse: nobody should
 /// have to remember that they skipped a passphrase three days ago, and nobody
 /// should have to redo the whole Migrate journey to act on it.
+///
+/// ```swift
+/// SnapshotSecretsPendingCard(count: 3) { unlock() }
+/// ```
 struct SnapshotSecretsPendingCard: View {
     let count: Int
     var disabled: Bool = false
@@ -253,6 +258,10 @@ struct SnapshotSecretsPendingCard: View {
 
 /// The standalone unlock sheet: pick a snapshot, validate, apply. No import, no
 /// diff, no restore — this path touches only placeholder lines in `~/.zshrc`.
+///
+/// ```swift
+/// SnapshotSecretsUnlockSheet(count: 3, passphrase: $passphrase, onValidate: { validate() }, onApply: { apply() }, onCancel: { cancel() })
+/// ```
 struct SnapshotSecretsUnlockSheet: View {
     let count: Int
     @Binding var passphrase: String

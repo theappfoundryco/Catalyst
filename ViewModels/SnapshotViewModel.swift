@@ -1,11 +1,8 @@
-//
-//  SnapshotViewModel.swift
-//  Catalyst
-//
-//  Drives the CatalystSnapshot screen: capture → preview → export, and
-//  import → diff → (dry-run) → restore. Keeps streaming output isolated in a
-//  `ConsoleOutput` (Formrules 3.7) so restore chatter re-renders only the console.
-//
+/// /
+/// Drives the CatalystSnapshot screen: capture → preview → export, and
+/// import → diff → (dry-run) → restore. Keeps streaming output isolated in a
+/// `ConsoleOutput` (CODING_STANDARDS 3.7) so restore chatter re-renders only the console.
+/// /
 
 import SwiftUI
 import AppKit
@@ -40,6 +37,7 @@ struct PrerequisiteInstaller {
 private final class SnapshotLogForwarder {
     private var buffer = ""
 
+    /// Relays standard output stream chunks directly into the UI state property.
     func forward(_ chunk: String) {
         buffer += chunk
         while let nl = buffer.firstIndex(of: "\n") {
@@ -59,6 +57,7 @@ private final class SnapshotLogForwarder {
     }
 }
 
+/// Differentiates between missing system dependencies required for snapshot capture versus restoration.
 enum PrereqKind: Equatable {
     case commandLineTools, homebrew, python(String)
 }
@@ -77,11 +76,25 @@ struct MissingPrereq: Identifiable, Equatable {
     }
 }
 
+/// Drives the CatalystSnapshot screen: capture → preview → export, and
+/// import → diff → (dry-run) → restore. Keeps streaming output isolated in a
+/// `ConsoleOutput` (CODING_STANDARDS 3.7) so restore chatter re-renders only the console.
+///
+/// **Caveats:**
+/// - `actionIndex` is rebuilt lazily when the set of actions changes to avoid linear scans
+///   during the intense sub-status updates from `SnapshotRestoreService`.
+///
+/// ```swift
+/// @StateObject var vm = SnapshotViewModel()
+/// await vm.importSnapshot()
+/// ```
 @MainActor
 final class SnapshotViewModel: ObservableObject {
 
     // Busy / phase
+    /// True while any long-running operation (capture, diff, restore) blocks the UI.
     @Published var isWorking = false
+    /// The user-facing label for the current blocking operation.
     @Published var workingLabel = ""
     /// True only while reading + diffing an imported snapshot. Selects the import
     /// artwork/label on the full-window working view (capture uses the camera one),
@@ -90,7 +103,9 @@ final class SnapshotViewModel: ObservableObject {
     @Published var isImporting = false
 
     // Capture → export
+    /// The successfully captured snapshot held in memory, ready for export.
     @Published var capturedSnapshot: CatalystSnapshot?
+    /// The file URL where the snapshot was last saved (used for reveal-in-finder UI).
     @Published var lastExportURL: URL?
 
     /// Passphrase for sealing API secrets into a capture. Held in memory only — never
@@ -100,12 +115,19 @@ final class SnapshotViewModel: ObservableObject {
     /// Asked for in a sheet at the moment Capture is clicked, rather than a card on
     /// the landing page — that card was easy to scroll past, so people captured
     /// without ever noticing the option existed.
+    /// Asked for in a sheet at the moment Capture is clicked, rather than a card on
+    /// the landing page — that card was easy to scroll past, so people captured
+    /// without ever noticing the option existed.
     @Published var capturePassphrase = ""
+    /// Toggles the pre-capture encryption prompt.
     @Published var isShowingCaptureSheet = false
 
     // Import → restore
+    /// The snapshot decoded from disk, acting as the baseline for the diff.
     @Published var loadedSnapshot: CatalystSnapshot?
+    /// The computed list of executable migration steps.
     @Published var actions: [RestoreAction] = [] { didSet { rebuildActionIndex() } }
+    /// The post-mortem counts of succeeded, failed, or skipped tasks.
     @Published var summary: RestoreSummary?
 
     /// Passphrase supplied at restore time to open a snapshot's sealed secrets.
@@ -150,6 +172,7 @@ final class SnapshotViewModel: ObservableObject {
     /// (progress + per-item results). Flipped by `runRestore`; reset by `backToPreview`.
     @Published var isShowingStatus = false
 
+    /// Fatal errors encountered at the top level of capture or import.
     @Published var errorMessage: String?
 
     /// Accent for the full-screen working view — green while capturing/exporting,
@@ -201,15 +224,18 @@ final class SnapshotViewModel: ObservableObject {
 
     private static let terminalStates: Set<RestoreStatus> = [.succeeded, .failed, .partial, .skipped]
 
-    /// Index lookup with a self-healing fallback: a re-plan can produce a
-    /// same-length array of entirely new ids, so a cached hit is verified before
-    /// use and the map is rebuilt if it's gone stale.
+    /// Index lookup with a self-healing fallback.
+    ///
+    /// **Rationale:**
+    /// A re-plan can produce a same-length array of entirely new ids, so a cached hit is verified
+    /// before use and the map is rebuilt if it's gone stale.
     private func index(of id: UUID) -> Int? {
         if let i = actionIndex[id], i < actions.count, actions[i].id == id { return i }
         actionIndex = Dictionary(uniqueKeysWithValues: actions.enumerated().map { ($0.element.id, $0.offset) })
         return actionIndex[id]
     }
 
+    /// Lazily re-calculates subset counts to prevent O(n) SwiftUI stutter.
     private func rebuildActionIndex() {
         if actionIndex.count != actions.count { actionIndex.removeAll(keepingCapacity: true) }
         var actionable = 0, satisfied = 0, blocked = 0, total = 0, done = 0
@@ -238,14 +264,23 @@ final class SnapshotViewModel: ObservableObject {
 
     // MARK: - Capture
 
-    /// Ask about encryption first — the sheet is the one moment the choice is
-    /// unmissable and still actionable.
+    /// Invokes the encryption prompt sheet prior to initiating the snapshot capture.
+    ///
+    /// **Rationale:**
+    /// Ask about encryption first — the sheet is the one moment the choice is unmissable and still actionable.
     func beginCapture() {
         guard !isWorking else { return }
         capturePassphrase = ""
         isShowingCaptureSheet = true
     }
 
+    /// Executes the live snapshot capture using the ``SnapshotCaptureService``.
+    ///
+    /// **Flow:**
+    /// 1. Drops memory caches.
+    /// 2. Binds the UI to `.green`.
+    /// 3. Sweeps all tracked data points via `capture.capture()`.
+    /// 4. Explicitly drops the `capturePassphrase` string from memory.
     func captureThisMac() async {
         guard !isWorking else { return }
         isShowingCaptureSheet = false
@@ -264,6 +299,7 @@ final class SnapshotViewModel: ObservableObject {
                    category: .terminal)
     }
 
+    /// Serializes the ``capturedSnapshot`` out to an arbitrary file system location (`NSSavePanel`).
     func export() async {
         guard let snapshot = capturedSnapshot else { return }
         let panel = NSSavePanel()
@@ -297,6 +333,7 @@ final class SnapshotViewModel: ObservableObject {
         }
     }
 
+    /// Explicitly dumps the captured payload and its optional passphrase.
     func discardCapture() {
         capturedSnapshot = nil; lastExportURL = nil
         capturePassphrase = ""
@@ -304,6 +341,13 @@ final class SnapshotViewModel: ObservableObject {
 
     // MARK: - Import / plan
 
+    /// Pulls a `.catalystsnapshot` archive from disk using `NSOpenPanel`.
+    ///
+    /// **Flow:**
+    /// 1. Enforces `.catalystsnapshot` UTI typing.
+    /// 2. Binds UI to `.blue`.
+    /// 3. Reads JSON using ``SnapshotArchiver/read(from:)``.
+    /// 4. Dispatches the heavy lifting to ``SnapshotDiffer`` to generate actionable restore tasks.
     func importSnapshot() async {
         guard !isWorking else { return }
         let panel = NSOpenPanel()
@@ -337,6 +381,7 @@ final class SnapshotViewModel: ObservableObject {
         }
     }
 
+    /// Explicitly zeroes all imported diff state.
     func discardPlan() {
         loadedSnapshot = nil; actions = []; summary = nil; console.clear()
         isShowingStatus = false; missingPrereqs = []
@@ -350,6 +395,9 @@ final class SnapshotViewModel: ObservableObject {
     // MARK: - Encrypted secrets
 
     /// Check the Migrate passphrase without restoring anything.
+    ///
+    /// **Rationale:**
+    /// Validates AES-GCM tags in-memory so the user finds out BEFORE running a restore.
     func validateRestorePassphrase() async {
         guard let sealed = loadedSnapshot?.secrets, !restorePassphrase.isEmpty else {
             secretsValidation = .idle
@@ -363,9 +411,11 @@ final class SnapshotViewModel: ObservableObject {
         secretsValidation = count.map { .valid($0) } ?? .invalid
     }
 
-    /// Re-apply secrets for the currently loaded snapshot without re-running the
-    /// restore. Used by the Apply button that stays available after a run — the
-    /// step is idempotent and touches nothing but placeholder lines.
+    /// Re-apply secrets for the currently loaded snapshot without re-running the restore.
+    ///
+    /// **Rationale:**
+    /// Used by the Apply button that stays available after a run — the step is idempotent and touches
+    /// nothing but placeholder lines.
     func applySecretsNow() async {
         guard let sealed = loadedSnapshot?.secrets, !isWorking else { return }
         beginWork("Applying secrets…")
@@ -383,9 +433,11 @@ final class SnapshotViewModel: ObservableObject {
 
     // MARK: Standalone unlock (no import, no diff, no restore)
 
-    /// Open a snapshot purely to unlock its secrets. This is the escape hatch for
-    /// "I skipped the passphrase and later remembered it" — it costs three clicks
-    /// instead of a second trip through the whole Migrate journey.
+    /// Open a snapshot purely to unlock its secrets.
+    ///
+    /// **Rationale:**
+    /// This is the escape hatch for "I skipped the passphrase and later remembered it" —
+    /// it costs three clicks instead of a second trip through the whole Migrate journey.
     func beginStandaloneUnlock() async {
         guard !isWorking else { return }
         let panel = NSOpenPanel()
@@ -416,6 +468,7 @@ final class SnapshotViewModel: ObservableObject {
         }
     }
 
+    /// Synchronously spins up PBKDF2 to check if the `unlockPassphrase` succeeds for the standalone flow.
     func validateUnlockPassphrase() async {
         guard let sealed = unlockSnapshot?.secrets, !unlockPassphrase.isEmpty else {
             unlockValidation = .idle
@@ -427,6 +480,7 @@ final class SnapshotViewModel: ObservableObject {
         unlockValidation = count.map { .valid($0) } ?? .invalid
     }
 
+    /// Pushes the standalone `unlockSnapshot` sealed payload to ``SnapshotSecretsService/apply``.
     func applyStandaloneUnlock() async {
         guard let sealed = unlockSnapshot?.secrets, !isWorking else { return }
         beginWork("Applying secrets…")
@@ -442,6 +496,7 @@ final class SnapshotViewModel: ObservableObject {
         }
     }
 
+    /// Exits the standalone sheet and clears memory.
     func dismissUnlockSheet() {
         isShowingUnlockSheet = false
         unlockSnapshot = nil
@@ -449,15 +504,16 @@ final class SnapshotViewModel: ObservableObject {
         unlockValidation = .idle
     }
 
-    /// Return from the Status screen to the Preview screen (keeps per-item results
-    /// so a re-run picks up where it left off).
+    /// Return from the Status screen to the Preview screen (keeps per-item results).
     func backToPreview() { isShowingStatus = false }
 
     // MARK: - Prerequisites (Migrate resolves a fresh Mac itself)
 
     /// Recompute which prerequisites this Mac is missing for the loaded snapshot.
-    /// Reuses the same live checks the diff/restore use (`SnapshotUtil`,
-    /// `BrewPathManager`, `LocalEnvironment`), so the list stays truthful.
+    ///
+    /// **Rationale:**
+    /// Reuses the same live checks the diff/restore use (`SnapshotUtil`, `BrewPathManager`, `LocalEnvironment`),
+    /// so the list stays truthful to the runtime state.
     func refreshMissingPrereqs() async {
         guard let snap = loadedSnapshot else { missingPrereqs = []; return }
         var out: [MissingPrereq] = []
@@ -487,13 +543,13 @@ final class SnapshotViewModel: ObservableObject {
         missingPrereqs = out
     }
 
-    /// One-click bootstrap: install everything the snapshot needs, in dependency
-    /// order (Homebrew → Python; CLT last and only if Homebrew's installer didn't
-    /// already bring it), then re-plan so blocked items become runnable.
+    /// One-click bootstrap: installs everything the snapshot needs in dependency order.
     ///
-    /// Homebrew and Python are awaited to completion; Command Line Tools hands off to
-    /// Apple's own installer dialog, so its items unblock once the user finishes that
-    /// and re-imports/re-runs.
+    /// **Flow:**
+    /// 1. Homebrew → Python.
+    /// 2. CLT (Command Line Tools) last, but hands off to the OS dialog.
+    /// 3. Defers execution to the global ``PrerequisiteInstaller`` injected from `AppViewModel`.
+    /// 4. Re-plans against the updated Mac (via `refreshMissingPrereqs`).
     func installPrerequisites() async {
         guard !isWorking, let installer = prerequisiteInstaller, let snap = loadedSnapshot else { return }
         workingTint = .blue
@@ -532,17 +588,26 @@ final class SnapshotViewModel: ObservableObject {
 
     // MARK: - Selection
 
+    /// Selects or deselects an individual action, toggling its inclusion in the active Migrate run.
     func setSelected(_ id: UUID, _ value: Bool) {
         guard let i = index(of: id), actions[i].selected != value else { return }
         actions[i].selected = value
     }
 
+    /// Bulk modifies the selection boolean for an entire logical group (e.g. `pip` or `brew`).
     func setSection(_ kind: SnapshotSectionKind, selected: Bool) {
         for i in actions.indices where actions[i].kind == kind { actions[i].selected = selected }
     }
 
     // MARK: - Apply
 
+    /// Triggers the full idempotent restore pipeline.
+    ///
+    /// **Flow:**
+    /// 1. Clears prior summary metadata and flips `isShowingStatus = true`.
+    /// 2. Throttles status chatter (`lastProgressPublish`) to prevent `SwiftUI` runloop stutter when 500 packages emit logs.
+    /// 3. Bridges down to ``SnapshotRestoreService/apply()``.
+    /// 4. Synchronously flushes `logStream` remaining buffers.
     func runRestore() async {
         guard !isWorking, loadedSnapshot != nil else { return }
         cancelRequested = false
@@ -592,17 +657,21 @@ final class SnapshotViewModel: ObservableObject {
                    category: .terminal)
     }
 
+    /// Signals the active restore operation to cleanly exit before pulling its next task.
     func cancel() { cancelRequested = true }
 
     // MARK: - Helpers
 
     private func beginWork(_ label: String) { isWorking = true; workingLabel = label; errorMessage = nil }
+    /// Terminates the active loading state and clears the progress indicator.
     private func endWork() { isWorking = false; workingLabel = "" }
+    /// Erases all currently recorded snapshot metadata and environment traces from memory.
     private func clearAll() {
         capturedSnapshot = nil; lastExportURL = nil
         loadedSnapshot = nil; actions = []; summary = nil; missingPrereqs = []
     }
 
+    /// Generates a standardized timestamped filename for local snapshot exports.
     private func defaultFileName() -> String {
         let df = DateFormatter()
         df.dateFormat = "yyyy-MM-dd"

@@ -62,6 +62,11 @@ struct NetworkDiagnosticsReport: Sendable {
 /// Runs lightweight, read-only network probes (reachability, DNS, listening
 /// sockets, default-route interface) by shelling out to standard macOS tools
 /// via the safe array-args exec path. No privileges required.
+///
+/// ```swift
+/// let report = await NetworkDiagnosticsService.shared.runDiagnostics()
+/// print(report.internetPing.reachable ? "Online" : "Offline")
+/// ```
 final class NetworkDiagnosticsService: Sendable {
 
     static let shared = NetworkDiagnosticsService()
@@ -69,7 +74,9 @@ final class NetworkDiagnosticsService: Sendable {
 
     private let runner = AsyncProcessRunner.shared
 
-    // Standard absolute tool paths (avoid PATH ambiguity).
+    /// Standard absolute tool paths (avoid PATH ambiguity).
+    ///
+    /// **Rationale:** Prevents malicious user-space overrides (e.g. `~/bin/ping`) from intercepting privileged diagnostic execution contexts.
     private let pingPath = "/sbin/ping"
     private let digPath = "/usr/bin/dig"
     private let scutilPath = "/usr/sbin/scutil"
@@ -78,9 +85,15 @@ final class NetworkDiagnosticsService: Sendable {
     private let ipconfigPath = "/usr/sbin/ipconfig"
 
     /// Runs all probes concurrently and assembles a full report.
+    ///
+    /// **Flow:**
+    /// 1. Concurrently evaluates route, remote ping, DNS resolution, and TCP listening ports.
+    /// 2. If a local gateway is found, initiates a secondary ping specifically for the router.
+    ///
     /// - Parameters:
     ///   - pingHost: reachability target (default a public anycast resolver).
     ///   - dnsHost: hostname to resolve.
+    /// - Returns: An aggregated `NetworkDiagnosticsReport`.
     func runDiagnostics(pingHost: String = "1.1.1.1", dnsHost: String = "github.com") async -> NetworkDiagnosticsReport {
         async let iface = interfaceInfo()
         async let net = ping(host: pingHost)
@@ -88,7 +101,9 @@ final class NetworkDiagnosticsService: Sendable {
         async let ports = listeningPorts()
 
         let interfaceInfo = await iface
-        // Ping the gateway too (LAN health) once we know it.
+        /// Ping the gateway too (LAN health) once we know it.
+        ///
+        /// **Gotchas:** Omitting the gateway probe makes it impossible to distinguish between a severed ISP cable and a dead local Wi-Fi router.
         let gatewayPing: PingResult?
         if let gw = interfaceInfo?.gateway, !gw.isEmpty, gw != "—" {
             gatewayPing = await ping(host: gw)
@@ -108,9 +123,15 @@ final class NetworkDiagnosticsService: Sendable {
 
     // MARK: - Ping
 
+    /// Executes a standard `/sbin/ping` probe capped at 3 requests with a strict 5-second deadline.
+    ///
+    /// - Parameter host: The target domain or IP address.
+    /// - Returns: A parsed ``PingResult`` structure.
     func ping(host: String) async -> PingResult {
         do {
-            // -c 3 probes, -t 5s deadline, -q quiet (summary only).
+            /// -c 3 probes, -t 5s deadline, -q quiet (summary only).
+            ///
+            /// **Rationale:** Enforces strict termination to prevent hanging network threads indefinitely if the routing table is blackholing traffic.
             let result = try await runner.run(
                 executable: pingPath,
                 arguments: ["-c", "3", "-t", "5", "-q", host],
@@ -126,7 +147,9 @@ final class NetworkDiagnosticsService: Sendable {
             }
 
             var avg: Double? = nil
-            // "round-trip min/avg/max/stddev = 12.3/13.4/14.5/0.8 ms"
+            /// "round-trip min/avg/max/stddev = 12.3/13.4/14.5/0.8 ms"
+            ///
+            /// **Gotchas:** Apple's `ping` implementation localizes decimal separators; attempting to parse comma-based European floating points with `Double()` crashes unless sanitized.
             if let eq = out.range(of: "= ", options: .backwards),
                let msRange = out.range(of: " ms") {
                 let stats = out[eq.upperBound..<msRange.lowerBound]
@@ -143,6 +166,10 @@ final class NetworkDiagnosticsService: Sendable {
 
     // MARK: - DNS
 
+    /// Submits a DNS query using `/usr/bin/dig` to measure lookup times and discover nameservers.
+    ///
+    /// - Parameter host: The domain to resolve (e.g. `github.com`).
+    /// - Returns: The extracted resolution metadata as a ``DNSResult``.
     func resolveDNS(host: String) async -> DNSResult {
         let servers = await dnsServers()
         let start = Date()
@@ -164,6 +191,8 @@ final class NetworkDiagnosticsService: Sendable {
         }
     }
 
+    /// Resolves the active DNS configuration assigned by the host OS.
+    /// - Returns: The active list of DNS servers mapped in system configurations.
     private func dnsServers() async -> [String] {
         do {
             let result = try await runner.run(
@@ -172,7 +201,9 @@ final class NetworkDiagnosticsService: Sendable {
             var servers: [String] = []
             for line in result.stdout.components(separatedBy: .newlines) {
                 let trimmed = line.trimmingCharacters(in: .whitespaces)
-                // "nameserver[0] : 1.1.1.1"
+                /// "nameserver[0] : 1.1.1.1"
+                ///
+                /// **Rationale:** Scutil bypasses traditional `/etc/resolv.conf` mappings, directly querying macOS's dynamic DNS resolver cache for truth.
                 if trimmed.hasPrefix("nameserver["), let colon = trimmed.lastIndex(of: ":") {
                     let value = trimmed[trimmed.index(after: colon)...].trimmingCharacters(in: .whitespaces)
                     if looksLikeIP(value) && !servers.contains(value) { servers.append(value) }
@@ -184,17 +215,27 @@ final class NetworkDiagnosticsService: Sendable {
         }
     }
 
+    /// Validates if a given string matches standard IPv4 or IPv6 formatting.
+    /// - Parameter s: The candidate raw string payload.
+    /// - Returns: True if structural syntax matches IPv4 or IPv6 conventions.
     private func looksLikeIP(_ s: String) -> Bool {
         guard !s.isEmpty else { return false }
-        // IPv4
+        /// IPv4
+        ///
+        /// **Gotchas:** IPv4 default routes may intermittently disappear while the interface negotiates DHCP renewals.
         if s.range(of: #"^\d{1,3}(\.\d{1,3}){3}$"#, options: .regularExpression) != nil { return true }
-        // IPv6 (loose)
+        /// IPv6 (loose)
+        ///
+        /// **Rationale:** Corporate VPNs often intentionally blackhole IPv6 traffic; failing gracefully here prevents false positive "offline" warnings.
         if s.contains(":") && s.range(of: #"^[0-9a-fA-F:]+$"#, options: .regularExpression) != nil { return true }
         return false
     }
 
     // MARK: - Listening ports
 
+    /// Polls `/usr/sbin/lsof` to discover TCP sockets actively configured in a `LISTEN` state.
+    ///
+    /// - Returns: Deduplicated, ordered list of ``ListeningPort`` records.
     func listeningPorts() async -> [ListeningPort] {
         do {
             let result = try await runner.run(
@@ -210,7 +251,9 @@ final class NetworkDiagnosticsService: Sendable {
                 guard fields.count >= 5, let pid = Int(fields[1]) else { continue }
                 let process = fields[0]
                 let proto = fields[4]  // IPv4 / IPv6
-                // Port: token before "(LISTEN)", e.g. "*:3000" or "127.0.0.1:8080" or "[::1]:631".
+                /// Port: token before "(LISTEN)", e.g. "*:3000" or "127.0.0.1:8080" or "[::1]:631".
+                ///
+                /// **Gotchas:** IPv6 socket representations aggressively embed colons inside brackets; splitting natively on `:` breaks parsing.
                 guard let portToken = fields.first(where: { $0.contains(":") && $0.last != ")" }) ?? fields.dropLast().last,
                       let portStr = portToken.split(separator: ":").last,
                       let port = Int(portStr) else { continue }
@@ -227,6 +270,9 @@ final class NetworkDiagnosticsService: Sendable {
 
     // MARK: - Interface / gateway
 
+    /// Identifies the default route and its bound IPv4 interface using `/sbin/route` and `ipconfig`.
+    ///
+    /// - Returns: An optional ``NetworkInterfaceInfo`` populated with the gateway mapping.
     func interfaceInfo() async -> NetworkInterfaceInfo? {
         do {
             let route = try await runner.run(

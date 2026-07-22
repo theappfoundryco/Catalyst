@@ -119,6 +119,7 @@ struct DriveInfo: Codable, Sendable {
         return masked + visible
     }
 
+    /// Standardized JSON mapping keys for SMART controller data.
     enum CodingKeys: String, CodingKey {
         case modelNumber, serialNumber, firmwareVersion, nvmeVersion
         case numberOfNamespaces, maxDataTransferSize, pciVendorID

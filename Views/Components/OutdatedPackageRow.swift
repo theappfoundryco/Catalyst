@@ -1,12 +1,10 @@
-//
-//  OutdatedPackageRow.swift
-//  Catalyst
-//
-//  Created by Shivang Gulati on 14/02/26.
-//
 import SwiftUI
 import Foundation
-
+/// A row displaying an outdated package with its current and new versions, and an update action.
+///
+/// ```swift
+/// OutdatedPackageRow(package: pkg, isAlternate: false, isUpdating: false, isFailed: false, onUpdate: { print("Updating") })
+/// ```
 struct OutdatedPackageRow: View, Equatable {
     let package: OutdatedPackage
     let isAlternate: Bool

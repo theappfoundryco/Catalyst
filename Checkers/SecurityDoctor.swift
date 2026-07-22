@@ -9,13 +9,22 @@ struct SecurityDoctor: Doctor {
 
     /// Executes core security checks across the shell environment and SSH configurations.
     ///
+    /// **Flow:**
+    /// 1. Greps `~/.bash_history` and `~/.zsh_history` for AWS signatures (`AKIA...`), Stripe keys (`sk_live...`), and RSA private headers.
+    /// 2. Assesses the absolute permission octal on the `.ssh` folder ensuring it does not exceed `0o700`.
+    /// 3. Scans independent `id_*` identities ensuring their file octal matches exactly `0o600`.
+    /// 4. Executes `ssh-keygen -l` validating RSA components exceed 2048-bit structural thresholds.
+    ///
     /// - Returns: An array of `HealthIssue` highlighting secrets in history, unsafe permissions, or weak RSA keys.
     func run() async -> [HealthIssue] {
         var issues: [HealthIssue] = []
         
         do {
-            // Scan both zsh and bash history (bash users were previously skipped).
-            // `cat ... 2>/dev/null` tolerates a missing file; tail caps each.
+            /// Scan both zsh and bash history (bash users were previously skipped).
+            /// `cat ... 2>/dev/null` tolerates a missing file; tail caps each.
+            ///
+            /// **Rationale:** Grepping the raw file avoids shelling out to `history` which relies on shell builtins that Catalyst cannot access directly.
+            /// **Gotchas:** Capping at 4000 lines avoids catastrophic regex backtracking on giant history files.
             let command = "cat ~/.zsh_history ~/.bash_history 2>/dev/null | tail -n 4000 | grep -E 'AKIA[0-9A-Z]{16}|sk_live_[0-9a-zA-Z]{24}|-----BEGIN PRIVATE KEY-----'"
             let result = try await AsyncProcessRunner.shared.run(command: command)
 
@@ -39,9 +48,11 @@ struct SecurityDoctor: Doctor {
         
         if let attrs = try? fm.attributesOfItem(atPath: sshDir.path),
            let permissions = attrs[.posixPermissions] as? Int {
-            // Mask to the permission bits and compare against octal 0o700.
-            // Exact equality against the decimal 448 flags a correctly-secured
-            // dir as unsafe whenever extra mode bits (sticky/setgid) are set.
+            /// Mask to the permission bits and compare against octal 0o700.
+            /// Exact equality against the decimal 448 flags a correctly-secured
+            /// dir as unsafe whenever extra mode bits (sticky/setgid) are set.
+            ///
+            /// **Rationale:** A bitwise AND `& 0o777` natively strips higher-order sticky bits, correctly verifying baseline Read/Write/Execute constraints.
             if (permissions & 0o777) != 0o700 {
                  issues.append(HealthIssue(
                     category: .security,
@@ -60,7 +71,9 @@ struct SecurityDoctor: Doctor {
                 if url.lastPathComponent.hasPrefix("id_") && !url.lastPathComponent.hasSuffix(".pub") {
                     if let attrs = try? fm.attributesOfItem(atPath: url.path),
                        let permissions = attrs[FileAttributeKey.posixPermissions] as? Int {
-                        // Mask and compare against octal 0o600 (see note above).
+                        /// Mask and compare against octal 0o600 (see note above).
+                        ///
+                        /// **Gotchas:** SSH outright refuses to utilize private keys that fail strict 0o600 ownership, breaking developer git workflows silently.
                         if (permissions & 0o777) != 0o600 {
                              issues.append(HealthIssue(
                                 category: .security,
@@ -80,13 +93,17 @@ struct SecurityDoctor: Doctor {
              let contents = try? fm.contentsOfDirectory(at: sshDir, includingPropertiesForKeys: nil)
              for url in contents ?? [] {
                  let name = url.lastPathComponent
-                 // Any private key file (id_*, not .pub), not just "id_rsa".
+                 /// Any private key file (id_*, not .pub), not just "id_rsa".
+                 ///
+                 /// **Rationale:** Modern ED25519 and ECDSA keys follow this naming schema; locking into `id_rsa` misses highly sensitive credentials.
                  guard name.hasPrefix("id_"), !name.hasSuffix(".pub") else { continue }
 
                  let result = try await AsyncProcessRunner.shared.run(command: "ssh-keygen -l -f \(InputSanitizer.singleQuote(url.path))")
                  guard result.succeeded else { continue }
-                 // `ssh-keygen -l` prints "<bits> SHA256:… comment (TYPE)".
-                 // Only RSA keys under 2048 bits are weak.
+                 /// `ssh-keygen -l` prints "<bits> SHA256:… comment (TYPE)".
+                 /// Only RSA keys under 2048 bits are weak.
+                 ///
+                 /// **Rationale:** Identifying structural cryptographic weakness via `ssh-keygen -l` is the only Apple-native way to parse key density without external crypto binaries.
                  let parts = result.stdout.split(separator: " ")
                  let isRSA = result.stdout.contains("(RSA)")
                  if isRSA, let bitsStr = parts.first, let bits = Int(bitsStr), bits < 2048 {
@@ -105,6 +122,9 @@ struct SecurityDoctor: Doctor {
     }
     
     /// Attempts to securely lock down SSH configurations when vulnerabilities are found.
+    ///
+    /// **Gotchas:**
+    /// Modifies user-owned directory permissions via `chmod`. Cannot strip secrets from `.zsh_history` automatically as it risks corrupting the user's workflow memory.
     ///
     /// - Parameter issue: The security issue detailing which permissions need restricting.
     /// - Returns: A boolean indicating if the security fix was successful.

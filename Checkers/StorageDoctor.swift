@@ -1,5 +1,6 @@
 import Foundation
 
+/// A tracked filesystem directory monitored for excessive cruft accumulation.
 struct StorageCategory: Identifiable {
     let id = UUID()
     let name: String
@@ -7,6 +8,7 @@ struct StorageCategory: Identifiable {
     let colorHex: String
 }
 
+/// The aggregated footprint metrics across all monitored storage partitions.
 struct StorageReport {
     let totalSize: Int64
     let usedSize: Int64
@@ -14,7 +16,9 @@ struct StorageReport {
     let categories: [StorageCategory]
     
     var percentUsed: Double {
-        // Guard against divide-by-zero when volume attributes were unavailable.
+        /// Guard against divide-by-zero when volume attributes were unavailable.
+        ///
+        /// **Gotchas:** `volumeTotalCapacity` returns `0` inside tightly sandboxed environments (like test harnesses), causing fatal math crashes if not guarded.
         guard totalSize > 0 else { return 0 }
         return Double(usedSize) / Double(totalSize)
     }
@@ -27,6 +31,11 @@ class StorageDoctor {
     
     /// Executes a concurrent scan of predetermined high-density developer payload directories.
     ///
+    /// **Flow:**
+    /// 1. Attempts extracting APFS optimized volume limits resolving correct available storage contexts.
+    /// 2. Spawns concurrent `du -sk` execution evaluations assessing Homebrew, Docker, and caching directories (NPM/Pip/CocoaPods).
+    /// 3. Aggregates values into categorized storage segments assigned to distinct UI elements.
+    ///
     /// - Returns: A full `StorageReport` categorizing used space by toolchains like Xcode, Docker, and NPM.
     func scan() async -> StorageReport {
         let fileManager = FileManager.default
@@ -34,9 +43,11 @@ class StorageDoctor {
         var total: Int64 = 0
         var free: Int64 = 0
 
-        // Prefer the URL resource values: volumeAvailableCapacityForImportantUsage
-        // accounts for APFS purgeable space, unlike systemFreeSize which reports
-        // the raw volume free space and overstates what's actually reclaimable.
+        /// Prefer the URL resource values: volumeAvailableCapacityForImportantUsage
+        /// accounts for APFS purgeable space, unlike systemFreeSize which reports
+        /// the raw volume free space and overstates what's actually reclaimable.
+        ///
+        /// **Rationale:** APFS dynamically allocates space for Time Machine local snapshots. `systemFreeSize` ignores these snapshots, yielding wildly inaccurate "free space" metrics.
         let homeURL = URL(fileURLWithPath: NSHomeDirectory())
         if let values = try? homeURL.resourceValues(forKeys: [
             .volumeTotalCapacityKey,
@@ -46,7 +57,9 @@ class StorageDoctor {
             if let importantFree = values.volumeAvailableCapacityForImportantUsage { free = importantFree }
         }
 
-        // Fallback to the file-system attributes if the resource keys were unavailable.
+        /// Fallback to the file-system attributes if the resource keys were unavailable.
+        ///
+        /// **Gotchas:** `attributesOfFileSystem` reads static inode structures which lack APFS dynamic awareness; use exclusively as a last resort.
         if total == 0, let attrs = try? fileManager.attributesOfFileSystem(forPath: NSHomeDirectory()) {
             total = (attrs[.systemSize] as? Int64) ?? 0
             free = (attrs[.systemFreeSize] as? Int64) ?? 0
@@ -81,6 +94,7 @@ class StorageDoctor {
         return NSHomeDirectory()
     }
     
+    /// Recursively calculates the byte size of a target filesystem path via `du`.
     private func getFolderSize(at path: String) async -> Int64 {
         guard FileManager.default.fileExists(atPath: path) else { return 0 }
         

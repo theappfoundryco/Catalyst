@@ -23,8 +23,10 @@ import Combine
 @MainActor
 final class PythonDefaultManager: ObservableObject {
 
+    /// The origin of the currently configured global Python version.
     enum Source: Equatable { case none, catalyst, external }
 
+    /// Represents the active Python state extracted from the shell profile.
     struct Current: Equatable {
         var version: String?     // major.minor, e.g. "3.12"; nil = no default detected
         var source: Source
@@ -76,7 +78,9 @@ final class PythonDefaultManager: ObservableObject {
         let prefix = await BrewPathManager.shared.homebrewPrefix
         let libexecBin = "\(prefix)/opt/\(formula)/libexec/bin"
 
-        // SAFETY: never write a PATH entry to a directory that doesn't exist.
+        /// SAFETY: never write a PATH entry to a directory that doesn't exist.
+        ///
+        /// **Gotchas:** Exporting a non-existent directory into the `$PATH` causes subsequent Python invocations to fall back to the stale system interpreter.
         guard FileManager.default.fileExists(atPath: "\(libexecBin)/python3") else {
             status = "Couldn't find \(formula) at \(libexecBin). Is it installed via Homebrew?"
             statusIsError = true
@@ -85,8 +89,10 @@ final class PythonDefaultManager: ObservableObject {
 
         shell.backupCatalystConfig()
 
-        // Double-quote so a space in the prefix survives; the whole entry is a fixed, app-built
-        // path (no user input), and `$PATH` must stay unquoted-expanded, so this form is correct.
+        /// Double-quote so a space in the prefix survives; the whole entry is a fixed, app-built
+        /// path (no user input), and `$PATH` must stay unquoted-expanded, so this form is correct.
+        ///
+        /// **Rationale:** Prevents catastrophic Bash parsing failures if the user's home directory or Homebrew prefix contains whitespace.
         let line = "export PATH=\"\(libexecBin):$PATH\""
         do {
             try shell.writeManagedBlock(id: blockId, content: line)
@@ -96,7 +102,9 @@ final class PythonDefaultManager: ObservableObject {
             return
         }
 
-        // Validate the file still parses; if our block somehow broke it, roll back just our block.
+        /// Validate the file still parses; if our block somehow broke it, roll back just our block.
+        ///
+        /// **Gotchas:** Blindly writing to `.zshrc` without syntactic validation risks completely locking users out of their shell environments if an unclosed quote is injected.
         if await !configParsesCleanly() {
             shell.removeManagedBlock(id: blockId)
             status = "The change was reverted — the shell config failed a safety check."
@@ -129,7 +137,9 @@ final class PythonDefaultManager: ObservableObject {
                 command: "zsh -n \(InputSanitizer.singleQuote(path)) 2>&1")
             return result.exitCode == 0
         } catch {
-            // Couldn't run the check → don't block the user; the block only adds a fixed export.
+            /// Couldn't run the check → don't block the user; the block only adds a fixed export.
+            ///
+            /// **Rationale:** Fails open on validation timeouts to prevent blocking perfectly valid environment injections just because a background shell hung.
             return true
         }
     }
@@ -148,11 +158,15 @@ final class PythonDefaultManager: ObservableObject {
         for rawLine in raw.components(separatedBy: .newlines) {
             let line = rawLine.trimmingCharacters(in: .whitespaces)
             if line.isEmpty || line.hasPrefix("#") { continue }
-            // Homebrew formula form: `export PATH="…/opt/python@3.12/libexec/bin:$PATH"`.
+            /// Homebrew formula form: `export PATH="…/opt/python@3.12/libexec/bin:$PATH"`.
+            ///
+            /// **Rationale:** Homebrew natively keg-only's secondary Python versions; injecting the specific `libexec/bin` path ensures the user's shell can prioritize it without symlink collision.
             if line.contains("python@"), let v = firstCapture(#"python@([0-9]+\.[0-9]+)"#, in: line) {
                 return v
             }
-            // Versioned-bin / alias forms, only when the line is clearly a PATH or alias pin.
+            /// Versioned-bin / alias forms, only when the line is clearly a PATH or alias pin.
+            ///
+            /// **Gotchas:** Broadly stripping all lines containing `python3` destroys totally unrelated shell functions or aliases that simply happen to invoke the interpreter.
             let looksLikePin = line.contains("PATH") || line.hasPrefix("alias ")
             if looksLikePin, let v = firstCapture(#"/python([0-9]+\.[0-9]+)"#, in: line) {
                 return v
@@ -161,10 +175,12 @@ final class PythonDefaultManager: ObservableObject {
         return nil
     }
 
+    /// Strips the `python@` prefix from a formula name to yield a raw version string.
     static func majorMinor(fromFormula formula: String) -> String {
         formula.replacingOccurrences(of: "python@", with: "")
     }
 
+    /// Helper to extract the first regex capture group from a string.
     private static func firstCapture(_ pattern: String, in text: String) -> String? {
         guard let re = try? NSRegularExpression(pattern: pattern) else { return nil }
         let range = NSRange(text.startIndex..., in: text)

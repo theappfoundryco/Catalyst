@@ -1,5 +1,10 @@
 import SwiftUI
 // OutdatedPIPView
+/// A view for managing and applying updates to outdated Python packages via pip.
+///
+/// ```swift
+/// OutdatedPIPView(vm: pipViewModel)
+/// ```
 struct OutdatedPIPView: View {
     @ObservedObject var vm: OutdatedPIPViewModel
     @State private var isRefreshing = false

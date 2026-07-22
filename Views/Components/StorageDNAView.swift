@@ -1,5 +1,9 @@
 import SwiftUI
-
+/// A card presenting a high-level breakdown of the developer footprint on the SSD.
+///
+/// ```swift
+/// StorageDNAView(report: storageReport)
+/// ```
 struct StorageDNAView: View {
     let report: StorageReport
     
@@ -170,12 +174,19 @@ struct StorageDNAView: View {
         )
     }
     
+    /// Calculates the proportional layout width of a specific disk usage segment.
+    /// - Parameters:
+    ///   - bytes: The measured storage span assigned to the category.
+    ///   - total: The absolute maximum disk size.
+    ///   - availableWidth: The rendered layout bound restricting length.
+    /// - Returns: The exact computed pixel dimension.
     func width(for bytes: Int64, total: Int64, in availableWidth: CGFloat) -> CGFloat {
         let fraction = Double(bytes) / Double(total)
         return max(0, availableWidth * fraction)
     }
 }
 
+/// Groups a label and calculated width for a disk usage layout block.
 struct StatPair: View {
     let label: String
     let value: String

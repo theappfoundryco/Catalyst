@@ -1,5 +1,9 @@
 import SwiftUI
-
+/// A view for browsing, searching, and restoring terminal command history.
+///
+/// ```swift
+/// TerminalTimeTravelView(vm: timeTravelViewModel)
+/// ```
 struct TerminalTimeTravelView: View {
     @ObservedObject var vm: TerminalTimeTravelViewModel
     @State private var searchText = ""
@@ -25,7 +29,9 @@ struct TerminalTimeTravelView: View {
                     
                     tipBanner
                     
-                    // Command History List
+                    /// Command History List
+                    ///
+                    /// **Rationale:** Grouping historical commands geographically prevents UI clutter and keeps the execution surface strictly separated from the reference surface.
                     VStack(alignment: .leading, spacing: 16) {
                         Text("Command History")
                             .font(.headline)
@@ -39,7 +45,9 @@ struct TerminalTimeTravelView: View {
                         }
                         
                         if let error = vm.errorMessage {
-                            // Error State
+                            /// Error State
+                            ///
+                            /// **Rationale:** Explicit error boundaries within the history container prevent a corrupted bash_history file from crashing the entire terminal view.
                             EmptyStateView(
                                 icon: "exclamationmark.triangle",
                                 message: error,
@@ -47,14 +55,18 @@ struct TerminalTimeTravelView: View {
                                 verticalPadding: 30
                             )
                         } else if filteredCommands.isEmpty {
-                            // Empty State
+                            /// Empty State
+                            ///
+                            /// **Rationale:** Proactively explaining why the history list is empty (e.g. fresh installation) prevents users from thinking the shell parser is broken.
                             EmptyStateView(
                                 icon: "clock",
                                 message: searchText.isEmpty ? "No commands found" : "No matching commands",
                                 verticalPadding: 30
                             )
                         } else {
-                            // Commands List
+                            /// Commands List
+                            ///
+                            /// **Gotchas:** Attempting to render an unbounded lazy list of 10,000 `.bash_history` commands will consume gigabytes of RAM; pagination or strict truncation is required.
                             LazyVStack(spacing: 0) {
                                 ForEach(Array(filteredCommands.enumerated()), id: \.element.id) { index, command in
                                     CommandRow(
@@ -104,18 +116,24 @@ struct TerminalTimeTravelView: View {
         let command: TerminalTimeTravelViewModel.HistoryCommand
         let onCopy: () -> Void
         let onRun: () -> Void
-        // Local UI feedback: flash "Copied" + green tick for 2s, then revert.
+        /// Local UI feedback: flash "Copied" + green tick for 2s, then revert.
+        ///
+        /// **Rationale:** Transient visual feedback confirms a successful pasteboard operation without requiring a persistent, screen-cluttering toast notification.
         @State private var copied = false
 
         var body: some View {
             HStack(spacing: 12) {
-                // Index badge
+                /// Index badge
+                ///
+                /// **Rationale:** Providing the absolute command index allows power users to easily cross-reference the UI row with their raw `~/.zsh_history` file.
                 Text("#\(command.index)")
                     .font(.caption.monospacedDigit())
                     .foregroundColor(.secondary)
                     .frame(width: 40, alignment: .leading)
                 
-                // Command text
+                /// Command text
+                ///
+                /// **Rationale:** Monospaced typography is mandatory here because variable-width fonts destroy the alignment of complex piped bash commands.
                 Text(command.command)
                     .font(.system(.caption, design: .monospaced))
                     .lineLimit(2)
@@ -124,7 +142,9 @@ struct TerminalTimeTravelView: View {
                 
                 Spacer()
                 
-                // Action buttons
+                /// Action buttons
+                ///
+                /// **Gotchas:** Placing destructive actions (like delete) adjacent to the copy button guarantees accidental data loss when the user misclicks.
                 HStack(spacing: 6) {
                     Button {
                         onCopy()

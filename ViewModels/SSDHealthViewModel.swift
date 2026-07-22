@@ -2,12 +2,26 @@ import Foundation
 import SwiftUI
 import Combine
 
+/// A view model that coordinates NVMe/SMART disk health monitoring.
+///
+/// It relies heavily on `SSDHealthService` to invoke `smartctl` with elevated privileges,
+/// parses the output, and caches it locally so the UI doesn't force re-authentication
+/// on every app launch.
+///
+/// ```swift
+/// @StateObject var vm = SSDHealthViewModel(privileges: ...)
+/// await vm.checkPrerequisites()
+/// await vm.scan()
+/// ```
 @MainActor
 final class SSDHealthViewModel: ObservableObject {
     // MARK: - Published State
     
+    /// The execution lifecycle state (checking deps, scanning, error).
     @Published var setupState: SSDSetupState = .checking
+    /// The decoded smartctl data model.
     @Published var report: SSDHealthReport?
+    /// Raw terminal output collected when installing `smartmontools` (if missing).
     @Published var installationLog: String = ""
 
     /// A dismissible, non-destructive notice shown above the content (e.g. a
@@ -34,6 +48,7 @@ final class SSDHealthViewModel: ObservableObject {
     
     // MARK: - Prerequisite Checks
     
+    /// Assesses whether `smartctl` (and Homebrew) are installed on the system.
     func checkPrerequisites() async {
         setupState = .checking
         
@@ -57,6 +72,12 @@ final class SSDHealthViewModel: ObservableObject {
     
     // MARK: - Install Dependency
     
+    /// Initiates a Homebrew installation of `smartmontools`, streaming logs to the view.
+    ///
+    /// **Flow:**
+    /// 1. Transitions to `.installing` state.
+    /// 2. Asks ``SSDHealthService/installSmartmontools`` to run the brew command.
+    /// 3. Re-runs ``checkPrerequisites()`` to confirm availability.
     func installDependency() async {
         setupState = .installing
         installationLog = ""
@@ -81,6 +102,13 @@ final class SSDHealthViewModel: ObservableObject {
     
     // MARK: - Scan
     
+    /// Resolves the boot disk name and invokes the privileged `smartctl` sweep.
+    ///
+    /// **Flow:**
+    /// 1. Robustness check: ensures `smartctl` wasn't uninstalled since the view opened.
+    /// 2. Scrapes `diskutil` to find the physical boot drive volume.
+    /// 3. Hands off to ``SSDHealthService/scan(disk:privileges:)``, throwing a macOS password prompt via the `PrivilegesService`.
+    /// 4. Automatically persists the resulting NVMe blob to the local cache.
     func scan() async {
         setupState = .scanning
         scanNotice = nil
@@ -128,12 +156,16 @@ final class SSDHealthViewModel: ObservableObject {
 
     /// Resolves a failed scan without discarding usable context.
     ///
-    /// Priority order:
+    /// **Priority order:**
     /// 1. If a prior report exists, keep showing it and surface the failure as a
     ///    dismissible `scanNotice` — a cancelled/failed re-scan never wipes good data.
     /// 2. Otherwise, a cancelled auth returns to the intro scan screen (`.ready`
     ///    with no report), not a dead-end error card.
     /// 3. Only a genuine failure with nothing to fall back on shows `.error`.
+    ///
+    /// - Parameters:
+    ///   - message: The diagnostic error reason.
+    ///   - isCancellation: True if the user dismissed the macOS Admin prompt.
     private func handleScanFailure(_ message: String, isCancellation: Bool) {
         if report != nil {
             scanNotice = isCancellation

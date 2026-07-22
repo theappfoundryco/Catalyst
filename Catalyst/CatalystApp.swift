@@ -18,7 +18,7 @@ enum UpdatePhase: Equatable {
 /// "gentle reminders" hooks to suppress the automatic popup and present our own UI; tapping the
 /// "Relaunch to update" badge resumes the standard install-and-relaunch flow.
 ///
-/// Kept in this already-registered file to avoid a new-file pbxproj entry (Formrules §9).
+/// Kept in this already-registered file to avoid a new-file pbxproj entry (CODING_STANDARDS §9).
 final class UpdaterController: NSObject, ObservableObject,
                                SPUUpdaterDelegate, SPUStandardUserDriverDelegate {
     static let shared = UpdaterController()
@@ -36,26 +36,29 @@ final class UpdaterController: NSObject, ObservableObject,
 
     private override init() {
         super.init()
-        // startingUpdater: true begins scheduled background checks (interval from Info.plist
-        // SUScheduledCheckInterval). We register ourselves as both delegates.
+        /// startingUpdater: true begins scheduled background checks (interval from Info.plist
+        /// SUScheduledCheckInterval). We register ourselves as both delegates.
+        ///
+        /// **Gotchas:** Failing to start the updater manually prevents Sparkle from reading the `Info.plist` polling interval, effectively disabling all automatic update checks.
         controller = SPUStandardUpdaterController(
             startingUpdater: true, updaterDelegate: self, userDriverDelegate: self)
 
-        // IRONCLAD silent auto-download (fixes the "Update available" badge that never downloaded
-        // or offered Relaunch — seen in v1.6, still latent since the code was unchanged).
-        //
-        // Root cause (verified against the SPUUpdater API docs): our Info.plist sets BOTH
-        // `SUEnableAutomaticChecks` and `SUAutomaticallyUpdate`. Setting `SUEnableAutomaticChecks`
-        // makes Sparkle SKIP the second-launch opt-in prompt — but per the docs that opt-in is the
-        // exact mechanism that applies `SUAutomaticallyUpdate` to the runtime
-        // `automaticallyDownloadsUpdates` property. So it stays at its default (NO). Result: a found
-        // update lights `didFindValidUpdate` (badge → "Update available") but Sparkle then tries to
-        // *show* it via the user driver instead of downloading; our gentle-reminder delegate
-        // suppresses that window, so nothing downloads and the badge is stuck with no "Relaunch".
-        //
-        // Setting these explicitly at launch is the documented way to force always-silent download,
-        // which is our intended product behavior (badge-driven, no Sparkle popup). `allowsAutomaticUpdates`
-        // is honoured internally, so this is a no-op if a build ever disallows it.
+        /// IRONCLAD silent auto-download (fixes the "Update available" badge that never downloaded
+        /// or offered Relaunch — seen in v1.6, still latent since the code was unchanged).
+        /// Root cause (verified against the SPUUpdater API docs): our Info.plist sets BOTH
+        /// `SUEnableAutomaticChecks` and `SUAutomaticallyUpdate`. Setting `SUEnableAutomaticChecks`
+        /// makes Sparkle SKIP the second-launch opt-in prompt — but per the docs that opt-in is the
+        /// exact mechanism that applies `SUAutomaticallyUpdate` to the runtime
+        /// `automaticallyDownloadsUpdates` property. So it stays at its default (NO). Result: a found
+        /// update lights `didFindValidUpdate` (badge → "Update available") but Sparkle then tries to
+        /// *show* it via the user driver instead of downloading; our gentle-reminder delegate
+        /// suppresses that window, so nothing downloads and the badge is stuck with no "Relaunch".
+        ///
+        /// Setting these explicitly at launch is the documented way to force always-silent download,
+        /// which is our intended product behavior (badge-driven, no Sparkle popup). `allowsAutomaticUpdates`
+        /// is honoured internally, so this is a no-op if a build ever disallows it.
+        ///
+        /// **Rationale:** Prevents Catalyst from becoming permanently stranded on an old version with a stalled UI badge that refuses to download the payload.
         controller.updater.automaticallyChecksForUpdates = true
         controller.updater.automaticallyDownloadsUpdates = true
     }
@@ -96,6 +99,7 @@ final class UpdaterController: NSObject, ObservableObject,
         }
     }
 
+    /// Intercepts Sparkle's download initiation to inspect the incoming version string.
     func updater(_ updater: SPUUpdater, willDownloadUpdate item: SUAppcastItem,
                  with request: NSMutableURLRequest) {
         let v = item.displayVersionString
@@ -119,6 +123,7 @@ final class UpdaterController: NSObject, ObservableObject,
         return true
     }
 
+    /// Clears the active update phase if Sparkle's background check finds nothing.
     func updaterDidNotFindUpdate(_ updater: SPUUpdater) {
         DispatchQueue.main.async { if self.isTransient { self.phase = .idle } }
     }
@@ -127,15 +132,21 @@ final class UpdaterController: NSObject, ObservableObject,
 
     var supportsGentleScheduledUpdateReminders: Bool { true }
 
+    /// Suppresses Sparkle's default popup window for scheduled checks.
     func standardUserDriverShouldHandleShowingScheduledUpdate(
         _ update: SUAppcastItem, andInImmediateFocus immediateFocus: Bool) -> Bool {
-        // No — we present our own sidebar badge instead of Sparkle's popup.
+        /// No — we present our own sidebar badge instead of Sparkle's popup.
+        ///
+        /// **Rationale:** Catalyst enforces a zero-interruption design philosophy; standard Sparkle popups violate this by stealing window focus.
         false
     }
 
+    /// Ensures the custom UI badge stays in sync if Sparkle forces an update window.
     func standardUserDriverWillHandleShowingUpdate(
         _ handleShowingUpdate: Bool, forUpdate update: SUAppcastItem, state: SPUUserUpdateState) {
-        // Backstop: if Sparkle presents an update we haven't already marked ready, show the badge.
+        /// Backstop: if Sparkle presents an update we haven't already marked ready, show the badge.
+        ///
+        /// **Gotchas:** Network race conditions might cause Sparkle to skip `didFindValidUpdate` before presenting; catching it here ensures the UI stays synchronized.
         let v = update.displayVersionString
         DispatchQueue.main.async {
             guard !handleShowingUpdate else { return }
@@ -150,6 +161,7 @@ final class UpdaterController: NSObject, ObservableObject,
     }
 }
 
+/// The main application entry point defining the UI scene structure.
 @main
 struct CatalystApp: App {
     @StateObject private var appVM = AppViewModel()
@@ -162,9 +174,11 @@ struct CatalystApp: App {
                 .preferredColorScheme(.dark)
                 .environmentObject(appVM)
                 .task {
-                    // Start the Sparkle updater (schedules its own hourly checks) AND force a
-                    // collision-safe check on open so the "Relaunch to update" badge appears
-                    // reliably on launch, not just whenever Sparkle's scheduler next fires.
+                    /// Start the Sparkle updater (schedules its own hourly checks) AND force a
+                    /// collision-safe check on open so the "Relaunch to update" badge appears
+                    /// reliably on launch, not just whenever Sparkle's scheduler next fires.
+                    ///
+                    /// **Rationale:** Immediate launch checking ensures users who force-quit to grab an update don't wait an hour for the scheduler to wake up.
                     UpdaterController.shared.checkOnLaunch()
                     Telemetry.log(.appOpen)
                     TelemetryProfile.refresh()
@@ -182,8 +196,10 @@ struct CatalystApp: App {
                 // }
         }
 
-        // Menu-bar mode: health score, outdated count, and quick actions
-        // without opening the main window.
+        /// Menu-bar mode: health score, outdated count, and quick actions
+        /// without opening the main window.
+        ///
+        /// **Rationale:** Maps directly to Catalyst's role as a pervasive background daemon, surfacing critical system vitals in zero clicks.
         MenuBarExtra("Catalyst", systemImage: "bolt.heart.fill") {
             MenuBarContentView(appVM: appVM)
         }

@@ -2,6 +2,10 @@ import SwiftUI
 
 /// Runtime-tweakable performance switches. Centralized so an experiment is one
 /// flip + rebuild, not a scatter of edits.
+///
+/// ```swift
+/// if PerfFlags.rasterizeScrollCards { ... }
+/// ```
 enum PerfFlags {
     /// Flatten purely-visual cards into a single GPU texture while scrolling via
     /// `.drawingGroup()`. The compositor then moves one rasterized image per card
@@ -19,6 +23,7 @@ extension View {
     /// rasterizes the whole subtree, which can disrupt popover/sheet anchoring,
     /// text-field focus rings, and live animations on interactive controls.
     @ViewBuilder
+    /// - Returns: The active presentation hierarchy for the detail view.
     func rasterizedCard() -> some View {
         if PerfFlags.rasterizeScrollCards {
             self.drawingGroup()

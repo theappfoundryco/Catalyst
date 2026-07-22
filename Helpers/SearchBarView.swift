@@ -1,9 +1,5 @@
-//
-//  SearchBarView.swift
-//  Catalyst
-//
-//  Centralized search bar with magnifying glass icon.
-//
+/// Centralized search bar with magnifying glass icon.
+
 import SwiftUI
 
 /// A reusable search bar with a magnifying glass icon and recessed code-panel background.
@@ -56,11 +52,15 @@ struct SearchBarView: View {
                 .buttonStyle(.plain)
             }
         }
-        // Match CompactInputField exactly so search bars and form fields are
-        // visually identical app-wide (the app's single field look).
+        /// Match CompactInputField exactly so search bars and form fields are
+        /// visually identical app-wide (the app's single field look).
+        ///
+        /// **Rationale:** Enforcing a single unified field component prevents the app from looking like a patchwork of slightly different SwiftUI default styles.
         .padding(4)
         .cardStyle(.compact, padded: false)
-        // Whole bar is the tap target, not just the text.
+        /// Whole bar is the tap target, not just the text.
+        ///
+        /// **Gotchas:** Without an explicit `contentShape`, clicking the padding area between the magnifying glass and the text will fail to focus the field.
         .contentShape(Rectangle())
         .onTapGesture { isFocused = true }
     }

@@ -1,5 +1,9 @@
 import SwiftUI
-
+/// A view showcasing top downloaded packages across pip, Homebrew Formulae, and Homebrew Casks for easy installation.
+///
+/// ```swift
+/// PopularPackagesView(vm: popularPackagesViewModel)
+/// ```
 struct PopularPackagesView: View {
     @ObservedObject var vm: PopularPackagesViewModel
     @State private var selectedTab = 0
@@ -16,7 +20,9 @@ struct PopularPackagesView: View {
                     image: "star.fill",
                     color: .yellow
                 )
-                // Tab Selector
+                /// Tab Selector
+                ///
+                /// **Rationale:** Provides high-level categorization (Global vs PyPI) for tools that don't share underlying package managers.
                 Picker("", selection: $selectedTab) {
                     Text("pip Packages").tag(0)
                     Text("Homebrew Formulae").tag(1)
@@ -25,13 +31,17 @@ struct PopularPackagesView: View {
                 .pickerStyle(.segmented)
                 .padding(.horizontal)
                 
-                // Gate per-tab: show PrerequisiteGateView if prerequisite missing
+                /// Gate per-tab: show PrerequisiteGateView if prerequisite missing
+                ///
+                /// **Gotchas:** Allowing users to attempt `pip install` without an active virtual environment or Homebrew Python throws catastrophic PEP-668 exceptions.
                 if selectedTab == 0 && !vm.isPythonWithPipAvailable {
                     PrerequisiteGateView.pythonMissing()
                 } else if (selectedTab == 1 || selectedTab == 2) && !vm.isBrewInstalled {
                     PrerequisiteGateView.brewMissing()
                 } else {
-                    // Python Version Selection (only show for pip tab)
+                    /// Python Version Selection (only show for pip tab)
+                    ///
+                    /// **Rationale:** Explicit version pinning is mandatory for PyPI to ensure the user isn't accidentally polluting the system Python scope.
                     if selectedTab == 0 && !vm.availablePythonVersions.isEmpty {
                         SelectPythonVersionDropdown(
                             selection: $vm.selectedPythonVersion,
@@ -41,7 +51,9 @@ struct PopularPackagesView: View {
                         }
                     }
                     
-                    // Package Lists
+                    /// Package Lists
+                    ///
+                    /// **Rationale:** Renders the primary interactable grid of packages below all the prerequisite warning banners.
                     if vm.isLoading {
                         LoadingStateView("Loading popular packages...")
                     } else {
@@ -71,11 +83,15 @@ struct PopularPackagesView: View {
                         .cardStyle()
                     }
                     
-                    // Prominent failure banner (P3), above the streamed log.
+                    /// Prominent failure banner (P3), above the streamed log.
+                    ///
+                    /// **Gotchas:** Users often miss inline console errors; this banner explicitly interrupts the flow to highlight that an install failed.
                     ErrorBanner(message: $vm.installError)
                         .padding(.horizontal)
 
-                    // Installation Output (isolated observable — see ConsoleOutput, R2)
+                    /// Installation Output (isolated observable — see ConsoleOutput, R2)
+                    ///
+                    /// **Rationale:** Isolating the console stream into its own observable boundary prevents the entire grid view from re-rendering on every incoming stdout line.
                     ConsoleOutputView(console: vm.console)
                 }
                 
@@ -99,6 +115,8 @@ struct PopularPackagesView: View {
         }
     }
     
+    /// Returns the community-curated package subset matching the active filter type.
+    /// - Returns: An array isolating current selection context.
     private func currentPackages() -> [PopularPackage] {
         switch selectedTab {
         case 0: return vm.popularPip
@@ -108,6 +126,8 @@ struct PopularPackagesView: View {
         }
     }
     
+    /// Resolves the current segmented control selection to a specific package category.
+    /// - Returns: The identified package management boundary.
     private func currentType() -> PackageType {
         switch selectedTab {
         case 0: return .pip

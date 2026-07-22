@@ -1,15 +1,14 @@
-//
-//  CruftSweeperCards.swift
-//  Catalyst
-//
-//  Subview components extracted from CruftSweeperView for better modularity.
-//
+/// Subview components extracted from CruftSweeperView for better modularity.
 
 import SwiftUI
 import UniformTypeIdentifiers
 
 // MARK: - Start Scan View
-
+/// The initial configuration view for the Cruft Sweeper, allowing selection of scan mode and targets.
+///
+/// ```swift
+/// StartScanView(scanType: $type, skipGit: $skipGit, onStart: { print("Started") })
+/// ```
 struct StartScanView: View {
     @EnvironmentObject var vm: CruftSweeperViewModel
     @Binding var scanType: CruftSweeperContent.ScanType
@@ -157,7 +156,9 @@ struct StartScanView: View {
                         
                         SectionDivider()
                         
-                        // Scan Empty Folders
+                        /// Scan Empty Folders
+                        ///
+                        /// **Rationale:** Provides granular control over the most aggressive scanning option, as many project frameworks (like Django) rely on empty `__init__.py` container directories.
                         HStack {
                             Image(systemName: "folder.badge.questionmark")
                                 .foregroundColor(.blue)
@@ -178,7 +179,9 @@ struct StartScanView: View {
                         
                         SectionDivider()
                         
-                        // Low Priority Mode
+                        /// Low Priority Mode
+                        ///
+                        /// **Rationale:** Allows users to run heavy IO-bound cruft scans in the background without stuttering foreground applications.
                         HStack {
                             Image(systemName: "tortoise.fill")
                                 .foregroundColor(.purple)
@@ -200,9 +203,13 @@ struct StartScanView: View {
                 }
                 .cardStyle()
                 
-                // 3. Custom Execution & Exclusion Cards
+                /// 3. Custom Execution & Exclusion Cards
+                ///
+                /// **Rationale:** Groups advanced path management separately from simple binary toggles.
                 
-                // Included Folders (Custom Execution)
+                /// Included Folders (Custom Execution)
+                ///
+                /// **Rationale:** Allows users to forcefully scope the scanner to a single deeply-nested directory rather than sweeping the entire user space.
                 VStack(alignment: .leading, spacing: 16) {
                     HStack {
                         Text("Manual Scan Scope")
@@ -249,14 +256,18 @@ struct StartScanView: View {
                 .cardStyle()
                 .fileImporter(isPresented: $showingIncludeImporter, allowedContentTypes: [.folder], allowsMultipleSelection: true) { result in
                     if case .success(let urls) = result {
-                        // Append unique
+                        /// Append unique
+                        ///
+                        /// **Gotchas:** Allowing duplicate paths in the inclusion list causes the scanner to process the same files twice, corrupting the reclaimed space metrics.
                         for url in urls {
                             if !vm.customCrawlPaths.contains(url) { vm.customCrawlPaths.append(url) }
                         }
                     }
                 }
                 
-                // Excluded Folders
+                /// Excluded Folders
+                ///
+                /// **Rationale:** Provides an explicit escape hatch for sensitive directories (e.g. `~/.ssh` or `~/Documents/Vault`) that should never be touched.
                 VStack(alignment: .leading, spacing: 16) {
                     HStack {
                         Text("Excluded Folders")
@@ -304,7 +315,9 @@ struct StartScanView: View {
                      }
                 }
                 
-                // Start Action
+                /// Start Action
+                ///
+                /// **Rationale:** The primary CTA is positioned last so the user naturally reviews all configuration options before launching a destructive scan.
                 Button {
                     onStart()
                 } label: {
@@ -330,6 +343,10 @@ struct StartScanView: View {
 
 /// A single artifact-type target, styled identically to the Safety & Performance
 /// rows (colored icon + title + subtitle + trailing switch) for consistency.
+///
+/// ```swift
+/// TargetToggleRow(type: .derivedData, isOn: true) { toggle() }
+/// ```
 struct TargetToggleRow: View {
     let type: CruftType
     let isOn: Bool
@@ -359,7 +376,11 @@ struct TargetToggleRow: View {
 }
 
 // MARK: - Scanning View
-
+/// A view displayed during an active Cruft Sweeper scan to show progress and current status.
+///
+/// ```swift
+/// ScanningView()
+/// ```
 struct ScanningView: View {
     @EnvironmentObject var vm: CruftSweeperViewModel
     
@@ -395,12 +416,16 @@ struct ScanningView: View {
             .background(Material.thinMaterial)
             .cornerRadius(12)
 
-            // The total isn't known without a costly pre-count pass, so the bar is
-            // indeterminate; the live count above conveys progress.
+            /// The total isn't known without a costly pre-count pass, so the bar is
+            /// indeterminate; the live count above conveys progress.
+            ///
+            /// **Gotchas:** Attempting to force a determinate progress bar by running a pre-count pass doubles the disk IO cost and infuriates users waiting for the scan to start.
             ProgressView()
                 .controlSize(.small)
 
-            // Abort Button
+            /// Abort Button
+            ///
+            /// **Rationale:** Ensures users can bail out of an IO-heavy scan if their fans spin up or they realize they missed an exclusion rule.
             Button {
                 vm.cancelScan()
             } label: {
@@ -423,7 +448,11 @@ struct ScanningView: View {
 }
 
 // MARK: - Results Dashboard
-
+/// The final results view displaying found cruft, grouped by location, with actions to delete.
+///
+/// ```swift
+/// ResultsDashboard(showDeleteConfirmation: $showDialog)
+/// ```
 struct ResultsDashboard: View {
     @EnvironmentObject var vm: CruftSweeperViewModel
     @Binding var showDeleteConfirmation: Bool
@@ -435,10 +464,14 @@ struct ResultsDashboard: View {
             SmoothPageScroll {
                 VStack(spacing: 20) {
 
-                    // Summary — hero reclaim number, type breakdown, smart selection.
+                    /// Summary — hero reclaim number, type breakdown, smart selection.
+                    ///
+                    /// **Rationale:** Front-loads the value proposition of the scan before asking the user to manually verify individual files.
                     CruftSummaryCard()
 
-                    // Detailed Results (Grouped by Location)
+                    /// Detailed Results (Grouped by Location)
+                    ///
+                    /// **Rationale:** Grouping results geographically helps users contextualize the cruft (e.g., all `DerivedData` sits together).
                     VStack(alignment: .leading, spacing: 16) {
                         HStack {
                             Text("Detailed Results")
@@ -446,7 +479,9 @@ struct ResultsDashboard: View {
 
                             Spacer()
 
-                            // Check if any group is collapsed (to decide button state)
+                            /// Check if any group is collapsed (to decide button state)
+                            ///
+                            /// **Rationale:** Keeps the global "Expand All" / "Collapse All" toggle perfectly synchronized with manual per-group toggles.
                             let anyCollapsed = vm.groupedCruft.contains { !$0.isExpanded }
 
                             Button {
@@ -507,13 +542,17 @@ struct ResultsDashboard: View {
                     }
                     .cardStyle()
 
-                    // Bottom padding for floating bar
+                    /// Bottom padding for floating bar
+                    ///
+                    /// **Gotchas:** Omitting this padding causes the last few rows of results to become completely inaccessible behind the sticky action footer.
                     Color.clear.frame(height: 80)
                 }
                 .padding(.vertical)
             }
 
-            // Sticky Action Bar
+            /// Sticky Action Bar
+            ///
+            /// **Rationale:** Anchoring the execution button prevents users from having to scroll back to the top of a 2,000-item list to hit delete.
             if !vm.selectedIDs.isEmpty {
                 VStack(spacing: 0) {
                     SectionDivider()
@@ -584,8 +623,10 @@ private struct CruftSummaryCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            // Informative header (not a success celebration) — mirrors the
-            // status-header grammar used by UpdateResultsSummaryCard.
+            /// Informative header (not a success celebration) — mirrors the
+            /// status-header grammar used by UpdateResultsSummaryCard.
+            ///
+            /// **Rationale:** A sober, objective tone is necessary for a feature that permanently deletes data.
             HStack(spacing: 12) {
                 Image(systemName: "trash.slash.fill")
                     .font(.title2)
@@ -604,7 +645,9 @@ private struct CruftSummaryCard: View {
 
             SectionDivider()
 
-            // Hero reclaimable number.
+            /// Hero reclaimable number.
+            ///
+            /// **Rationale:** The absolute byte count is the primary metric users care about when running a cleaning utility.
             VStack(alignment: .leading, spacing: 2) {
                 Text("Reclaimable space")
                     .font(.caption)
@@ -615,8 +658,10 @@ private struct CruftSummaryCard: View {
                     .foregroundStyle(.primary)
             }
 
-            // Type breakdown — proportional bar + legend, leveraging the shared
-            // per-type icons/colors.
+            /// Type breakdown — proportional bar + legend, leveraging the shared
+            /// per-type icons/colors.
+            ///
+            /// **Rationale:** Visualizing the breakdown explains *why* the disk is full without requiring users to parse raw numbers.
             if !vm.typeBreakdown.isEmpty {
                 CruftBreakdownBar(segments: vm.typeBreakdown, total: vm.totalFoundSize)
 
@@ -648,8 +693,10 @@ private struct CruftSummaryCard: View {
 
             SectionDivider()
 
-            // Smart selection actions — match the .bordered + Label grammar used
-            // by RequirementsView's result actions.
+            /// Smart selection actions — match the .bordered + Label grammar used
+            /// by RequirementsView's result actions.
+            ///
+            /// **Rationale:** Explicit macro-selection buttons prevent the tedium of manually checking hundreds of individual checkboxes.
             HStack(spacing: 12) {
                 Button {
                     vm.selectAll()
@@ -703,13 +750,20 @@ private struct CruftBreakdownBar: View {
         .clipShape(Capsule())
     }
 
+    /// Calculates the percentage of total storage consumed by a specific cruft category.
+    /// - Parameter seg: The localized data model aggregating specific file types.
+    /// - Returns: The calculated percentage representing spatial share.
     private func fraction(_ seg: CruftSweeperViewModel.TypeSummary) -> CGFloat {
         total > 0 ? CGFloat(Double(seg.size) / Double(total)) : 0
     }
 }
 
 // MARK: - Cruft Item Row
-
+/// A row representing a single item of found cruft in the results dashboard.
+///
+/// ```swift
+/// CruftItemRow(item: cruft, isSelected: true, fractionOfMax: 0.5) { toggle() }
+/// ```
 struct CruftItemRow: View, Equatable {
     let item: CruftItem
     let isSelected: Bool
@@ -717,8 +771,10 @@ struct CruftItemRow: View, Equatable {
     let fractionOfMax: Double
     let onToggle: () -> Void
 
-    // Closure excluded: a row only changes visually with its item, selection, or
-    // bar proportion, so SwiftUI can skip re-rendering unchanged rows (R1-row).
+    /// Closure excluded: a row only changes visually with its item, selection, or
+    /// bar proportion, so SwiftUI can skip re-rendering unchanged rows (R1-row).
+    ///
+    /// **Gotchas:** Passing an inline closure for selection handling forces SwiftUI to re-render all 5,000 list rows simultaneously every time a single checkbox is ticked, stalling the main thread.
     static func == (lhs: CruftItemRow, rhs: CruftItemRow) -> Bool {
         lhs.item == rhs.item
             && lhs.isSelected == rhs.isSelected
@@ -756,7 +812,9 @@ struct CruftItemRow: View, Equatable {
                         .foregroundColor(isLarge ? .orange : .primary)
                 }
 
-                // Proportional size bar — biggest reclaim reads at a glance.
+                /// Proportional size bar — biggest reclaim reads at a glance.
+                ///
+                /// **Rationale:** A subtle background fill bar draws the eye immediately to the largest offenders (like 5GB Xcode cache files).
                 GeometryReader { geo in
                     ZStack(alignment: .leading) {
                         Capsule().fill(Color.secondary.opacity(0.15))
@@ -776,7 +834,9 @@ struct CruftItemRow: View, Equatable {
 
                     Spacer()
 
-                    // Safety chip — distinguishes auto-regenerated from costly.
+                    /// Safety chip — distinguishes auto-regenerated from costly.
+                    ///
+                    /// **Rationale:** Assuages user anxiety by explicitly marking caches that the system can trivially rebuild.
                     Text(item.type.safety.label)
                         .font(.caption2.weight(.medium))
                         .foregroundColor(item.type.safety.color)
@@ -814,7 +874,9 @@ struct InstantDisclosureGroup<Label: View, Content: View>: View {
     var body: some View {
         VStack(spacing: 0) {
             Button {
-                // Toggle without animation
+                /// Toggle without animation
+                ///
+                /// **Rationale:** Instantly updating the checkbox state feels snappier and prevents awkward transition states when rapidly checking multiple items.
                 isExpanded.toggle()
             } label: {
                 HStack {
@@ -834,7 +896,9 @@ struct InstantDisclosureGroup<Label: View, Content: View>: View {
             
             if isExpanded {
                 content
-                    // Ensure no transition animation
+                    /// Ensure no transition animation
+                    ///
+                    /// **Gotchas:** SwiftUI's default transition animations on list rows can cause visual stuttering during rapid multi-select operations.
                     .transition(.identity)
             }
         }

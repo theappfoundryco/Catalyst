@@ -2,8 +2,20 @@ import Foundation
 import Combine
 import SwiftUI
 
+/// The central orchestrator view model representing the entire app's navigation and global state.
+///
+/// `AppViewModel` holds the instances of all other view models and services, acting as the primary
+/// dependency injection container for `ContentView`. It also manages the global navigation (`currentScreen`),
+/// the initial startup detection sequence, and coordinates full app refreshes (e.g., after an installation).
+///
+/// ```swift
+/// @StateObject var appViewModel = AppViewModel()
+/// // ...
+/// await appViewModel.startupChecks()
+/// ```
 @MainActor
 final class AppViewModel: ObservableObject {
+    /// Represents the currently active screen in the main navigation sidebar.
     enum Screen {
         case dashboard
         case projects
@@ -63,11 +75,15 @@ final class AppViewModel: ObservableObject {
         }
     }
 
+    /// The active screen driving the main `ContentView` detail area.
     @Published var currentScreen: Screen = .dashboard {
         didSet { Telemetry.log(.featureOpened(feature: currentScreen.telemetryName)) }
     }
+    /// Set to true once the initial 1.5-second minimum animation floor and start checks complete.
     @Published var isAppReady = false
+    /// True when a global refresh is spinning across all view models.
     @Published var isPerformingFullRefresh = false
+    /// A user-facing description of why the refresh is happening (e.g., "Installing Python...").
     @Published var fullRefreshActionLabel: String? = nil
     /// Mirrors `legalViewModel.requirement` so `ContentView` (which observes this VM) can present
     /// the blocking Privacy/Terms consent sheet. Non-nil ⇒ show the sheet.
@@ -117,6 +133,12 @@ final class AppViewModel: ObservableObject {
     /// Owns versioned Privacy Policy / Terms & Conditions consent (blocking sheet + 14-day check).
     let legalViewModel = LegalConsentViewModel()
 
+    /// Initializes the root ``AppViewModel`` and injects all downstream dependencies.
+    ///
+    /// **Rationale:**
+    /// Acts as a central Dependency Injection (DI) container. By constructing all ViewModels and Services here,
+    /// we guarantee a single unified state that is passed down through `ContentView` via `@EnvironmentObject` or explicit parameters.
+    /// This prevents cyclic dependencies and ensures services like ``BrewService`` are singletons in practice.
     init() {
         self.privileges = PrivilegesService(logger: logger)
         self.brewService = BrewService(logger: logger, privileges: privileges)
@@ -242,7 +264,15 @@ final class AppViewModel: ObservableObject {
     }
 
     /// Runs all VM startup/detection tasks in parallel.
-    /// Same as `startupChecks()` but without the LaunchScreen delay.
+    ///
+    /// **Flow:**
+    /// 1. Sets ``isPerformingFullRefresh`` flag.
+    /// 2. Spawns a `TaskGroup` to execute the `.startup()` or `.reset()` functions of all loaded ViewModels simultaneously.
+    /// 3. Resolves the network monitor status using the newly gathered stats.
+    ///
+    /// **Rationale:**
+    /// This is fired globally whenever a package or Python is installed/uninstalled, guaranteeing
+    /// that all tabs (Pip, Brew, Envs, Dashboard) reflect the updated filesystem truth seamlessly without requiring app restarts.
     func fullRefresh() async {
         isPerformingFullRefresh = true
         
@@ -271,6 +301,18 @@ final class AppViewModel: ObservableObject {
         fullRefreshActionLabel = nil
     }
 
+    /// Initiates the app's initial detection sequences and clears the splash screen.
+    ///
+    /// **Flow:**
+    /// 1. Immediately triggers ``LogsViewModel/startup()`` to capture startup logs.
+    /// 2. Evaluates ``didRunInitialDetection`` to run a detached ``fullRefresh()``.
+    /// 3. Initiates ``LegalConsentViewModel/start()``.
+    /// 4. Awaits 1.5 seconds strictly for animation pacing, then reveals the main app by setting ``isAppReady``.
+    ///
+    /// **Gotchas:**
+    /// - Holds the launch screen artificially for 1.5s to prevent jarring flashes on M-series Macs
+    ///   where the detection happens almost instantly.
+    /// - Only triggers the detection sweep once, guarded by `didRunInitialDetection`.
     func startupChecks() async {
         logger.log("Catalyst launched - running initial detection")
 

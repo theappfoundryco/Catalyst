@@ -4,6 +4,10 @@ import AppKit
 /// A system execution conduit directing commands to macOS graphical terminal interfaces securely.
 ///
 /// Ensures targeted execution environments are handled without AppleScript vulnerabilities.
+///
+/// ```swift
+/// TerminalService.shared.runCommand("echo 'Hello World'")
+/// ```
 @MainActor
 final class TerminalService {
     static let shared = TerminalService()
@@ -13,6 +17,9 @@ final class TerminalService {
     private init() {}
     
     /// Requests process evaluation within the native Terminal context by delegating through secure inter-process streams.
+    ///
+    /// **Gotchas:**
+    /// Relies on `AppleScript` commands under the hood which mandates explicit automation permission.
     ///
     /// - Parameters:
     ///   - command: The explicit bash configuration requesting system invocation.
@@ -54,6 +61,11 @@ final class TerminalService {
          runCommand(command)
     }
     
+    /// Dispatches execution payloads using inline macOS bridging architectures.
+    ///
+    /// - Parameters:
+    ///   - script: Synthesized explicit AppleScript block representing target command definitions.
+    ///   - description: Human-readable trace header mapping logic against failures.
     private func executeAppleScript(_ script: String, description: String) {
         guard let scriptObject = NSAppleScript(source: script) else {
             logger.log("❌ Failed to create NSAppleScript for: \(description)")
@@ -65,9 +77,11 @@ final class TerminalService {
 
         if let error = error {
             logger.log("❌ AppleScript error (\(description)): \(error)")
-            // -1743 = errAEEventNotPermitted: the user hasn't granted (or has denied) Automation
-            // access to Terminal. The system only prompts on the FIRST send; once denied it stays
-            // denied silently, so send the user straight to the setting to fix it.
+            /// -1743 = errAEEventNotPermitted: the user hasn't granted (or has denied) Automation
+            /// access to Terminal. The system only prompts on the FIRST send; once denied it stays
+            /// denied silently, so send the user straight to the setting to fix it.
+            ///
+            /// **Rationale:** AppleEvents fail silently on subsequent invocations. Hardcoding `-1743` allows Catalyst to detect the silent failure and guide the user to System Settings.
             if (error[NSAppleScript.errorNumber] as? Int) == -1743 {
                 openAutomationPrivacySettings()
             }

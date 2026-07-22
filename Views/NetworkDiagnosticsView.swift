@@ -1,5 +1,9 @@
 import SwiftUI
-
+/// A view for running and analyzing network diagnostics, including ping, DNS resolution, and active ports.
+///
+/// ```swift
+/// NetworkDiagnosticsView(vm: networkViewModel)
+/// ```
 struct NetworkDiagnosticsView: View {
     @ObservedObject var vm: NetworkDiagnosticsViewModel
 
@@ -102,9 +106,13 @@ struct NetworkDiagnosticsView: View {
     // MARK: - Report
 
     @ViewBuilder
+    /// - Parameter report: The generated diagnostic payload tracking connection metrics.
+    /// - Returns: The active presentation hierarchy for the detail view.
     private func reportContent(_ report: NetworkDiagnosticsReport) -> some View {
         VStack(spacing: 24) {
-            // Top metrics
+            /// Top metrics
+            ///
+            /// **Rationale:** Hero placement provides an immediate pulse on the active connection without forcing the user to scroll through routing tables.
             LazyVGrid(columns: metricColumns, spacing: 16) {
                 MetricTile(
                     icon: report.internetPing.reachable ? "wifi" : "wifi.slash",
@@ -158,6 +166,10 @@ struct NetworkDiagnosticsView: View {
 
     // MARK: - Interface card
 
+    /// - Parameters:
+    ///   - iface: The designated hardware routing path mapped to IP strings.
+    ///   - ports: The count of total active listening sockets bound to the interface.
+    /// - Returns: The active presentation hierarchy for the detail view.
     private func interfaceCard(_ iface: NetworkInterfaceInfo, ports: Int) -> some View {
         VStack(alignment: .leading, spacing: 16) {
             cardHeader("Active Connection", subtitle: "Default Route Interface", icon: "point.3.connected.trianglepath.dotted")
@@ -176,6 +188,8 @@ struct NetworkDiagnosticsView: View {
 
     // MARK: - DNS card
 
+    /// - Parameter dns: The extracted resolution configuration and external server pings.
+    /// - Returns: The active presentation hierarchy for the detail view.
     private func dnsCard(_ dns: DNSResult) -> some View {
         VStack(alignment: .leading, spacing: 16) {
             cardHeader("DNS Resolution", subtitle: dns.host, icon: "globe")
@@ -200,6 +214,8 @@ struct NetworkDiagnosticsView: View {
 
     // MARK: - Ports card
 
+    /// - Parameter ports: An array enumerating globally listening application sockets.
+    /// - Returns: The active presentation hierarchy for the detail view.
     private func portsCard(_ ports: [ListeningPort]) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             cardHeader("Listening Ports", subtitle: "\(ports.count) open TCP sockets", icon: "lock.open.rotation")
@@ -231,6 +247,11 @@ struct NetworkDiagnosticsView: View {
 
     // MARK: - Shared bits
 
+    /// - Parameters:
+    ///   - title: The primary display title of the diagnostic card.
+    ///   - subtitle: An optional context string beneath the primary header.
+    ///   - icon: The associated SF Symbol glyph.
+    /// - Returns: The active presentation hierarchy for the detail view.
     private func cardHeader(_ title: String, subtitle: String, icon: String) -> some View {
         HStack {
             VStack(alignment: .leading, spacing: 4) {
@@ -244,6 +265,12 @@ struct NetworkDiagnosticsView: View {
         }
     }
 
+    /// Renders a single diagnostic property alongside a contextual system icon.
+    /// - Parameters:
+    ///   - label: The descriptive classification mapped to the value.
+    ///   - value: The actual configuration property.
+    ///   - icon: The corresponding visual representation.
+    /// - Returns: The active presentation hierarchy for the detail view.
     private func infoCell(_ label: String, _ value: String, _ icon: String) -> some View {
         VStack(spacing: 6) {
             Image(systemName: icon).font(.system(size: 16)).foregroundColor(.secondary)
@@ -253,6 +280,9 @@ struct NetworkDiagnosticsView: View {
         .frame(maxWidth: .infinity)
     }
 
+    /// Maps connection latency in milliseconds to a semantic warning color.
+    /// - Parameter ms: The measured round-trip time in milliseconds.
+    /// - Returns: A mapped standard layout color.
     private func latencyColor(_ ms: Double?) -> Color {
         guard let ms else { return .secondary }
         switch ms {
@@ -263,8 +293,10 @@ struct NetworkDiagnosticsView: View {
     }
 
     private var readyView: some View {
-        // Illustrative empty state only — the single Run button lives in the
-        // "Diagnostic Targets" card above (deduped).
+        /// Illustrative empty state only — the single Run button lives in the
+        /// "Diagnostic Targets" card above (deduped).
+        ///
+        /// **Gotchas:** Adding a secondary "Run Diagnostics" button here creates confusing focus-state conflicts for keyboard navigation users.
         VStack(spacing: 14) {
             Image(systemName: "network")
                 .font(.system(size: 52))
@@ -289,7 +321,11 @@ struct NetworkDiagnosticsView: View {
 }
 
 // MARK: - Metric tile
-
+/// A compact metric tile used in the Network Diagnostics report to show high-level status.
+///
+/// ```swift
+/// MetricTile(icon: "wifi", title: "Internet", value: "12ms", subtitle: "0% loss", color: .green)
+/// ```
 private struct MetricTile: View {
     let icon: String
     let title: String
@@ -319,7 +355,11 @@ private struct MetricTile: View {
 }
 
 // MARK: - Wrapping chips
-
+/// A layout helper that flows text chips (e.g., IP addresses) gracefully onto multiple lines.
+///
+/// ```swift
+/// FlowChips(items: ["1.1.1.1", "1.0.0.1"], color: .blue)
+/// ```
 private struct FlowChips: View {
     let items: [String]
     let color: Color

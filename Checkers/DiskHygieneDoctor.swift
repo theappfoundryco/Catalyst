@@ -9,13 +9,20 @@ struct DiskHygieneDoctor: Doctor {
 
     /// Scans developer cache directories to identify excessive disk usage.
     ///
+    /// **Flow:**
+    /// 1. Validates the footprint of `~/Library/Developer/Xcode/DerivedData`.
+    /// 2. Computes the footprint of the active global NPM cache location.
+    /// 3. Flags elements crossing explicitly defined gigabyte thresholds.
+    ///
     /// - Returns: An array of `HealthIssue` objects representing actionable cache folders to clean.
     func run() async -> [HealthIssue] {
         var issues: [HealthIssue] = []
         let fm = FileManager.default
         let home = fm.homeDirectoryForCurrentUser
         
-        // 1. Xcode DerivedData
+        /// 1. Xcode DerivedData
+        ///
+        /// **Rationale:** Apple natively caches massive indexing artifacts here. Clearing it resolves ghost build errors and reclaims gigabytes of fast NVMe storage.
         let derivedData = home.appendingPathComponent("Library/Developer/Xcode/DerivedData")
         if let size = await getDirectorySize(derivedData.path), size.bytes > 5_000_000_000 { // 5GB
              issues.append(HealthIssue(
@@ -28,7 +35,9 @@ struct DiskHygieneDoctor: Doctor {
             ))
         }
         
-        // 2. NPM Cache
+        /// 2. NPM Cache
+        ///
+        /// **Rationale:** The npm cache silently bloats over time; flushing it via `npm config get cache` pathways reclaims lost node space safely.
         do {
             let npmCache = try await AsyncProcessRunner.shared.run(command: "npm config get cache")
             let path = npmCache.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -49,7 +58,9 @@ struct DiskHygieneDoctor: Doctor {
         return issues
     }
     
-    // Helper
+    /// Helper
+    ///
+    /// **Rationale:** A dedicated asynchronous detached task for heavy string parsing ensures the main actor thread is never blocked during IO.
     private func getDirectorySize(_ path: String) async -> (formatted: String, bytes: Int64)? {
         let command = "du -s -k '\(path)' 2>/dev/null | awk '{print $1}'" // kilobytes
         return await Task.detached {
@@ -66,6 +77,9 @@ struct DiskHygieneDoctor: Doctor {
     }
     
     /// Attempts to free up disk space by cleaning identified cache directories.
+    ///
+    /// **Gotchas:**
+    /// Xcode handles live deletion gracefully, but `npm cache clean --force` can occasionally block active concurrent installs.
     ///
     /// - Parameter issue: The disk hygiene issue specifying which cache to clear.
     /// - Returns: A boolean indicating whether the cleanup operation was successful.

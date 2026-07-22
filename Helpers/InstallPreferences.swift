@@ -1,11 +1,6 @@
-//
-//  InstallPreferences.swift
-//  Catalyst
-//
-//  Global, persisted "install mode" that decides whether Catalyst overrides
-//  PEP 668 (externally-managed environments) when installing/upgrading pip
-//  packages on a system Python 3.12+.
-//
+/// Global, persisted "install mode" that decides whether Catalyst overrides
+/// PEP 668 (externally-managed environments) when installing/upgrading pip
+/// packages on a system Python 3.12+.
 
 import SwiftUI
 import Combine
@@ -14,6 +9,10 @@ import Combine
 ///
 /// Only relevant for 3.12+; on older interpreters the flags are omitted. The
 /// mode is global and applies to every pip action in the app.
+///
+/// ```swift
+/// let mode: PipInstallMode = .userSpace
+/// ```
 enum PipInstallMode: String, CaseIterable, Identifiable {
     /// Default. Respect system integrity — no override flag.
     case protected
@@ -105,6 +104,11 @@ enum PipInstallMode: String, CaseIterable, Identifiable {
 
 /// Global, persisted install preference. UI observes `mode`; command builders
 /// read the thread-safe `pipFlags(forPythonVersion:)` snapshot.
+///
+/// ```swift
+/// let prefs = InstallPreferences.shared
+/// let flags = InstallPreferences.pipFlags(forPythonVersion: "3.12.2")
+/// ```
 final class InstallPreferences: ObservableObject {
     static let shared = InstallPreferences()
     private static let key = "pipInstallMode"
@@ -124,6 +128,8 @@ final class InstallPreferences: ObservableObject {
     /// Thread-safe read (backed by UserDefaults) so command strings can be built
     /// off the main actor. Returns "" when the flags don't apply: Protected mode,
     /// or a pre-3.12 interpreter (where PEP 668 isn't in effect).
+    /// - Parameter version: The major minor string targeting the interpreter environment.
+    /// - Returns: The consolidated sequence of forced installation directives.
     static func pipFlags(forPythonVersion version: String?) -> String {
         if let version, !VersionComparator.requiresBreakSystemPackages(pythonVersion: version) {
             return ""

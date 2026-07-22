@@ -9,6 +9,11 @@ struct PathSanityCheck: Doctor {
     
     /// Scans the terminal path to detect Homebrew visibility and overlapping system Python boundaries.
     ///
+    /// **Flow:**
+    /// 1. Executes `which brew` in an explicit login shell verifying runtime `$PATH` consistency.
+    /// 2. Probes `python3 -c "import sys"` evaluating exact active interpreter locations.
+    /// 3. Marks instances shadowing against internal `/usr/bin/` or Apple frameworks.
+    ///
     /// - Returns: An array of `HealthIssue` containing path irregularities or restricted Python use cases.
     func run() async -> [HealthIssue] {
         var issues: [HealthIssue] = []
@@ -54,6 +59,9 @@ struct PathSanityCheck: Doctor {
     }
     
     /// Configures missing path structures within the shell profile to resolve detected alignment issues.
+    ///
+    /// **Gotchas:**
+    /// Appending exports to configuration profiles is handled by `ShellConfigManager`. Requires explicitly linking packages (e.g. `brew link --overwrite`) if symlinks are severed.
     ///
     /// - Parameter issue: The specific path conflict requiring resolution.
     /// - Returns: A boolean representing the successful application of the shell config updates.
