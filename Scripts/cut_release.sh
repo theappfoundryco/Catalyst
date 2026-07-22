@@ -110,7 +110,7 @@ MIN_OS=$(settings  | sed -n 's/.*MACOSX_DEPLOYMENT_TARGET = //p' | head -1)
 [ -n "$VERSION" ] || { echo "✗ couldn't read MARKETING_VERSION from Xcode"; exit 1; }
 
 VDIR="$REL_DIR/Versions/$VERSION"
-ZIP="$APP_REPO_DIR/build/Catalyst-${VERSION}.zip"
+DMG="$APP_REPO_DIR/build/Catalyst-${VERSION}.dmg"
 mkdir -p "$VDIR" "$APP_REPO_DIR/build"
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
@@ -336,7 +336,7 @@ echo "▸ Releasing v${VERSION} (min macOS ${MIN_OS})"
 # Abort unless the Release config is sane (no Debug leakage, hardened runtime, real signing).
 source "$APP_REPO_DIR/Scripts/preflight_release.sh"; preflight_release
 
-# ── Archive → export (Developer ID) → notarize → staple → re-zip stapled app ─
+# ── Archive → export (Developer ID) → build DMG → notarize → staple ─
 rm -rf build/Catalyst.xcarchive build/export
 xcodebuild -scheme Catalyst -configuration Release \
   -archivePath build/Catalyst.xcarchive archive \
@@ -345,38 +345,64 @@ xcodebuild -exportArchive -archivePath build/Catalyst.xcarchive \
   -exportPath build/export -exportOptionsPlist Scripts/exportOptions.plist
 APP=build/export/Catalyst.app
 
-ditto -c -k --keepParent "$APP" "$ZIP"
-xcrun notarytool submit "$ZIP" --keychain-profile "$NOTARY_PROFILE" --wait
-xcrun stapler staple "$APP"
-rm "$ZIP"; ditto -c -k --keepParent "$APP" "$ZIP"
+# Catalyst ships a single notarized .dmg: a Finder window with the app beside an /Applications
+# alias, so installing is a DRAG INTO APPLICATIONS rather than "run it from Downloads". Running an
+# unmoved quarantined app triggers Gatekeeper app-translocation (a random, read-only path), which
+# breaks Sparkle's in-place self-update — the drag is what avoids that. Still ONE artifact: the
+# .dmg is both what humans download and what Sparkle's enclosure points at.
+rm -f "$DMG"
+if command -v create-dmg >/dev/null 2>&1; then
+  # Nicer layout when create-dmg is installed (brew install create-dmg): positioned icons + the
+  # classic drag-onto-Applications window.
+  create-dmg \
+    --volname "Catalyst ${VERSION}" \
+    --icon "Catalyst.app" 150 190 \
+    --app-drop-link 450 190 \
+    --hide-extension "Catalyst.app" \
+    "$DMG" "$APP"
+else
+  # Dependency-free fallback: a compressed dmg holding the app + an /Applications symlink, so the
+  # drag target still exists (no positioned background, but a correct install medium).
+  STAGE=$(mktemp -d)
+  cp -R "$APP" "$STAGE/"
+  ln -s /Applications "$STAGE/Applications"
+  hdiutil create -volname "Catalyst ${VERSION}" -srcfolder "$STAGE" -ov -format UDZO "$DMG"
+  rm -rf "$STAGE"
+fi
 
-# NOTE: no DMG. Catalyst ships a single notarized .zip — the same artifact Sparkle updates
-# from and the one humans download. A branded DMG meant a SECOND notarization round trip per
-# release, a second asset to deprecate on every predecessor, and a second thing that could be
-# stapled wrong. A .zip that Gatekeeper accepts is not a worse install; it is one artifact
-# instead of two, which is one fewer way for a release to be half-published.
+# Notarize the DMG (Apple notarizes the app inside) and staple the ticket ONTO the dmg so
+# Gatekeeper clears the download offline. Single round-trip: the app was already Developer-ID
+# signed + hardened at export, so there's no second notarization the zip-plus-dmg era needed.
+xcrun notarytool submit "$DMG" --keychain-profile "$NOTARY_PROFILE" --wait
+xcrun stapler staple "$DMG"
 
 # ── Sparkle EdDSA signature → meta.env (historical versions are never re-signed) ─
 SIGN=$(find ~/Library/Developer/Xcode/DerivedData -path '*Sparkle*/bin/sign_update' | head -1)
 [ -x "$SIGN" ] || { echo "✗ sign_update not found in DerivedData — build once so SPM fetches Sparkle"; exit 1; }
-SIGOUT=$("$SIGN" "$ZIP")                                   # -> sparkle:edSignature="..." length="..."
+SIGOUT=$("$SIGN" "$DMG")                                   # -> sparkle:edSignature="..." length="..."
 SIG=$(sed    -n 's/.*edSignature="\([^"]*\)".*/\1/p' <<<"$SIGOUT")
 LENGTH=$(sed -n 's/.*length="\([^"]*\)".*/\1/p'      <<<"$SIGOUT")
 [ -n "$SIG" ] || { echo "✗ sign_update produced no signature"; exit 1; }
 
+# ASSET records THIS version's download filename so the appcast enclosure names the real asset.
+# It is what lets the feed carry .dmg entries for new releases while every HISTORICAL entry keeps
+# its original .zip: make_appcast.py defaults to Catalyst-<v>.zip when ASSET is absent, so versions
+# whose meta.env predates this field are never rewritten to a .dmg that doesn't exist. Do NOT
+# retro-fill old meta.env with .dmg — their GitHub asset is the .zip and their SIG signs the .zip.
 cat > "$VDIR/meta.env" <<EOF
 VERSION=$VERSION
 PUBDATE=$(date "+%a, %d %b %Y %H:%M:%S %z")
 MIN_OS=$MIN_OS
 SIG=$SIG
 LENGTH=$LENGTH
+ASSET=Catalyst-${VERSION}.dmg
 EOF
 
 # Regenerate the cumulative appcast from all Versions/*/ into the updates repo.
 python3 Scripts/make_appcast.py "$REL_DIR" "$APPCAST_OUT"
 
-# Publish: the GitHub Release hosts the single .zip.
-gh release create "v${VERSION}" "$ZIP" \
+# Publish: the GitHub Release hosts the single .dmg.
+gh release create "v${VERSION}" "$DMG" \
   --repo "$RELEASES_REPO" --title "Catalyst ${VERSION}" --notes-file "$VDIR/notes.html"
 
 # Log to CHANGELOG.md, deprecate predecessors (notes banner only), then

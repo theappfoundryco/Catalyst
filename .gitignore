@@ -33,6 +33,10 @@ updates/
 # A blanket `Scripts/` ignore silently drops any NEW helper script from commits.
 releases/
 
+# Python
+__pycache__/
+*.pyc
+
 # Tooling
 .claude
 .wrangler

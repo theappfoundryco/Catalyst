@@ -174,7 +174,7 @@ struct AboutView: View {
                     
                     SectionDivider()
                     
-                    InfoRow(icon: "person.fill", label: "Developer", value: vm.appInfo?.developer ?? "Shivang Gulati")
+                    InfoRow(icon: "person.fill", label: "Developer", value: vm.appInfo?.developer ?? "The App Foundry")
                     InfoRow(icon: "desktopcomputer", label: "Requires", value: vm.currentVersionInfo?.requirements ?? "macOS 14+")
                     InfoRow(icon: "cpu.fill", label: "Architecture", value: "Universal (Intel + Apple Silicon)")
                     
@@ -250,7 +250,7 @@ struct AboutView: View {
 /// A simple row displaying an icon, a label, and a corresponding value for the About screen.
 ///
 /// ```swift
-/// InfoRow(icon: "person.fill", label: "Developer", value: "Shivang Gulati")
+/// InfoRow(icon: "person.fill", label: "Developer", value: "The App Foundry")
 /// ```
 struct InfoRow: View {
     let icon: String

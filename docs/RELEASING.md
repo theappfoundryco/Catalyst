@@ -388,11 +388,22 @@ wrangler d1 execute catalyst-db --remote --command "SELECT status, COUNT(*) FROM
 
 ---
 
-## Distribution — where each artifact lives (2026-07-21, current)
+## Distribution — where each artifact lives (2026-07-22, current)
+
+> **2026-07-22 — Catalyst ships a `.dmg`, not a `.zip` (Shivang's call, final).** New releases
+> distribute `Catalyst-<v>.dmg` (app + `/Applications` drop target) so installing is a drag into
+> Applications, not "run it from Downloads" — which would trigger Gatekeeper app-translocation and
+> break Sparkle's self-update. This reverses the earlier "single zip, no DMG" note below; DMG-only
+> is still one artifact, so that note's double-notarization objection no longer applies. The switch
+> is **per-version**: `meta.env` records `ASSET=`, and `make_appcast.py` defaults to the `.zip` name
+> when it's absent, so every historically-published version keeps its real `.zip` enclosure and
+> signature. Do not make it retroactive. See CODING_STANDARDS 12.51. The zip-era wording that
+> remains further down is kept only as the record of what changed.
 
 **Everything ships from this repo.** `theappfoundryco/Catalyst` holds the source AND the GitHub
-Releases that host each `.zip`. The appcast and its per-version metadata live in
-`theappfoundryco/updates`, served at `updates.theappfoundry.co/catalyst/appcast.xml`.
+Releases that host each build (`.dmg` for new versions, `.zip` for ones cut before 2026-07-22). The
+appcast and its per-version metadata live in `theappfoundryco/updates`, served at
+`updates.theappfoundry.co/catalyst/appcast.xml`.
 
 There used to be a third repo, `Catalyst_Releases`, holding binaries separately from source. That
 split existed only because the source was **private** and Sparkle fetches the appcast and `.zip`
@@ -402,7 +413,7 @@ the repo was retired: one fewer clone, one fewer push that can half-fail.
 
 | Artifact | Lives in | Committed to git? |
 |---|---|---|
-| `Catalyst-<v>.zip` | GitHub Release asset on `theappfoundryco/Catalyst` | **No** — built into gitignored `build/` |
+| `Catalyst-<v>.dmg` (`.zip` pre-2026-07-22) | GitHub Release asset on `theappfoundryco/Catalyst` | **No** — built into gitignored `build/` |
 | `appcast.xml` | `updates/catalyst/` | Yes |
 | `notes.html`, `meta.env` | `updates/catalyst/Versions/<v>/` | Yes |
 | `CHANGELOG.md` | `updates/catalyst/` | Yes |
@@ -433,7 +444,7 @@ which breaks upgrades for anyone still running it.
   Pushing the repo publishes the feed — there is nothing to deploy.
 - Zips are per-version GitHub **Releases** on this repo, tag `vX.Y.Z` — a proper CDN and the
   archive of record.
-- Enclosure URL: `https://github.com/theappfoundryco/Catalyst/releases/download/v<version>/Catalyst-<version>.zip`
+- Enclosure URL (new releases): `https://github.com/theappfoundryco/Catalyst/releases/download/v<version>/Catalyst-<version>.dmg` — the filename per version comes from `meta.env`'s `ASSET`; pre-2026-07-22 versions keep `…/Catalyst-<version>.zip`.
 
 **Debug guard (2026-07-17) — the very first thing `cut_release.sh` does.** Before the notes prompt or any
 build, it reads the Release build settings (`xcodebuild -scheme Catalyst -configuration Release

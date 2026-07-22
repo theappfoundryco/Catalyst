@@ -833,7 +833,7 @@ private struct FiltersPopover: View {
             Text("Filter Commits")
                 .font(.headline)
 
-            field("Author contains", text: $author, placeholder: "e.g. Shivang")
+            field("Author contains", text: $author, placeholder: "e.g. John Doe")
             field("Path", text: $path, placeholder: "e.g. src/  or  README.md")
             HStack(spacing: 10) {
                 field("Since", text: $since, placeholder: "2024-01-01")

@@ -28,8 +28,19 @@ import os, re, sys, subprocess, html
 from pathlib import Path
 
 REPO      = "theappfoundryco/Catalyst"   # Releases live on the app repo itself
-DL_TMPL   = "https://github.com/%s/releases/download/v{v}/Catalyst-{v}.zip" % REPO
+# Enclosure download URL. The asset filename comes from each version's meta.env (ASSET=…), NOT a
+# fixed extension: new releases ship Catalyst-<v>.dmg, but historical versions were published as
+# Catalyst-<v>.zip and their GitHub asset + EdDSA signature are for that .zip. Defaulting ASSET to
+# the .zip name below keeps every old entry pointing at the file that actually exists — emitting a
+# blanket .dmg for all versions would 404 every old enclosure and silently break their upgrades.
+DL_BASE   = "https://github.com/%s/releases/download/v{v}/{asset}" % REPO
 FEED_TITLE = "Catalyst"
+
+def asset_name(m: dict) -> str:
+    return m.get("ASSET") or f"Catalyst-{m['VERSION']}.zip"
+
+def enclosure_mime(asset: str) -> str:
+    return "application/x-apple-diskimage" if asset.endswith(".dmg") else "application/octet-stream"
 
 def load_meta(path: Path) -> dict:
     meta = {}
@@ -61,7 +72,8 @@ def vkey(v: str):
 
 def item_xml(m: dict, notes: str) -> str:
     v = m["VERSION"]
-    url = DL_TMPL.format(v=v)
+    asset = asset_name(m)
+    url = DL_BASE.format(v=v, asset=asset)
     desc = ""
     if notes.strip():
         desc = f"\n            <description><![CDATA[\n{notes.rstrip()}\n            ]]></description>"
@@ -72,7 +84,7 @@ def item_xml(m: dict, notes: str) -> str:
             <sparkle:version>{html.escape(v)}</sparkle:version>
             <sparkle:shortVersionString>{html.escape(v)}</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>{m.get('MIN_OS','14.6')}</sparkle:minimumSystemVersion>
-            <enclosure url="{url}" length="{m['LENGTH']}" type="application/octet-stream" sparkle:edSignature="{m['SIG']}"/>
+            <enclosure url="{url}" length="{m['LENGTH']}" type="{enclosure_mime(asset)}" sparkle:edSignature="{m['SIG']}"/>
         </item>"""
 
 def main():
@@ -98,9 +110,9 @@ def main():
             print(f"  skip {vdir.name}: no meta.env", file=sys.stderr)
             continue
         m = load_meta(meta_path)
-        zip_path = vdir / f"Catalyst-{m['VERSION']}.zip"
+        asset_path = vdir / asset_name(m)   # local copy is optional; only used by the sign() fallback
         if not m.get("SIG") or not m.get("LENGTH"):
-            res = sign(zip_path)
+            res = sign(asset_path)
             if not res:
                 sys.exit(f"  {vdir.name}: no SIG in meta.env and sign_update unavailable/failed")
             m["SIG"], m["LENGTH"] = res
