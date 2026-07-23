@@ -97,7 +97,7 @@ struct VirtualEnvironmentsView: View {
                                 } label: {
                                     Label("Add Project", systemImage: "plus")
                                 }
-                                .buttonStyle(.secondaryAction)
+                                .appButton(.secondary)
                                 .padding(.top, 8)
                             }
                             .cardStyle()
@@ -198,7 +198,7 @@ struct VirtualEnvironmentsView: View {
                             Image(systemName: "trash.fill")
                                 .foregroundColor(.red)
                         }
-                        .buttonStyle(.plain)
+                        .appButton(.plain)
                     } else {
                         // Environment Badge
                         HStack(spacing: 6) {
@@ -230,7 +230,7 @@ struct VirtualEnvironmentsView: View {
                     } label: {
                         Label("Open in Finder", systemImage: "folder")
                     }
-                    .buttonStyle(.secondaryAction)
+                    .appButton(.secondary)
                     .disabled(isMissing)
 
                     Button {
@@ -238,7 +238,7 @@ struct VirtualEnvironmentsView: View {
                     } label: {
                         Label("Open venv in Terminal", systemImage: "terminal")
                     }
-                    .buttonStyle(.secondaryAction)
+                    .appButton(.secondary)
                     .disabled(isMissing)
 
                     // Destructive row action. Solid red + white label via `.destructiveAction`,
@@ -250,7 +250,7 @@ struct VirtualEnvironmentsView: View {
                     } label: {
                         Label("Remove from list", systemImage: "xmark.circle")
                     }
-                    .buttonStyle(.destructiveAction)
+                    .appButton(.destructive)
                 }
             }
             .padding(.vertical, 10)
@@ -291,7 +291,7 @@ struct VirtualEnvironmentsView: View {
                 .frame(maxWidth: .infinity, minHeight: 120, maxHeight: .infinity)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .appButton(.plain)
         }
     }
 

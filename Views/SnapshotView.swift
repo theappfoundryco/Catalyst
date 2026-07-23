@@ -285,7 +285,7 @@ private struct LandingAction: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 6)
         }
-        .buttonStyle(.borderedProminent)
+        .appButton(.primary)
         .controlSize(.large)
         .tint(accent)
         .disabled(disabled)
@@ -450,7 +450,7 @@ private struct SnapshotCaptureReadyView: View {
             Button { vm.discardCapture() } label: {
                 Text("Discard").fontWeight(.semibold)
             }
-            .buttonStyle(.bordered)
+            .appButton(.neutral)
             .controlSize(.large)
             .disabled(vm.isWorking)
 
@@ -459,7 +459,7 @@ private struct SnapshotCaptureReadyView: View {
                     .fontWeight(.semibold)
                     .frame(minWidth: 140)
             }
-            .buttonStyle(.borderedProminent)
+            .appButton(.primary)
             .tint(.green)
             .controlSize(.large)
             .disabled(vm.isWorking)
@@ -769,7 +769,7 @@ private struct SnapshotRestorePlanView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 4)
             }
-            .buttonStyle(.borderedProminent)
+            .appButton(.primary)
             .tint(.blue)
             .controlSize(.large)
             .disabled(vm.isWorking)
@@ -840,7 +840,7 @@ private struct SnapshotRestorePlanView: View {
                 Button { Task { await vm.applySecretsNow() } } label: {
                     Text("Apply Secrets").fontWeight(.semibold)
                 }
-                .buttonStyle(.borderedProminent)
+                .appButton(.primary)
                 .tint(.purple)
                 .controlSize(.large)
                 .disabled(vm.isWorking || vm.secretsValidation == .checking)
@@ -896,7 +896,7 @@ private struct SnapshotRestorePlanView: View {
                     if anyCollapsed { expanded = Set(vm.groupedActions.map { $0.kind }) }
                     else { expanded.removeAll() }
                 }
-                .buttonStyle(.plain)
+                .appButton(.plain)
                 .font(.caption.bold())
                 .disabled(vm.isWorking)
             }
@@ -936,7 +936,7 @@ private struct SnapshotRestorePlanView: View {
                         Button(selected == actionable ? "None" : "All") {
                             vm.setSection(kind, selected: selected != actionable)
                         }
-                        .buttonStyle(.plain)
+                        .appButton(.plain)
                         .font(.caption.bold())
                         .foregroundColor(.blue)
                         .disabled(vm.isWorking)
@@ -984,7 +984,7 @@ private struct SnapshotRestorePlanView: View {
                     .fontWeight(.semibold)
                     .frame(minWidth: 140)
             }
-            .buttonStyle(.borderedProminent)
+            .appButton(.primary)
             .tint(.blue)
             .controlSize(.large)
             .disabled(vm.isWorking)
@@ -1002,13 +1002,13 @@ private struct SnapshotRestorePlanView: View {
                 Button { vm.cancel() } label: {
                     Text("Cancel").fontWeight(.semibold)
                 }
-                .buttonStyle(.bordered)
+                .appButton(.neutral)
                 .controlSize(.large)
             } else {
                 Button { vm.backToPreview() } label: {
                     Text("Back to Preview").fontWeight(.semibold)
                 }
-                .buttonStyle(.bordered)
+                .appButton(.neutral)
                 .controlSize(.large)
 
                 Button { vm.discardPlan() } label: {
@@ -1016,7 +1016,7 @@ private struct SnapshotRestorePlanView: View {
                         .fontWeight(.semibold)
                         .frame(minWidth: 140)
                 }
-                .buttonStyle(.borderedProminent)
+                .appButton(.primary)
                 .tint(.blue)
                 .controlSize(.large)
             }

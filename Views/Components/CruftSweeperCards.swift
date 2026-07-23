@@ -220,7 +220,7 @@ struct StartScanView: View {
                         } label: {
                             Image(systemName: "plus")
                         }
-                        .buttonStyle(.plain)
+                        .appButton(.plain)
                     }
                     SectionDivider()
                     
@@ -248,7 +248,7 @@ struct StartScanView: View {
                                     Image(systemName: "xmark.circle.fill")
                                         .foregroundColor(.red)
                                 }
-                                .buttonStyle(.plain)
+                                .appButton(.plain)
                             }
                         }
                     }
@@ -278,7 +278,7 @@ struct StartScanView: View {
                         } label: {
                             Image(systemName: "plus")
                         }
-                        .buttonStyle(.plain)
+                        .appButton(.plain)
                     }
                     SectionDivider()
                     
@@ -303,7 +303,7 @@ struct StartScanView: View {
                                     Image(systemName: "xmark.circle.fill")
                                         .foregroundColor(.red)
                                 }
-                                .buttonStyle(.plain)
+                                .appButton(.plain)
                             }
                         }
                     }
@@ -329,7 +329,7 @@ struct StartScanView: View {
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 8)
                 }
-                .buttonStyle(.borderedProminent)
+                .appButton(.primary)
                 .controlSize(.large)
                 .padding(.horizontal)
                 .padding(.bottom, 40)
@@ -440,7 +440,7 @@ struct ScanningView: View {
                 .background(Color.red.opacity(0.8))
                 .cornerRadius(8)
             }
-            .buttonStyle(.plain)
+            .appButton(.plain)
             .padding(.top, 20)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -490,7 +490,7 @@ struct ResultsDashboard: View {
                                 Text(anyCollapsed ? "Expand All" : "Collapse All")
                                     .font(.caption.bold())
                             }
-                            .buttonStyle(.plain)
+                            .appButton(.plain)
                         }
 
                         SectionDivider()
@@ -573,7 +573,7 @@ struct ResultsDashboard: View {
                             Text("Delete Selected")
                                 .frame(minWidth: 140)
                         }
-                        .buttonStyle(.destructiveActionProminent)
+                        .appButton(.destructiveProminent)
                     }
                     .padding()
                     .background(Color(NSColor.controlBackgroundColor))
@@ -693,41 +693,68 @@ private struct CruftSummaryCard: View {
 
             SectionDivider()
 
-            /// Smart selection actions — match the .bordered + Label grammar used
-            /// by RequirementsView's result actions.
-            ///
-            /// **Rationale:** Explicit macro-selection buttons prevent the tedium of manually checking hundreds of individual checkboxes.
-            HStack(spacing: 12) {
-                Button {
-                    vm.selectAll()
-                } label: {
-                    Label("Select All", systemImage: "checkmark.circle")
-                        .font(.subheadline)
-                }
-                .buttonStyle(.bordered)
-
-                Button {
-                    vm.selectSafe()
-                } label: {
-                    Label("Select Safe", systemImage: "leaf")
-                        .font(.subheadline)
-                }
-                .buttonStyle(.bordered)
-
-                if !vm.selectedIDs.isEmpty {
-                    Button {
-                        vm.deselectAll()
-                    } label: {
-                        Text("Clear")
-                            .font(.subheadline)
-                    }
-                    .buttonStyle(.bordered)
-                }
-
-                Spacer()
-            }
+            SmartSelectionActions(
+                hasSelection: !vm.selectedIDs.isEmpty,
+                onSelectAll: { vm.selectAll() },
+                onSelectSafe: { vm.selectSafe() },
+                onClear: { vm.deselectAll() }
+            )
         }
         .cardStyle()
+    }
+}
+
+/// Macro-selection controls for the Cruft summary — the single source of truth for
+/// the "Select All / Select Safe / Clear" action row.
+///
+/// Centralised so the row is defined once rather than hand-rolled inline, mirroring
+/// how ``MaintenanceOperationRow`` centralises the Homebrew action buttons — and it
+/// reuses the exact same button grammar via ``AppButtonKind``: `.appButton(.primary)`
+/// + `.tint` for the two colored macro-selects (native prominent, so they carry real
+/// depth), and `.appButton(.neutral)` for Clear. Colors are semantic per
+/// `docs/CODING_STANDARDS.md` §4.13 — blue for "everything", green for the Safe
+/// subset (matching Cruft's green Safe chip).
+///
+/// ```swift
+/// SmartSelectionActions(
+///     hasSelection: !vm.selectedIDs.isEmpty,
+///     onSelectAll: { vm.selectAll() },
+///     onSelectSafe: { vm.selectSafe() },
+///     onClear: { vm.deselectAll() }
+/// )
+/// ```
+struct SmartSelectionActions: View {
+    let hasSelection: Bool
+    let onSelectAll: () -> Void
+    let onSelectSafe: () -> Void
+    let onClear: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Button(action: onSelectAll) {
+                Label("Select All", systemImage: "checkmark.circle")
+                    .font(.subheadline)
+            }
+            .appButton(.primary)
+            .tint(.blue)
+
+            Button(action: onSelectSafe) {
+                Label("Select Safe", systemImage: "leaf")
+                    .font(.subheadline)
+            }
+            .appButton(.primary)
+            .tint(.green)
+
+            if hasSelection {
+                Button(action: onClear) {
+                    Text("Clear")
+                        .font(.subheadline)
+                }
+                .appButton(.neutral)
+            }
+
+            Spacer()
+        }
     }
 }
 
@@ -892,7 +919,7 @@ struct InstantDisclosureGroup<Label: View, Content: View>: View {
                 }
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .appButton(.plain)
             
             if isExpanded {
                 content

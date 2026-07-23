@@ -41,7 +41,7 @@ struct SystemStatusCard: View {
                                 Image(systemName: "exclamationmark.circle.fill")
                                     .foregroundColor(.red)
                             }
-                            .buttonStyle(.plain)
+                            .appButton(.plain)
                             .popover(isPresented: $showSystemPythonErrorPopover) {
                                 if let err = vm.systemPythonError {
                                     Text(err)
@@ -79,7 +79,7 @@ struct SystemStatusCard: View {
                         } label: {
                             Text(vm.isInstallingCommandLineTools ? "Requesting..." : "Install")
                         }
-                        .buttonStyle(.borderedProminent)
+                        .appButton(.primary)
                         .disabled(vm.isBusy)
                     }
                 }
@@ -117,7 +117,7 @@ struct SystemStatusCard: View {
                         } label: {
                             Text(vm.isInstallingBrew ? "Installing..." : "Install")
                         }
-                        .buttonStyle(.borderedProminent)
+                        .appButton(.primary)
                         .disabled(vm.isBusy)
                     }
                 }
@@ -301,7 +301,7 @@ struct PythonInstallationRow: View, Equatable {
                             Text("Repair")
                         }
                     }
-                    .buttonStyle(.borderedProminent)
+                    .appButton(.primary)
                     .controlSize(.small)
                     .disabled(isBusy)
                 }
@@ -321,7 +321,7 @@ struct PythonInstallationRow: View, Equatable {
                             Text("Upgrade")
                         }
                     }
-                    .buttonStyle(.borderedProminent)
+                    .appButton(.primary)
                     .controlSize(.small)
                     .disabled(isBusy)
                 }
@@ -364,7 +364,7 @@ struct PythonInstallationRow: View, Equatable {
                                 Text("Upgrade")
                             }
                         }
-                        .buttonStyle(.borderedProminent)
+                        .appButton(.primary)
                         .controlSize(.small)
                         .disabled(isBusy || installMode == .protected)
                         .confirmationDialog(
@@ -476,7 +476,7 @@ struct InstallPythonCard: View {
                     } label: {
                         Text(vm.isInstallingPython ? "Installing..." : "Install")
                     }
-                    .buttonStyle(.borderedProminent)
+                    .appButton(.primary)
                     .disabled(vm.selectedVersionToInstall == nil || vm.isBusy || vm.brewStatus != "Installed")
                     .confirmationDialog(
                         "Install Python \(vm.selectedVersionToInstall ?? "")?",
@@ -546,7 +546,7 @@ struct UninstallCard: View {
                     } label: {
                         Text(vm.isUninstallingBrew ? "Uninstalling..." : "Uninstall")
                     }
-                    .buttonStyle(.destructiveAction)
+                    .appButton(.destructive)
                     .disabled(vm.isBusy)
                     .confirmationDialog(
                         "Uninstall Homebrew?",
@@ -594,7 +594,7 @@ struct UninstallCard: View {
                         Text(vm.isUninstallingPython ? "Uninstalling..." : "Uninstall Selected")
                             .frame(maxWidth: .infinity)
                     }
-                    .buttonStyle(.destructiveActionProminent)
+                    .appButton(.destructiveProminent)
                     .disabled(vm.selectedVersionsToUninstall.isEmpty || vm.isBusy)
                     .confirmationDialog(
                         "Uninstall Python Versions?",
@@ -781,7 +781,7 @@ struct MaintenanceOperationRow: View, Equatable {
             } label: {
                 Text(isRunning ? loadingTitle : buttonTitle)
             }
-            .buttonStyle(.borderedProminent)
+            .appButton(.primary)
             .tint(color)
             .disabled(isBusy)
         }
@@ -868,7 +868,7 @@ struct UnlinkedKegsSection: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 8)
             }
-            .buttonStyle(.borderedProminent)
+            .appButton(.primary)
             .tint(.orange)
             .disabled(isLinking)
             .padding(.horizontal, 16)
@@ -934,7 +934,7 @@ struct DefaultPythonCard: View {
                     } label: {
                         Label("Remove Catalyst default", systemImage: "arrow.uturn.backward")
                     }
-                    .buttonStyle(.secondaryAction)
+                    .appButton(.secondary)
                     .disabled(manager.isApplying)
                 }
             }
@@ -980,7 +980,7 @@ struct DefaultPythonCard: View {
                                 Text("Apply")
                             }
                         }
-                        .buttonStyle(.borderedProminent)
+                        .appButton(.primary)
                         .disabled(manager.selection == nil || manager.isApplying)
                     }
                 }

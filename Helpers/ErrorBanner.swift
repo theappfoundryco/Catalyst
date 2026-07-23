@@ -45,7 +45,7 @@ struct ErrorBanner: View {
                         .font(.caption.bold())
                         .foregroundColor(.secondary)
                 }
-                .buttonStyle(.plain)
+                .appButton(.plain)
                 .help("Dismiss")
             }
             .padding(.horizontal, 12)

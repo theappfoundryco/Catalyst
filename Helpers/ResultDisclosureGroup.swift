@@ -93,7 +93,7 @@ struct ResultDisclosureGroup: View {
                                     Text("Retry")
                                         .font(.caption2)
                                 }
-                                .buttonStyle(.bordered)
+                                .appButton(.neutral)
                                 .controlSize(.mini)
                             }
                         }
@@ -123,7 +123,7 @@ struct ResultDisclosureGroup: View {
                         Image(systemName: "xmark.circle.fill")
                             .foregroundColor(.secondary)
                     }
-                    .buttonStyle(.plain)
+                    .appButton(.plain)
                 }
             }
         }

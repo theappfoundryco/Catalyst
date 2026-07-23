@@ -125,7 +125,7 @@ struct SmartShortcutsView: View {
                                     customName: vm.getCustomName(shortcut.id)
                                 )
                             }
-                            .buttonStyle(.plain)
+                            .appButton(.plain)
                         }
                     }
                     .padding(.horizontal)
@@ -189,6 +189,6 @@ struct SmartShortcutsView: View {
                     )
                     .foregroundColor(isSelected ? .white : .primary)
             }
-            .buttonStyle(.plain)
+            .appButton(.plain)
         }
     }

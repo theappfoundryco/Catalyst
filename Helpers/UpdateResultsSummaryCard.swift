@@ -81,7 +81,7 @@ struct UpdateResultsSummaryCard: View {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundColor(.secondary)
                 }
-                .buttonStyle(.plain)
+                .appButton(.plain)
             }
             
             SectionDivider()

@@ -263,12 +263,30 @@ layout, but is no longer required just for color matching.
 **Exception — `.bordered` + `.tint(.primary)` does NOT reliably match.** On a
 `.bordered` button, macOS still accent-tints the glyph (blue) while the title
 stays neutral, and `.tint(.primary)` won't override it. For neutral secondary
-actions (Copy, Reveal, row actions) use **`.buttonStyle(.secondaryAction)`**
-(`SecondaryActionButtonStyle` in `MatchedLabelStyle.swift`) — a custom style on a
-neutral surface that forces icon == title in ONE color. Button color reflects the
-button's role: `.secondaryAction` (neutral) for secondary, `.borderedProminent`
-for primary, `.bordered` + `.tint(.red)` + `.labelStyle(.matched)` for
-destructive. Applied in `SSHKeyView` (Copy Public Key / Reveal / Fix Perms).
+actions (Copy, Reveal, row actions) use the `.secondary` role — a custom style on a
+neutral surface that forces icon == title in ONE color (`SecondaryActionButtonStyle`
+in `MatchedLabelStyle.swift`). Applied in `SSHKeyView` (Copy Public Key / Reveal /
+Fix Perms).
+
+4.2a **Every button routes through the centralised `.appButton(_:)` — never
+`.buttonStyle(_:)` directly.** `Helpers/AppButtonStyle.swift` is the single source of
+truth: it maps each semantic ``AppButtonKind`` to its concrete style, so the whole
+app is consistent and can be restyled from one file. Pick a button by role, not by
+appearance:
+
+- `.primary` — main call-to-action (prominent, filled). Add a call-site `.tint(_:)`
+  to color it (e.g. Homebrew's per-operation blue/green/orange/red, Cruft's blue
+  "Select All" / green "Select Safe").
+- `.neutral` — bordered secondary with native depth (Cancel, Clear, Choose…).
+- `.secondary` — compact flat secondary where icon must match the title color.
+- `.destructive` / `.destructiveProminent` — solid red, at row and card-CTA scale.
+- `.plain` — bare icon buttons and tappable rows.
+- `.borderless` — inline, link-like affordances (toolbar glyphs, "Move up").
+- `.link` — a text hyperlink (accent-colored, no chrome).
+
+Per-button variation (`.tint`, `.controlSize`, full-width framing) stays at the call
+site and composes on top of the role. The only file allowed to call `.buttonStyle(_:)`
+is `AppButtonStyle.swift` itself.
 
 4.3 **Icons are `.fill` variants** (Catalyst house style). Sidebar + card icons
 use the filled SF Symbol.

@@ -105,6 +105,7 @@
 		8F6488372F326750004272D6 /* VirtualEnvCreationViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F6488342F326750004272D6 /* VirtualEnvCreationViewModel.swift */; };
 		8F64883B2F327E5B004272D6 /* PythonVersionsResponse.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F64883A2F327E5B004272D6 /* PythonVersionsResponse.swift */; };
 		8F7F16F62FF6ED530033B8F2 /* MatchedLabelStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F7F16F42FF6ED530033B8F2 /* MatchedLabelStyle.swift */; };
+		AB1C0DE500B0770100000002 /* AppButtonStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB1C0DE500B0770100000001 /* AppButtonStyle.swift */; };
 		8F7F16F72FF6ED530033B8F2 /* ShortcutContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F7F16F52FF6ED530033B8F2 /* ShortcutContentView.swift */; };
 		8F8174AA2F420B7400090A0C /* MasterHeaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F8174A92F420B7400090A0C /* MasterHeaderView.swift */; };
 		8F8174AE2F42166200090A0C /* SelectPythonVersionDropdown.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F8174AD2F42165900090A0C /* SelectPythonVersionDropdown.swift */; };
@@ -293,6 +294,7 @@
 		8F6488352F326750004272D6 /* VirtualEnvironmentsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VirtualEnvironmentsViewModel.swift; sourceTree = "<group>"; };
 		8F64883A2F327E5B004272D6 /* PythonVersionsResponse.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PythonVersionsResponse.swift; sourceTree = "<group>"; };
 		8F7F16F42FF6ED530033B8F2 /* MatchedLabelStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MatchedLabelStyle.swift; sourceTree = "<group>"; };
+		AB1C0DE500B0770100000001 /* AppButtonStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppButtonStyle.swift; sourceTree = "<group>"; };
 		8F7F16F52FF6ED530033B8F2 /* ShortcutContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShortcutContentView.swift; sourceTree = "<group>"; };
 		8F8174A92F420B7400090A0C /* MasterHeaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MasterHeaderView.swift; sourceTree = "<group>"; };
 		8F8174AD2F42165900090A0C /* SelectPythonVersionDropdown.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SelectPythonVersionDropdown.swift; sourceTree = "<group>"; };
@@ -633,6 +635,7 @@
 			isa = PBXGroup;
 			children = (
 				8F7F16F42FF6ED530033B8F2 /* MatchedLabelStyle.swift */,
+				AB1C0DE500B0770100000001 /* AppButtonStyle.swift */,
 				CA7A1111000000000000AA01 /* InstallPreferences.swift */,
 				CA7A2222000000000000BB01 /* SnapshotCrypto.swift */,
 				CA7A1111000000000000BB01 /* AdminCredentialStore.swift */,
@@ -892,6 +895,7 @@
 				FF0000000000000000000A11 /* BatteryHealthService.swift in Sources */,
 				FF0000000000000000000B11 /* BatteryHealthViewModel.swift in Sources */,
 				8F7F16F62FF6ED530033B8F2 /* MatchedLabelStyle.swift in Sources */,
+				AB1C0DE500B0770100000002 /* AppButtonStyle.swift in Sources */,
 				CA7A1111000000000000AA02 /* InstallPreferences.swift in Sources */,
 				CA7A2222000000000000BB02 /* SnapshotCrypto.swift in Sources */,
 				CA7A1111000000000000BB02 /* AdminCredentialStore.swift in Sources */,

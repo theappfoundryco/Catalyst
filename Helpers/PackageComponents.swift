@@ -70,7 +70,7 @@ struct InstalledPackageRow: View, Equatable {
                 } label: {
                     Text(isProcessing ? "Uninstalling..." : "Uninstall")
                 }
-                .buttonStyle(.destructiveAction)
+                .appButton(.destructive)
             }
         }
         .padding(.horizontal, 16)
@@ -138,7 +138,7 @@ struct InstalledPackageRow: View, Equatable {
                         Text(isProcessing ? "Installing..." : "Install")
                             .font(.caption)
                     }
-                    .buttonStyle(.borderedProminent)
+                    .appButton(.primary)
                 }
             }
             .padding(.horizontal, 16)
@@ -236,7 +236,7 @@ struct InstallablePackageRow: View {
                     Text("Install")
                         .font(.caption)
                 }
-                .buttonStyle(.borderedProminent)
+                .appButton(.primary)
                 .disabled(!canInstall)
                 .opacity(canInstall ? 1.0 : 0.5)
             }
@@ -384,7 +384,7 @@ struct PopularPackageRow: View, Equatable {
                     Text(isInstalling ? "Installing..." : "Install")
                         .font(.caption)
                 }
-                .buttonStyle(.borderedProminent)
+                .appButton(.primary)
                 .disabled(!canInstall)
                 .opacity(canInstall ? 1.0 : 0.5)
             }

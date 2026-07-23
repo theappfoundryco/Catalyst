@@ -95,7 +95,7 @@ struct NetworkDiagnosticsView: View {
                             .labelStyle(.matched)
                     }
                 }
-                .buttonStyle(.borderedProminent)
+                .appButton(.primary)
                 .tint(.teal)
                 .disabled(vm.state == .running)
             }

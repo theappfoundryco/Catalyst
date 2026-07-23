@@ -46,8 +46,12 @@ extension LabelStyle where Self == MatchedLabelStyle {
 /// "button color reflects the button type" (neutral surface here) while primary
 /// actions keep `.borderedProminent`.
 ///
+/// Apply it through the app's centralised entry point rather than directly:
+/// `.appButton(.secondary)` (see ``AppButtonKind``). The raw style below is what
+/// that role resolves to.
+///
 /// ```swift
-/// Button("Copy") { }.buttonStyle(.secondaryAction)
+/// Button("Copy") { }.appButton(.secondary)
 /// ```
 struct SecondaryActionButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
@@ -58,7 +62,7 @@ struct SecondaryActionButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .labelStyle(.matched)
-            .font(.caption.weight(.medium))
+            .font(.caption.weight(.semibold))
             .foregroundStyle(.primary)                 // icon AND title, same color
             .padding(.horizontal, 10)
             .padding(.vertical, 5)
@@ -98,9 +102,13 @@ extension ButtonStyle where Self == SecondaryActionButtonStyle {
 /// the alternative was converting the large CTAs to caption size, which would have quietly
 /// demoted the most consequential buttons in the app.
 ///
+/// Apply through the app's centralised entry point rather than directly:
+/// `.appButton(.destructive)` / `.appButton(.destructiveProminent)` (see
+/// ``AppButtonKind``). The raw style below is what those roles resolve to.
+///
 /// ```swift
-/// Button("Delete") { }.buttonStyle(.destructiveAction)
-/// Button("Uninstall") { }.buttonStyle(.destructiveActionProminent)
+/// Button("Delete") { }.appButton(.destructive)
+/// Button("Uninstall") { }.appButton(.destructiveProminent)
 /// ```
 struct DestructiveActionButtonStyle: ButtonStyle {
     /// Governs the exact geometrical scale of the destructive action trigger.
@@ -116,8 +124,8 @@ struct DestructiveActionButtonStyle: ButtonStyle {
 
     private var font: Font {
         switch size {
-        case .regular:   return .caption.weight(.medium)
-        case .prominent: return .body.weight(.semibold)
+        case .regular:   return .caption.weight(.semibold)
+        case .prominent: return .body.weight(.bold)
         }
     }
     private var hPad: CGFloat { size == .regular ? 10 : 16 }

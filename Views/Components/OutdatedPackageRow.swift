@@ -91,7 +91,7 @@ struct OutdatedPackageRow: View, Equatable {
                         Text("Retry")
                             .font(.caption2)
                     }
-                    .buttonStyle(.bordered)
+                    .appButton(.neutral)
                     .controlSize(.mini)
                 }
                 .help(heldBackReason ?? "A newer version exists but isn't installable in this environment.")
@@ -109,7 +109,7 @@ struct OutdatedPackageRow: View, Equatable {
                         Text("Retry")
                             .font(.caption2)
                     }
-                    .buttonStyle(.bordered)
+                    .appButton(.neutral)
                     .controlSize(.mini)
                 }
             } else {
@@ -119,7 +119,7 @@ struct OutdatedPackageRow: View, Equatable {
                     Text("Update")
                         .font(.caption)
                 }
-                .buttonStyle(.borderedProminent)
+                .appButton(.primary)
             }
         }
         .padding(.horizontal, 16)

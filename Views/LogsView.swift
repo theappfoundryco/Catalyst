@@ -105,7 +105,7 @@ struct LogsView: View {
                     )
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .appButton(.plain)
 
                 // Separator between two adjacent, unselected segments (AppKit-style).
                 if index < cases.count - 1 {
@@ -175,7 +175,7 @@ struct LogsView: View {
                         .labelStyle(.matched)
                         .font(.caption)
                 }
-                .buttonStyle(.bordered)
+                .appButton(.neutral)
                 .controlSize(.small)
                 
                 Button {
@@ -185,7 +185,7 @@ struct LogsView: View {
                         .labelStyle(.matched)
                         .font(.caption)
                 }
-                .buttonStyle(.bordered)
+                .appButton(.neutral)
                 .controlSize(.small)
             }
             

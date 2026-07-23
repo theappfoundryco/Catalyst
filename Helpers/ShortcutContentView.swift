@@ -223,7 +223,7 @@ private struct CommandChip: View {
                     .font(.caption)
                     .foregroundColor(copied ? .green : .secondary)
             }
-            .buttonStyle(.plain)
+            .appButton(.plain)
             .help("Copy command")
 
             Spacer(minLength: 0)

@@ -159,7 +159,7 @@ struct TerminalTimeTravelView: View {
                             .font(.caption)
                             .foregroundStyle(copied ? Color.green : Color.primary)
                     }
-                    .buttonStyle(.bordered)
+                    .appButton(.neutral)
                     .controlSize(.small)
                     .animation(.easeInOut(duration: 0.15), value: copied)
                     
@@ -170,7 +170,7 @@ struct TerminalTimeTravelView: View {
                             .labelStyle(.matched)
                             .font(.caption)
                     }
-                    .buttonStyle(.bordered)
+                    .appButton(.neutral)
                     .tint(.green)
                     .controlSize(.small)
                 }

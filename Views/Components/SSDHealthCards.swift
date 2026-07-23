@@ -566,7 +566,7 @@ struct SSDSetupCard: View {
                     Text(buttonLabel)
                 }
             }
-            .buttonStyle(.borderedProminent)
+            .appButton(.primary)
             .controlSize(.large)
             .disabled(isLoading)
         }

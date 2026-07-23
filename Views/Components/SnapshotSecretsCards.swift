@@ -110,7 +110,7 @@ struct SecretsPassphraseField: View {
 
                 if let onValidate {
                     Button("Validate", action: onValidate)
-                        .buttonStyle(.bordered)
+                        .appButton(.neutral)
                         .disabled(disabled || passphrase.isEmpty || validation == .checking)
                         // Align with the field, not its caption label.
                         .padding(.top, label == nil ? 0 : 18)
@@ -157,7 +157,7 @@ struct SnapshotSecretsCaptureSheet: View {
 
             HStack {
                 Button("Cancel", action: onCancel)
-                    .buttonStyle(.bordered)
+                    .appButton(.neutral)
                     .controlSize(.large)
                 Spacer()
                 Button(action: onCapture) {
@@ -165,7 +165,7 @@ struct SnapshotSecretsCaptureSheet: View {
                         .fontWeight(.semibold)
                         .frame(minWidth: 180)
                 }
-                .buttonStyle(.borderedProminent)
+                .appButton(.primary)
                 .tint(.green)
                 .controlSize(.large)
                 .disabled(isWorking)
@@ -248,7 +248,7 @@ struct SnapshotSecretsPendingCard: View {
                     .labelStyle(.matched)
                     .fontWeight(.semibold)
             }
-            .buttonStyle(.bordered)
+            .appButton(.neutral)
             .controlSize(.large)
             .disabled(disabled)
         }
@@ -306,7 +306,7 @@ struct SnapshotSecretsUnlockSheet: View {
 
             HStack {
                 Button("Close", action: onCancel)
-                    .buttonStyle(.bordered)
+                    .appButton(.neutral)
                     .controlSize(.large)
                 Spacer()
                 Button(action: onApply) {
@@ -314,7 +314,7 @@ struct SnapshotSecretsUnlockSheet: View {
                         .fontWeight(.semibold)
                         .frame(minWidth: 140)
                 }
-                .buttonStyle(.borderedProminent)
+                .appButton(.primary)
                 .tint(.purple)
                 .controlSize(.large)
                 .disabled(!canApply)

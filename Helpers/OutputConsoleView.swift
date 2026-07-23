@@ -44,7 +44,7 @@ struct OutputConsoleView: View {
                         .labelStyle(.matched)
                         .font(.caption)
                 }
-                .buttonStyle(.bordered)
+                .appButton(.neutral)
                 .controlSize(.small)
             }
             
