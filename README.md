@@ -128,14 +128,28 @@ A complete, screen-by-screen reference lives in [`docs/ARCHITECTURE.md`](docs/AR
 
 ## Screenshots
 
-<!-- Drop PNGs into docs/media/ and reference them here, e.g.:
 <div align="center">
-  <img src="docs/media/dashboard.png" width="49%" alt="Dashboard" />
-  <img src="docs/media/dr-catalyst.png" width="49%" alt="Dr. Catalyst" />
+  <img src="previewImages/dashboard.png" width="49%" alt="Dashboard — system status and every installed Python version at a glance" />
+  <img src="previewImages/pip-packages.png" width="49%" alt="pip Packages — manage installed packages per interpreter, with install-mode / PEP 668 controls" />
 </div>
--->
+<div align="center">
+  <img src="previewImages/pip-updates.png" width="49%" alt="pip Updates — every outdated package with one-click Update All" />
+  <img src="previewImages/dr-catalyst-diagnostics.png" width="49%" alt="Dr. Catalyst — a System Vitality score and 16 concurrent diagnostic checkers" />
+</div>
+<div align="center">
+  <img src="previewImages/dr-catalyst-health-trend.png" width="49%" alt="Dr. Catalyst — 30-scan health trend, storage footprint, and port/process monitor" />
+  <img src="previewImages/disk-vitals.png" width="49%" alt="Disk Vitals — NVMe SSD SMART health, temperature, and wear" />
+</div>
+<div align="center">
+  <img src="previewImages/git-graph.png" width="49%" alt="Git Graph — branch and merge commit history with search and refs" />
+  <img src="previewImages/virtual-environments.png" width="49%" alt="Virtual Environments — create a venv with detected requirements and Git awareness" />
+</div>
+<div align="center">
+  <img src="previewImages/smart-shortcuts.png" width="49%" alt="SmartShortcuts — a searchable library of shell aliases and functions" />
+  <img src="previewImages/snapshot-migrate.png" width="49%" alt="Snapshot & Migrate — capture your whole dev setup into one file and rebuild it on another Mac" />
+</div>
 
-_Screens: Dashboard · Dr. Catalyst · Cruft Sweeper · Git Graph · Snapshot & Migrate._
+_Screens: Dashboard · pip Packages · pip Updates · Dr. Catalyst · Disk Vitals · Git Graph · Virtual Environments · SmartShortcuts · Snapshot & Migrate._
 
 ## Requirements
 
