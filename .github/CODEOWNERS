@@ -7,7 +7,7 @@
 # An owner without write access is silently ignored — no error, no review request. If reviews
 # stop being requested, check collaborator permissions before suspecting this file.
 
-* @theappfoundryco @imsg8
+* @imsg8 @tejeswar04
 
 # Anything that decides what ships, or what the app reports about its users, gets looked at
 # regardless of who wrote it.
