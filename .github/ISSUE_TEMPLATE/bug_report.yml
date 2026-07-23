@@ -1,77 +1,85 @@
-name: Bug report
-description: Something in Catalyst doesn't work the way it should.
+name: 🐞 Bug report
+description: Report something in Catalyst that isn't working right.
+title: "[Bug]: "
 labels: ["bug"]
 body:
   - type: markdown
     attributes:
       value: |
-        Thanks for taking the time. The single most useful thing you can give us is the exact
-        steps that reproduce it — a bug we can trigger locally is usually a bug we can fix.
-
-  - type: textarea
-    id: what-happened
+        Thanks for helping improve Catalyst! Your version is pre-filled below.
+        Please describe what went wrong so we can reproduce it.
+  - type: checkboxes
+    id: checks
     attributes:
-      label: What happened
-      description: What did you see? If Catalyst showed an error message, paste it exactly.
-      placeholder: Clicking "Upgrade" on an outdated pip package left the row spinning forever.
+      label: Before you start
+      options:
+        - label: I searched existing issues and this isn't a duplicate.
+          required: true
+        - label: I'm on the latest version of Catalyst.
+          required: false
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where did it happen?
+      options:
+        - Not sure
+        - Git Graph
+        - Editor
+        - Updates / installer
+        - Account / subscription
+        - Other
+      default: 0
     validations:
       required: true
-
   - type: textarea
-    id: expected
+    id: what
     attributes:
-      label: What you expected instead
-      placeholder: The package upgrades and the row updates to show the new version.
+      label: What happened?
+      description: What did you do, and what went wrong? Paste any error message exactly.
+      placeholder: When I opened Git Graph and imported a repo, the spinner never stopped…
     validations:
       required: true
-
   - type: textarea
     id: steps
     attributes:
       label: Steps to reproduce
-      description: Number them. Include which screen you started on.
       placeholder: |
-        1. Open pip Updates
-        2. Click Upgrade on any package
-        3. Wait ~30s
+        1. Open …
+        2. Click …
+        3. See …
     validations:
-      required: true
-
+      required: false
+  - type: dropdown
+    id: frequency
+    attributes:
+      label: How often does it happen?
+      options:
+        - Every time
+        - Often
+        - Once / rarely
+      default: 0
+    validations:
+      required: false
   - type: input
     id: version
     attributes:
       label: Catalyst version
-      description: Find it under About in the sidebar.
-      placeholder: "1.0"
+      description: Pre-filled by the app (Help & Info → About shows it too).
+      placeholder: e.g. 1.10
     validations:
       required: true
-
   - type: input
     id: macos
     attributes:
-      label: macOS version and chip
-      placeholder: "macOS 15.2, Apple Silicon"
-    validations:
-      required: true
-
-  - type: textarea
-    id: logs
-    attributes:
-      label: Logs
-      description: |
-        Open **Logs** in the sidebar, reproduce the problem, then copy anything from around
-        the failure. Please skim it before pasting — logs can contain file paths from your
-        machine. This is optional, but it turns most guesses into answers.
-      render: text
+      label: macOS version
+      placeholder: e.g. macOS 26 (Tahoe) / 14 (Sonoma)
     validations:
       required: false
-
-  - type: checkboxes
-    id: checks
+  - type: input
+    id: contact
     attributes:
-      label: Before submitting
-      options:
-        - label: I'm on the latest version, or I've said above which version I'm on.
-          required: true
-        - label: I searched existing issues and this isn't already reported.
-          required: true
+      label: Contact (optional)
+      description: Email or GitHub handle if you'd like a reply. Catalyst has no accounts, so nothing is attached unless you add it here.
+      placeholder: you@example.com or @handle
+    validations:
+      required: false
