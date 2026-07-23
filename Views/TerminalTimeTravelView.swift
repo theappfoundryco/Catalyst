@@ -156,11 +156,9 @@ struct TerminalTimeTravelView: View {
                     } label: {
                         Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
                             .labelStyle(.matched)
-                            .font(.caption)
                             .foregroundStyle(copied ? Color.green : Color.primary)
                     }
-                    .appButton(.neutral)
-                    .controlSize(.small)
+                    .appButton(.secondary)
                     .animation(.easeInOut(duration: 0.15), value: copied)
                     
                     Button {
@@ -168,11 +166,9 @@ struct TerminalTimeTravelView: View {
                     } label: {
                         Label("Run", systemImage: "terminal")
                             .labelStyle(.matched)
-                            .font(.caption)
                     }
-                    .appButton(.neutral)
+                    .appButton(.primary)
                     .tint(.green)
-                    .controlSize(.small)
                 }
             }
             .padding(.vertical, 8)

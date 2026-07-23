@@ -89,10 +89,8 @@ struct OutdatedPackageRow: View, Equatable {
                         onUpdate()
                     } label: {
                         Text("Retry")
-                            .font(.caption2)
                     }
-                    .appButton(.neutral)
-                    .controlSize(.mini)
+                    .appButton(.primary)
                 }
                 .help(heldBackReason ?? "A newer version exists but isn't installable in this environment.")
             } else if isFailed {
@@ -107,17 +105,14 @@ struct OutdatedPackageRow: View, Equatable {
                         onUpdate()
                     } label: {
                         Text("Retry")
-                            .font(.caption2)
                     }
-                    .appButton(.neutral)
-                    .controlSize(.mini)
+                    .appButton(.primary)
                 }
             } else {
                 Button {
                     onUpdate()
                 } label: {
                     Text("Update")
-                        .font(.caption)
                 }
                 .appButton(.primary)
             }

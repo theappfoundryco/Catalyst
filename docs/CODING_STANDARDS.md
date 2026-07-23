@@ -260,26 +260,24 @@ rare icon that genuinely needs color depth. `Helpers/MatchedLabelStyle.swift`
 (`.labelStyle(.matched)`) remains for buttons that also need forced icon+title
 layout, but is no longer required just for color matching.
 
-**Exception — `.bordered` + `.tint(.primary)` does NOT reliably match.** On a
-`.bordered` button, macOS still accent-tints the glyph (blue) while the title
-stays neutral, and `.tint(.primary)` won't override it. For neutral secondary
-actions (Copy, Reveal, row actions) use the `.secondary` role — a custom style on a
-neutral surface that forces icon == title in ONE color (`SecondaryActionButtonStyle`
-in `MatchedLabelStyle.swift`). Applied in `SSHKeyView` (Copy Public Key / Reveal /
-Fix Perms).
-
 4.2a **Every button routes through the centralised `.appButton(_:)` — never
 `.buttonStyle(_:)` directly.** `Helpers/AppButtonStyle.swift` is the single source of
 truth: it maps each semantic ``AppButtonKind`` to its concrete style, so the whole
-app is consistent and can be restyled from one file. Pick a button by role, not by
+app is consistent and can be restyled from one file. Every role resolves to a
+**native** SwiftUI style, so there are no bespoke flat surfaces that read "cheap"
+next to the prominent ones — depth is uniform. Pick a button by role, not by
 appearance:
 
 - `.primary` — main call-to-action (prominent, filled). Add a call-site `.tint(_:)`
   to color it (e.g. Homebrew's per-operation blue/green/orange/red, Cruft's blue
   "Select All" / green "Select Safe").
-- `.neutral` — bordered secondary with native depth (Cancel, Clear, Choose…).
-- `.secondary` — compact flat secondary where icon must match the title color.
-- `.destructive` / `.destructiveProminent` — solid red, at row and card-CTA scale.
+- `.destructive` / `.destructiveProminent` — prominent solid red (Delete, Remove,
+  Uninstall), at row and card-CTA scale. Same depth as `.primary`, only the color
+  differs — never a flat red surface.
+- `.neutral` — bordered secondary with native depth (Cancel, Clear, Choose…, Retry).
+- `.secondary` — compact secondary (Copy, Reveal, row actions); shares `.neutral`'s
+  bordered look. Icon/title color matching is handled app-wide (§4.2), so no bespoke
+  style is needed.
 - `.plain` — bare icon buttons and tappable rows.
 - `.borderless` — inline, link-like affordances (toolbar glyphs, "Move up").
 - `.link` — a text hyperlink (accent-colored, no chrome).
@@ -365,8 +363,8 @@ fraction/proportion feeds the row, include it in `==`.
 grammar.** The bar is `SectionDivider` then a padded `HStack` on
 `Color(NSColor.controlBackgroundColor)`: a `.headline` count/title + `.caption`
 `.secondary` subtitle on the left, actions pinned right; the prominent button is a
-**semibold `Text`** with **`.frame(minWidth: 140)`**, `.buttonStyle(.borderedProminent)`,
-`.controlSize(.large)`, secondary buttons semibold on `.secondaryAction`. **Show it only
+**semibold `Text`** with **`.frame(minWidth: 140)`**, `.appButton(.primary)`,
+`.controlSize(.large)`, secondary buttons semibold on `.appButton(.neutral)`. **Show it only
 when there's something to act on** (Cruft: `!selectedIDs.isEmpty`; Snapshot preview:
 `actionableCount > 0`). Cruft Sweeper's delete bar is canonical; Snapshot & Migrate
 reuses the exact same look via the shared **`SnapshotFooterBar`** (capture-export,

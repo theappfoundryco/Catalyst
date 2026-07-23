@@ -136,7 +136,6 @@ struct InstalledPackageRow: View, Equatable {
                         onInstall()
                     } label: {
                         Text(isProcessing ? "Installing..." : "Install")
-                            .font(.caption)
                     }
                     .appButton(.primary)
                 }
@@ -234,7 +233,6 @@ struct InstallablePackageRow: View {
                     onInstall()
                 } label: {
                     Text("Install")
-                        .font(.caption)
                 }
                 .appButton(.primary)
                 .disabled(!canInstall)
@@ -382,7 +380,6 @@ struct PopularPackageRow: View, Equatable {
                     onInstall()
                 } label: {
                     Text(isInstalling ? "Installing..." : "Install")
-                        .font(.caption)
                 }
                 .appButton(.primary)
                 .disabled(!canInstall)

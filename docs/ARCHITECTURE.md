@@ -451,8 +451,8 @@ reclaimable-space hero number, a per-type breakdown bar, per-row **size bars** a
 key/dir permissions.
 
 **How it works.** `SSHKeyView` + `SSHKeyViewModel` over `SSHKeyService`. Uses the
-neutral `.buttonStyle(.secondaryAction)` for Copy/Reveal/Fix-Perms so the icons match
-their titles.
+neutral `.appButton(.secondary)` role for Copy/Reveal/Fix-Perms (see
+`Helpers/AppButtonStyle.swift`).
 
 **Safety/consent.** **Private keys are never displayed or copied** — only public keys
 and permission fixes. The `.ssh` directory is one of the hard-skipped paths for any
@@ -941,12 +941,14 @@ design reference for the docs website.
   Secure fields carry a built-in eye reveal toggle (`allowReveal`); never hand-roll a
   `SecureField`. Note `.contentShape` makes a region hit-testable but does NOT focus it —
   both the field and its padded container need `.onTapGesture` (CODING_STANDARDS 12.37).
-- **Buttons/icons:** `ContentView` sets `.symbolRenderingMode(.monochrome)` on the
-  detail stack so button SF Symbols follow their label color. `.labelStyle(.matched)`
-  forces icon+title layout; `.buttonStyle(.secondaryAction)` for neutral secondary
-  actions where `.bordered` would accent-tint the glyph. Button color reflects role:
-  `.secondaryAction` (neutral), `.borderedProminent` (primary), `.bordered` +
-  `.tint(.red)` + `.labelStyle(.matched)` (destructive).
+- **Buttons/icons:** every button routes through the centralised `.appButton(_:)`
+  (`Helpers/AppButtonStyle.swift`) — the single source of truth mapping each semantic
+  role to a native style; `.buttonStyle(_:)` is never called directly outside that file
+  (CODING_STANDARDS 4.2a). `ContentView` sets `.symbolRenderingMode(.monochrome)` on the
+  detail stack so button SF Symbols follow their label color, and `.labelStyle(.matched)`
+  forces icon+title layout. Roles: `.primary` (prominent, tint at call site),
+  `.destructive`/`.destructiveProminent` (prominent red), `.neutral`/`.secondary`
+  (bordered), `.plain`/`.borderless`/`.link` (chrome-free).
 - **Results grammar:** results/summary cards lead with ONE status icon + title +
   inline counts (`UpdateResultsSummaryCard`) — never a duplicate checkmark, never a
   false "success" celebration on a worklist screen (lead with the actionable number,

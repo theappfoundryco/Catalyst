@@ -8,18 +8,24 @@ import SwiftUI
 /// exactly one place (`View/appButton(_:)`), so the app's button design can evolve
 /// by editing this file alone.
 ///
+/// Every role resolves to a **native** SwiftUI button style, so the whole app shares
+/// one coherent, depth-carrying button language — no bespoke flat surfaces that read
+/// "cheap" next to the prominent ones. Colored actions are `.borderedProminent`
+/// (optionally tinted); quieter actions are `.bordered`; the rest are chrome-free.
+///
 /// ## Roles
 /// - ``primary``: the main call-to-action of a screen or card. Prominent, filled.
 ///   Combine with a call-site `.tint(_:)` to color it semantically (e.g. Homebrew's
 ///   per-operation blue/green/orange/red).
-/// - ``neutral``: a secondary action that still needs a visible affordance (bordered
-///   with native depth). The default for "Cancel", "Clear", "Choose…", etc.
-/// - ``secondary``: a compact secondary action where the SF Symbol must share the
-///   title's color (Copy, Reveal, inline row actions). Flat surface, icon == title.
-///   See ``SecondaryActionButtonStyle``.
-/// - ``destructive`` / ``destructiveProminent``: dangerous actions (Delete, Remove).
-///   Solid red; the prominent variant is card-CTA scale. See
-///   ``DestructiveActionButtonStyle``.
+/// - ``destructive`` / ``destructiveProminent``: dangerous actions (Delete, Remove,
+///   Uninstall). Prominent solid red — same depth as ``primary``, only the color
+///   differs; the prominent variant is card-CTA scale.
+/// - ``neutral``: a quieter secondary action that still needs a visible affordance
+///   (bordered, native depth). The default for "Cancel", "Clear", "Choose…", "Retry".
+/// - ``secondary``: a compact secondary action (Copy, Reveal, inline row actions).
+///   Shares ``neutral``'s bordered treatment; kept as a distinct role for call-site
+///   intent. Icon/title color matching is handled app-wide (see
+///   `docs/CODING_STANDARDS.md` §4.2), so no bespoke style is needed here.
 /// - ``plain``: no chrome at all — bare icon buttons and tappable rows/cells.
 /// - ``borderless``: inline, link-like affordances (toolbar glyphs, "Move up").
 /// - ``link``: a text hyperlink (accent-colored, no chrome).
@@ -33,14 +39,14 @@ import SwiftUI
 enum AppButtonKind {
     /// Main call-to-action. Prominent filled surface; tint at the call site to color it.
     case primary
-    /// Bordered secondary action with native depth (Cancel, Clear, Choose…).
-    case neutral
-    /// Compact flat secondary action; SF Symbol always matches the title color.
-    case secondary
-    /// Dangerous action at row scale. Solid red, light label.
+    /// Dangerous action at row scale. Prominent solid red.
     case destructive
-    /// Dangerous action at card-CTA scale. Solid red, larger metrics.
+    /// Dangerous action at card-CTA scale. Prominent solid red, larger metrics.
     case destructiveProminent
+    /// Quieter secondary action with a visible bordered affordance and native depth.
+    case neutral
+    /// Compact secondary action (Copy, Reveal, row actions). Shares ``neutral``'s look.
+    case secondary
     /// No chrome — bare icon buttons and tappable rows.
     case plain
     /// Inline, link-like affordance — toolbar glyphs and icon-only row controls.
@@ -50,14 +56,14 @@ enum AppButtonKind {
 }
 
 extension View {
-    /// Applies the app's canonical `ButtonStyle` for a semantic ``AppButtonKind``.
+    /// Applies the app's canonical button style for a semantic ``AppButtonKind``.
     ///
     /// This is the ONLY place button roles map to concrete styles. Every button in
-    /// the app should use this instead of `.buttonStyle(_:)` directly, so the whole
-    /// app stays visually consistent and can be restyled from one location.
+    /// the app uses this instead of `.buttonStyle(_:)` directly, so the whole app
+    /// stays visually consistent and can be restyled from one location.
     ///
     /// ```swift
-    /// Button("Delete", action: remove).appButton(.destructive)
+    /// Button("Uninstall", action: remove).appButton(.destructive)
     /// Button("Run", action: update).appButton(.primary).tint(.blue)
     /// ```
     ///
@@ -69,14 +75,17 @@ extension View {
         switch kind {
         case .primary:
             buttonStyle(.borderedProminent)
+        case .destructive:
+            buttonStyle(.borderedProminent)
+                .tint(.red)
+        case .destructiveProminent:
+            buttonStyle(.borderedProminent)
+                .tint(.red)
+                .controlSize(.large)
         case .neutral:
             buttonStyle(.bordered)
         case .secondary:
-            buttonStyle(.secondaryAction)
-        case .destructive:
-            buttonStyle(.destructiveAction)
-        case .destructiveProminent:
-            buttonStyle(.destructiveActionProminent)
+            buttonStyle(.bordered)
         case .plain:
             buttonStyle(.plain)
         case .borderless:

@@ -241,10 +241,6 @@ struct VirtualEnvironmentsView: View {
                     .appButton(.secondary)
                     .disabled(isMissing)
 
-                    // Destructive row action. Solid red + white label via `.destructiveAction`,
-                    // which matches `.secondaryAction`'s metrics exactly so all three buttons in
-                    // this row are the same height. Deliberately NOT `role: .destructive`, which
-                    // AppKit renders as tinted-red-on-neutral at its own control height.
                     Button {
                         onRemove()
                     } label: {

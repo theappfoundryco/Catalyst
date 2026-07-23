@@ -68,6 +68,7 @@ struct OutdatedPIPView: View {
                             .padding()
                     }
                     .appButton(.primary)
+                    .tint(.blue)
                     .disabled(vm.isUpdatingAll)
                     .padding(.horizontal)
                 }
