@@ -248,25 +248,26 @@ bordered inline call-outs (tint fill @0.12 + hairline border @0.28, radius 12). 
 directly when the banner body needs a spinner or dismiss button. Don't hand-roll a tinted
 RoundedRectangle for a banner — every call-out in the app must match.
 
-4.2 **Icon/title color match is handled app-wide — don't fight it.** macOS
-otherwise renders some button SF Symbols in their own multicolor/accent palette,
-giving a mismatched "random" icon color next to the title. The detail area sets
-**`.symbolRenderingMode(.monochrome)`** once (in `ContentView`, on the detail
-`NavigationStack`), so every screen's button icons follow their label color
-automatically — including future buttons. This does NOT touch the sidebar (keeps
-its colored icons) and preserves explicit `.foregroundColor`/gradient on icons.
-Use `.symbolRenderingMode(.hierarchical/.palette/.multicolor)` **locally** on the
-rare icon that genuinely needs color depth. `Helpers/MatchedLabelStyle.swift`
-(`.labelStyle(.matched)`) remains for buttons that also need forced icon+title
-layout, but is no longer required just for color matching.
+4.2 **A button's SF Symbol must NEVER be a different color from its (white) title.**
+`ContentView` sets **`.symbolRenderingMode(.monochrome)`** once on the detail
+`NavigationStack`, which collapses multicolor/hierarchical palettes to one color and
+handles most cases — but it does NOT stop macOS from accent-tinting the glyph **blue**
+on `.bordered`/tinted controls while the title stays white. Neither `.tint(.primary)`
+nor a foreground override reliably beats that. So the bordered roles (`.neutral`,
+`.secondary`) render through **`NeutralActionButtonStyle`** (`MatchedLabelStyle.swift`),
+which forces the whole label to one color on a neutral surface — icon == title,
+always. Prominent roles (`.borderedProminent`) already render a white glyph on the
+fill, so they match by construction. This does NOT touch the sidebar (keeps its
+colored icons) and preserves explicit `.foregroundColor`/gradient on icons. Use
+`.symbolRenderingMode(.hierarchical/.palette/.multicolor)` **locally** on the rare
+icon that genuinely needs color depth.
 
 4.2a **Every button routes through the centralised `.appButton(_:)` — never
 `.buttonStyle(_:)` directly.** `Helpers/AppButtonStyle.swift` is the single source of
 truth: it maps each semantic ``AppButtonKind`` to its concrete style, so the whole
-app is consistent and can be restyled from one file. Every role resolves to a
-**native** SwiftUI style, so there are no bespoke flat surfaces that read "cheap"
-next to the prominent ones — depth is uniform. Pick a button by role, not by
-appearance:
+app is consistent and can be restyled from one file. Prominent roles use native
+`.borderedProminent`; the bordered roles use `NeutralActionButtonStyle` so their icon
+always matches the title (§4.2). Pick a button by role, not by appearance:
 
 - `.primary` — main call-to-action (prominent, filled). Add a call-site `.tint(_:)`
   to color it (e.g. Homebrew's per-operation blue/green/orange/red, Cruft's blue
@@ -274,10 +275,10 @@ appearance:
 - `.destructive` / `.destructiveProminent` — prominent solid red (Delete, Remove,
   Uninstall), at row and card-CTA scale. Same depth as `.primary`, only the color
   differs — never a flat red surface.
-- `.neutral` — bordered secondary with native depth (Cancel, Clear, Choose…, Retry).
+- `.neutral` — bordered secondary (Cancel, Clear, Choose…, Retry). Via
+  `NeutralActionButtonStyle`, so an icon+title label never shows a mismatched glyph (§4.2).
 - `.secondary` — compact secondary (Copy, Reveal, row actions); shares `.neutral`'s
-  bordered look. Icon/title color matching is handled app-wide (§4.2), so no bespoke
-  style is needed.
+  bordered, icon-matching treatment.
 - `.plain` — bare icon buttons and tappable rows.
 - `.borderless` — inline, link-like affordances (toolbar glyphs, "Move up").
 - `.link` — a text hyperlink (accent-colored, no chrome).

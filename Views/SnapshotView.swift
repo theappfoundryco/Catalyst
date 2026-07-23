@@ -439,9 +439,9 @@ private struct SnapshotCaptureReadyView: View {
                 ? "Saved to \(vm.lastExportURL?.lastPathComponent ?? "")"
                 : "\(totalItems) items · nothing leaves your Mac until you pick a location"
         ) {
-            /// `.neutral` (bordered) so this matches the adjacent Export button's
-            /// height exactly — both native AppKit styles honour `.controlSize(.large)`,
-            /// so they line up by construction rather than by a hand-tuned frame height.
+            /// `.neutral` at `.controlSize(.large)` so it matches the adjacent Export
+            /// button's height — both the neutral style and `.borderedProminent` scale
+            /// with control size, so they line up rather than by a hand-tuned frame height.
             ///
             /// **Gotchas:** Attempting to force-match button heights with hardcoded frame modifiers breaks catastrophically when the user changes their system font size.
             Button { vm.discardCapture() } label: {

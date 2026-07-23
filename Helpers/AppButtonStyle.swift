@@ -8,10 +8,12 @@ import SwiftUI
 /// exactly one place (`View/appButton(_:)`), so the app's button design can evolve
 /// by editing this file alone.
 ///
-/// Every role resolves to a **native** SwiftUI button style, so the whole app shares
-/// one coherent, depth-carrying button language — no bespoke flat surfaces that read
-/// "cheap" next to the prominent ones. Colored actions are `.borderedProminent`
-/// (optionally tinted); quieter actions are `.bordered`; the rest are chrome-free.
+/// Colored actions use native `.borderedProminent` (optionally tinted) so they carry
+/// real depth and always render a white glyph on the fill. Quieter `.neutral` /
+/// `.secondary` actions use ``NeutralActionButtonStyle`` — a bordered style that
+/// FORCES the SF Symbol to match the white title, because native `.bordered`
+/// accent-tints the glyph blue (`docs/CODING_STANDARDS.md` §4.2). The rest
+/// (`.plain` / `.borderless` / `.link`) are chrome-free native styles.
 ///
 /// ## Roles
 /// - ``primary``: the main call-to-action of a screen or card. Prominent, filled.
@@ -21,11 +23,12 @@ import SwiftUI
 ///   Uninstall). Prominent solid red — same depth as ``primary``, only the color
 ///   differs; the prominent variant is card-CTA scale.
 /// - ``neutral``: a quieter secondary action that still needs a visible affordance
-///   (bordered, native depth). The default for "Cancel", "Clear", "Choose…", "Retry".
+///   (bordered). The default for "Cancel", "Clear", "Choose…", "Retry".
 /// - ``secondary``: a compact secondary action (Copy, Reveal, inline row actions).
 ///   Shares ``neutral``'s bordered treatment; kept as a distinct role for call-site
-///   intent. Icon/title color matching is handled app-wide (see
-///   `docs/CODING_STANDARDS.md` §4.2), so no bespoke style is needed here.
+///   intent. Both render through ``NeutralActionButtonStyle``, which forces the SF
+///   Symbol to match the (white) title — native `.bordered` would accent-tint the
+///   glyph blue (`docs/CODING_STANDARDS.md` §4.2).
 /// - ``plain``: no chrome at all — bare icon buttons and tappable rows/cells.
 /// - ``borderless``: inline, link-like affordances (toolbar glyphs, "Move up").
 /// - ``link``: a text hyperlink (accent-colored, no chrome).
@@ -83,9 +86,9 @@ extension View {
                 .tint(.red)
                 .controlSize(.large)
         case .neutral:
-            buttonStyle(.bordered)
+            buttonStyle(.neutralAction)
         case .secondary:
-            buttonStyle(.bordered)
+            buttonStyle(.neutralAction)
         case .plain:
             buttonStyle(.plain)
         case .borderless:

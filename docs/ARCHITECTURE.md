@@ -943,12 +943,13 @@ design reference for the docs website.
   both the field and its padded container need `.onTapGesture` (CODING_STANDARDS 12.37).
 - **Buttons/icons:** every button routes through the centralised `.appButton(_:)`
   (`Helpers/AppButtonStyle.swift`) — the single source of truth mapping each semantic
-  role to a native style; `.buttonStyle(_:)` is never called directly outside that file
-  (CODING_STANDARDS 4.2a). `ContentView` sets `.symbolRenderingMode(.monochrome)` on the
-  detail stack so button SF Symbols follow their label color, and `.labelStyle(.matched)`
-  forces icon+title layout. Roles: `.primary` (prominent, tint at call site),
+  role to a concrete style; `.buttonStyle(_:)` is never called directly outside that file
+  (CODING_STANDARDS 4.2a). Roles: `.primary` (prominent, tint at call site),
   `.destructive`/`.destructiveProminent` (prominent red), `.neutral`/`.secondary`
-  (bordered), `.plain`/`.borderless`/`.link` (chrome-free).
+  (bordered via `NeutralActionButtonStyle`, which forces icon==title so no glyph goes
+  accent-blue — see §4.2), `.plain`/`.borderless`/`.link` (chrome-free). `ContentView`'s
+  detail-stack `.symbolRenderingMode(.monochrome)` and `.labelStyle(.matched)` handle the
+  remaining palette/layout cases.
 - **Results grammar:** results/summary cards lead with ONE status icon + title +
   inline counts (`UpdateResultsSummaryCard`) — never a duplicate checkmark, never a
   false "success" celebration on a worklist screen (lead with the actionable number,
@@ -1367,13 +1368,10 @@ surface, and single-seat device binding). They described a paid product that no 
 **Debug tracing.** `Logger.debugLog(_:)` (autoclosure, `#if DEBUG`) drives the `🐛` `REQUEST/PERMIT`(historical)/`START/SPAWN/READ/DONE` logs in `AsyncProcessRunner` + per-probe/per-batch markers in `PythonService`/`DashboardViewModel`. **Zero cost in Release** (autoclosure isn't evaluated). Reading a hung log: last `🐛` before the stall = the wedged step; `START` without `SPAWN`/`DONE` = a wedged child (timeout catches it now).
 
 ## 49.14 Going free and open source (2026-07-21)
-Catalyst was a paid app (₹5,999 / ₹2,499 student, perpetual licence). At v1.0 it became free under the **GPLv3**, with the source public at `theappfoundryco/Catalyst`.
+At v1.0 Catalyst became free and open source under the **GPLv3** (`theappfoundryco/Catalyst`), removing the paid system that preceded it.
 
-What that removed, in one pass: ~3,600 Swift lines across `AuthService`, `AuthViewModel`, `AuthGateView` and `UserProfileView`; a 1,688-line Cloudflare Worker with 25 routes, D1 and KV; gift codes, invoicing, billing profiles, Razorpay, trials and single-seat device binding; the Firebase SDK; and the XCTest target.
+What that removed, in one pass: ~3,600 Swift lines across `AuthService`, `AuthViewModel`, `AuthGateView` and `UserProfileView`; a 1,688-line Cloudflare Worker with 25 routes, D1 and KV; gift codes, invoicing, billing profiles, payments, trials and single-seat device binding; the Firebase SDK; and the XCTest target.
 
 What it left: an app with no accounts, no server, no analytics and no gate — `ContentView` renders the sidebar immediately on launch. The only network reads are static files (§36).
 
-Two things worth knowing if you're reading old code or old commits:
-
-- **Licence IDs were `TAPC…` before 2026-07-20 and `TAFC…` after.** Anything that ever matches on one must accept both, indefinitely — people hold receipts bearing them.
-- **The pre-v1.0 history is not in this repo.** It lives in the original private repository. This repo starts at v1.0 with a fresh initial commit, so `git log` will not explain why a deleted system worked the way it did — CODING_STANDARDS Part 12 is where those lessons were preserved.
+**The pre-v1.0 history is not in this repo.** It lives in the original private repository. This repo starts at v1.0 with a fresh initial commit, so `git log` will not explain why a deleted system worked the way it did — CODING_STANDARDS Part 12 is where those lessons were preserved.
