@@ -146,7 +146,7 @@ struct ShortcutDetailView: View {
                 Label("Retry", systemImage: "arrow.clockwise")
                     .labelStyle(.matched)
             }
-            .buttonStyle(.borderedProminent)
+            .appButton(.primary)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 50)
@@ -180,7 +180,7 @@ struct ShortcutDetailView: View {
                                 .font(.caption)
                                 .foregroundColor(nameCopied ? .green : .secondary)
                         }
-                        .buttonStyle(.plain)
+                        .appButton(.plain)
                         .help("Copy command name")
                     }
                 }
@@ -197,7 +197,7 @@ struct ShortcutDetailView: View {
             } label: {
                 Text(viewModel.isInstalling ? "Uninstalling…" : "Uninstall")
             }
-            .buttonStyle(.destructiveAction)
+            .appButton(.destructive)
             .disabled(viewModel.isInstalling)
         }
         .cardStyle()
@@ -232,7 +232,7 @@ struct ShortcutDetailView: View {
                     Text("Install Shortcut")
                         .font(.subheadline.weight(.medium))
                 }
-                .buttonStyle(.borderedProminent)
+                .appButton(.primary)
                 .disabled(customName.isEmpty || viewModel.isInstalling)
                 .fixedSize(horizontal: true, vertical: false)
             }

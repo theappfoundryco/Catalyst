@@ -139,7 +139,7 @@ struct AliasView: View {
                         .frame(maxWidth: .infinity)
                         .padding()
                 }
-                .buttonStyle(.borderedProminent)
+                .appButton(.primary)
                 .disabled(vm.newAliasName.isEmpty || vm.newAliasCommand.isEmpty)
             }
         }
@@ -169,7 +169,7 @@ struct AliasView: View {
                             Image(systemName: "xmark.circle.fill")
                                 .foregroundColor(.secondary)
                         }
-                        .buttonStyle(.plain)
+                        .appButton(.plain)
                     }
                 }
                 .codePanel()
@@ -197,7 +197,7 @@ struct AliasView: View {
                         .labelStyle(.matched)
                         .font(.caption)
                 }
-                .buttonStyle(.bordered)
+                .appButton(.neutral)
                 .controlSize(.small)
             }
             
@@ -408,7 +408,7 @@ struct AliasRow: View {
                 Image(systemName: "trash.fill")
                     .foregroundColor(.red)
             }
-            .buttonStyle(.plain)
+            .appButton(.plain)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)

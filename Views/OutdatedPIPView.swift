@@ -50,7 +50,7 @@ struct OutdatedPIPView: View {
                                     .frame(maxWidth: .infinity)
                                     .padding()
                             }
-                            .buttonStyle(.borderedProminent)
+                            .appButton(.primary)
                             .tint(.blue)
                         }
                         .padding(.horizontal)
@@ -67,7 +67,8 @@ struct OutdatedPIPView: View {
                             .frame(maxWidth: .infinity)
                             .padding()
                     }
-                    .buttonStyle(.borderedProminent)
+                    .appButton(.primary)
+                    .tint(.blue)
                     .disabled(vm.isUpdatingAll)
                     .padding(.horizontal)
                 }

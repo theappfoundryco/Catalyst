@@ -145,7 +145,7 @@ struct LoginItemsView: View {
                 } label: {
                     Image(systemName: "trash").foregroundColor(.red)
                 }
-                .buttonStyle(.borderless)
+                .appButton(.borderless)
                 .help("Remove from login items")
             }
         }
@@ -192,7 +192,7 @@ struct LoginItemsView: View {
                 } label: {
                     Image(systemName: "trash").foregroundColor(.red)
                 }
-                .buttonStyle(.borderless)
+                .appButton(.borderless)
                 .help("Unload and move plist to Trash")
             } else {
                 Button {
@@ -200,7 +200,7 @@ struct LoginItemsView: View {
                 } label: {
                     Image(systemName: "magnifyingglass").foregroundColor(.secondary)
                 }
-                .buttonStyle(.borderless)
+                .appButton(.borderless)
                 .help("Reveal in Finder")
             }
         }

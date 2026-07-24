@@ -116,9 +116,18 @@ final class NetworkMonitor: ObservableObject {
     /// Re-evaluates primary network paths using URLSession data tasks.
     ///
     /// **Flow:**
-    /// 1. Issues a 10s timeout `GET` to the backend.
-    /// 2. If it encounters a 2xx or 3xx HTTP response, flags as `.connected`.
-    /// 3. Catches failures, delays for 2s, and triggers `retryConnection()`.
+    /// 1. Issues a 10s timeout `GET` to the health probe.
+    /// 2. If the origin returns *any* HTTP response, flags as `.connected`.
+    /// 3. Catches transport failures, delays for 2s, and triggers `retryConnection()`.
+    ///
+    /// **Why any HTTP status counts as connected (issue #15):** connectivity is
+    /// "did we reach the origin?", not "was the probe file present?". Receiving an
+    /// `HTTPURLResponse` at all — including a 4xx such as a missing/empty
+    /// `health.json` — proves DNS, routing, and TLS all worked, so the app is
+    /// online and its catalogs are reachable. Only a thrown error (no response
+    /// object) means we are actually offline. The previous `200...399`-only gate
+    /// reported the whole app Offline whenever the probe file 404'd, even on a
+    /// perfectly healthy connection.
     func checkConnectivity() async {
         if status != .connected {
             setStatus(.checking)
@@ -137,12 +146,11 @@ final class NetworkMonitor: ObservableObject {
 
             let (_, response) = try await URLSession.shared.data(for: request)
 
-            if let httpResponse = response as? HTTPURLResponse,
-               (200...399).contains(httpResponse.statusCode) {
+            if response is HTTPURLResponse {
                 setStatus(.connected)
             } else {
                 if status != .offline {
-                    logger.log("🌐 Network check: Server error")
+                    logger.log("🌐 Network check: No HTTP response")
                 }
                 setStatus(.offline)
             }
@@ -163,6 +171,9 @@ final class NetworkMonitor: ObservableObject {
     }
     
     /// A secondary, shorter-timeout fallback probe triggered when the primary connection stalls.
+    ///
+    /// Uses the same reachability rule as ``checkConnectivity()``: any HTTP response
+    /// from the origin means connected; only a thrown transport error is offline.
     private func retryConnection() async {
         let apiURL = NetworkConfig.APIEndpoint.healthURL
         guard let url = URL(string: apiURL) else {
@@ -174,11 +185,10 @@ final class NetworkMonitor: ObservableObject {
             var request = URLRequest(url: url)
             request.httpMethod = "GET"
             request.timeoutInterval = 5
-            
+
             let (_, response) = try await URLSession.shared.data(for: request)
 
-            if let httpResponse = response as? HTTPURLResponse,
-               (200...399).contains(httpResponse.statusCode) {
+            if response is HTTPURLResponse {
                 setStatus(.connected)
             } else {
                 setStatus(.offline)

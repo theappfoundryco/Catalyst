@@ -51,7 +51,7 @@ struct DiagnosticGrid: View {
                             .font(.system(size: 12, weight: .bold))
                             .foregroundColor(.secondary)
                     }
-                    .buttonStyle(.plain)
+                    .appButton(.plain)
                     .help("Refresh Diagnostics")
                 }
             }
@@ -310,7 +310,7 @@ struct GhostBusterView: View {
                             .background(Color.red)
                             .cornerRadius(6)
                     }
-                    .buttonStyle(.plain)
+                    .appButton(.plain)
                     .padding(.trailing, 8)
                 }
                 
@@ -331,7 +331,7 @@ struct GhostBusterView: View {
                             .font(.system(size: 12, weight: .bold))
                             .foregroundColor(.secondary)
                     }
-                    .buttonStyle(.plain)
+                    .appButton(.plain)
                     .help("Rescan Ports")
                 }
             }
@@ -419,7 +419,7 @@ struct GhostProcessCard: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 6)
             }
-            .buttonStyle(.plain)
+            .appButton(.plain)
             .background(isHovering ? Color.red : Color.red.opacity(0.1))
             .foregroundColor(isHovering ? .white : .red)
             .cornerRadius(6)

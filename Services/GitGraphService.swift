@@ -124,6 +124,15 @@ actor GitGraphService {
     /// `timeoutSeconds`. `</dev/null` prevents git from ever blocking on input (e.g. a
     /// credential prompt); `2>/dev/null` swallows diagnostics; the timeout guarantees a
     /// single slow/stuck call can never hang the summary.
+    ///
+    /// **Why the timeout is passed to the process, not just the outer race:** the
+    /// `withTimeout` below only abandons the `await` — it does NOT kill the child. A
+    /// wedged git process (e.g. an fsmonitor daemon holding the stdout pipe open) would
+    /// then leave `AsyncProcessRunner`'s `readToEnd` blocking a libdispatch thread
+    /// *forever*, leaking one reader thread per stuck call until the pool is exhausted and
+    /// every later read — including a fresh Git Graph open — hangs. Passing
+    /// `timeoutSeconds` down makes the runner SIGTERM/SIGKILL the child, closing the pipe
+    /// so the read returns and the thread is reclaimed.
     /// - Parameters:
     ///   - args: The execution flags sent to the binary.
     ///   - repoPath: The targeted filesystem root defining the working directory.
@@ -132,7 +141,7 @@ actor GitGraphService {
     private func git(_ args: String, in repoPath: String, timeoutSeconds: Double = 6) async -> String? {
         let command = "git \(Self.safeFlags) -C \(InputSanitizer.singleQuote(repoPath)) \(args) </dev/null 2>/dev/null"
         return await Self.withTimeout(timeoutSeconds) {
-            guard let result = try? await AsyncProcessRunner.shared.run(command: command),
+            guard let result = try? await AsyncProcessRunner.shared.run(command: command, timeoutSeconds: timeoutSeconds),
                   result.succeeded else { return nil }
             let out = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
             return out.isEmpty ? nil : out
@@ -289,7 +298,7 @@ actor GitGraphService {
         ///
         /// **Rationale:** Enforces an absolute upper bound on log iteration so the Catalyst background scanner doesn't lock up memory indefinitely.
         let raw = await Self.withTimeout(20) {
-            guard let result = try? await AsyncProcessRunner.shared.run(command: command),
+            guard let result = try? await AsyncProcessRunner.shared.run(command: command, timeoutSeconds: 20),
                   result.succeeded else { return nil }
             return result.stdout
         }
@@ -315,7 +324,7 @@ actor GitGraphService {
         let metaFmt = ["%H", "%an", "%ae", "%ad", "%B"].joined(separator: "%x1f")
         let metaCmd = "git \(Self.safeFlags) -C \(quoted) show -s --date=format:'%Y-%m-%d %H:%M' --format='\(metaFmt)' \(h) </dev/null 2>/dev/null"
         guard let metaRaw = await Self.withTimeout(8, {
-            guard let r = try? await AsyncProcessRunner.shared.run(command: metaCmd), r.succeeded else { return nil }
+            guard let r = try? await AsyncProcessRunner.shared.run(command: metaCmd, timeoutSeconds: 8), r.succeeded else { return nil }
             return r.stdout
         }), !metaRaw.isEmpty else { return nil }
 
@@ -328,7 +337,7 @@ actor GitGraphService {
         /// **Rationale:** Pre-filtering binary diffs natively via Git's numstat prevents Catalyst from trying to allocate massive string buffers for compiled frameworks.
         let statCmd = "git \(Self.safeFlags) -C \(quoted) show --numstat --format='' \(h) </dev/null 2>/dev/null"
         let statRaw = await Self.withTimeout(10, {
-            guard let r = try? await AsyncProcessRunner.shared.run(command: statCmd), r.succeeded else { return nil }
+            guard let r = try? await AsyncProcessRunner.shared.run(command: statCmd, timeoutSeconds: 10), r.succeeded else { return nil }
             return r.stdout
         }) ?? ""
 

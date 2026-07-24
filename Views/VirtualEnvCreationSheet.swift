@@ -276,14 +276,14 @@ struct VirtualEnvCreationSheet: View {
                         Text("(Recommended)")
                             .font(.caption2)
                     }
-                    .buttonStyle(.borderedProminent)
+                    .appButton(.primary)
                     .tint(.blue)
                     
                     Button("Install Exact Versions") {
                         viewModel.shouldRelaxVersions = false
                          Task { await viewModel.performSmartInstall() }
                     }
-                    .buttonStyle(.bordered)
+                    .appButton(.neutral)
                 }
                 .padding(.top, 8)
             }
@@ -382,7 +382,7 @@ struct VirtualEnvCreationSheet: View {
                         Label("Retry Failed", systemImage: "arrow.clockwise")
                             .font(.subheadline)
                     }
-                    .buttonStyle(.bordered)
+                    .appButton(.neutral)
                     .disabled(viewModel.isCreating)
                     
                     Button {
@@ -391,7 +391,7 @@ struct VirtualEnvCreationSheet: View {
                         Label("Export List", systemImage: "square.and.arrow.up")
                             .font(.subheadline)
                     }
-                    .buttonStyle(.bordered)
+                    .appButton(.neutral)
                 }
             }
         }
@@ -456,7 +456,7 @@ struct VirtualEnvCreationSheet: View {
                             .font(.caption2)
                             .foregroundColor(.secondary)
                     }
-                    .buttonStyle(.plain)
+                    .appButton(.plain)
                     .help("Copy Log")
                     
                     // Export Button
@@ -467,7 +467,7 @@ struct VirtualEnvCreationSheet: View {
                             .font(.caption2)
                             .foregroundColor(.secondary)
                     }
-                    .buttonStyle(.plain)
+                    .appButton(.plain)
                     .help("Export Log")
                 }
                 ScrollViewReader { proxy in
@@ -515,7 +515,7 @@ struct VirtualEnvCreationSheet: View {
                         await onCreate()
                     }
                 }
-                .buttonStyle(.borderedProminent)
+                .appButton(.primary)
                 .disabled(viewModel.isCreating || viewModel.isRecommendedVersionMissing || viewModel.selectedPython == nil || !viewModel.isVenvNameValid)
             }
         }

@@ -248,7 +248,7 @@ struct IssueCard: View {
                     Button(action: onFix) {
                         Label("Fix Issue", systemImage: "wrench.and.screwdriver")
                     }
-                    .buttonStyle(.borderedProminent)
+                    .appButton(.primary)
                     .tint(.blue)
                     .controlSize(.small)
                 }

@@ -55,7 +55,7 @@ struct SSHKeyView: View {
                 BannerView(.warning, message: "Your ~/.ssh directory permissions are too open. SSH may refuse your keys. Tap Fix to set them to 700.")
                     .overlay(alignment: .trailing) {
                         Button("Fix") { Task { await vm.fixDirPermissions() } }
-                            .buttonStyle(.borderedProminent).controlSize(.small)
+                            .appButton(.primary).controlSize(.small)
                             .padding(.trailing, 28)
                     }
             }
@@ -111,7 +111,7 @@ struct SSHKeyView: View {
                         Text("Generate")
                     }
                 }
-                .buttonStyle(.borderedProminent)
+                .appButton(.primary)
                 .disabled(vm.isGenerating)
             }
         }
@@ -190,7 +190,7 @@ struct SSHKeyView: View {
                     Label(vm.copiedKeyID == key.id ? "Copied!" : "Copy Public Key",
                           systemImage: vm.copiedKeyID == key.id ? "checkmark" : "doc.on.doc")
                 }
-                .buttonStyle(.secondaryAction)
+                .appButton(.secondary)
                 .disabled(!key.hasPublicKey)
 
                 Button {
@@ -198,7 +198,7 @@ struct SSHKeyView: View {
                 } label: {
                     Label("Reveal", systemImage: "magnifyingglass")
                 }
-                .buttonStyle(.secondaryAction)
+                .appButton(.secondary)
 
                 if key.privatePermsOK == false {
                     Button {
@@ -206,7 +206,7 @@ struct SSHKeyView: View {
                     } label: {
                         Label("Fix Perms", systemImage: "lock.shield")
                     }
-                    .buttonStyle(.destructiveAction)
+                    .appButton(.destructive)
                 }
                 Spacer()
             }

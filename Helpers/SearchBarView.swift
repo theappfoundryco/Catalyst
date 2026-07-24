@@ -49,7 +49,7 @@ struct SearchBarView: View {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundColor(.secondary)
                 }
-                .buttonStyle(.plain)
+                .appButton(.plain)
             }
         }
         /// Match CompactInputField exactly so search bars and form fields are

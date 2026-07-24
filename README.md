@@ -62,7 +62,7 @@ Catalyst wraps all of it in a clean, native SwiftUI interface and gives you thre
 system-altering without explicit, informed consent.**
 
 Catalyst is a native macOS app written in Swift and SwiftUI. It has no account, no subscription, and
-no server. It was a paid product until v1.0; it is now free and open source under the GPLv3.
+no server. It is free and open source under the GPLv3.
 
 ## Features
 
