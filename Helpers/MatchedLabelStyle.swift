@@ -38,30 +38,51 @@ extension LabelStyle where Self == MatchedLabelStyle {
     static var matched: MatchedLabelStyle { MatchedLabelStyle() }
 }
 
-/// App-standard **secondary** action button (Copy, Reveal, row actions).
+/// The bordered secondary/neutral button style, with a HARD guarantee that the SF
+/// Symbol renders the same color as the title (both `.primary` — white in the app's
+/// forced-dark UI). This backs the `.neutral` and `.secondary` roles in
+/// ``AppButtonKind``.
 ///
-/// Unlike `.bordered` — which tints the SF Symbol with the accent color while the
-/// title stays neutral, giving a three-color mismatch — this style renders the
-/// whole label in ONE color on a neutral surface. Icon == title, always. The
-/// "button color reflects the button type" (neutral surface here) while primary
-/// actions keep `.borderedProminent`.
+/// Native `.bordered` cannot promise this: macOS accent-tints a control's glyph
+/// (blue) while the title stays neutral, and neither `.tint(.primary)` nor a
+/// foreground override reliably beats it (`docs/CODING_STANDARDS.md` §4.2). Rendering
+/// the whole label in ONE color on a neutral surface is the only reliable fix, so an
+/// icon+title button can never show a mismatched blue glyph.
+///
+/// Unlike the previous fixed-padding secondary style, this reads
+/// `@Environment(\.controlSize)` so a `.controlSize(.large)` footer button still lines
+/// up with the prominent button beside it, and compact row actions stay compact.
 ///
 /// ```swift
-/// Button("Copy") { }.buttonStyle(.secondaryAction)
+/// Button { copy() } label: { Label("Copy", systemImage: "doc.on.doc") }
+///     .appButton(.secondary)
 /// ```
-struct SecondaryActionButtonStyle: ButtonStyle {
+struct NeutralActionButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.controlSize) private var controlSize
 
-    /// Composes the structural elements enforcing unified foreground tinting.
+    /// Padding + font scaled to the ambient control size so the button matches native
+    /// controls of the same size sitting next to it.
+    private var metrics: (font: Font, hPad: CGFloat, vPad: CGFloat) {
+        switch controlSize {
+        case .large:      return (.body, 14, 7)
+        case .small:      return (.caption, 8, 3)
+        case .mini:       return (.caption2, 6, 2)
+        default:          return (.caption.weight(.semibold), 10, 5)
+        }
+    }
+
+    /// Renders the label in a single forced color (icon == title) on a neutral surface.
     /// - Parameter configuration: The active structural bridge mapping the style attributes.
     /// - Returns: The active presentation hierarchy for the detail view.
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
+        let m = metrics
+        return configuration.label
             .labelStyle(.matched)
-            .font(.caption.weight(.medium))
+            .font(m.font)
             .foregroundStyle(.primary)                 // icon AND title, same color
-            .padding(.horizontal, 10)
-            .padding(.vertical, 5)
+            .padding(.horizontal, m.hPad)
+            .padding(.vertical, m.vPad)
             .background(
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .fill(Color(NSColor.controlColor).opacity(configuration.isPressed ? 0.55 : 1))
@@ -75,80 +96,8 @@ struct SecondaryActionButtonStyle: ButtonStyle {
     }
 }
 
-extension ButtonStyle where Self == SecondaryActionButtonStyle {
-    /// Neutral secondary button; icon and title always share one color.
-    static var secondaryAction: SecondaryActionButtonStyle { SecondaryActionButtonStyle() }
-}
-
-/// App-standard **destructive** action button (Remove, Delete, Sign Out).
-///
-/// A solid red fill with a white label — NOT `Button(role: .destructive)` and not
-/// `.bordered` + `.tint(.red)`. Both of those hand the rendering to AppKit, which on macOS
-/// produces a *tinted* button: red-ish text on a near-neutral surface, at a control height
-/// that doesn't match `.secondaryAction`. Sitting next to two secondary buttons in a row,
-/// that reads as a fourth visual language rather than "the dangerous one".
-///
-/// Geometry is deliberately IDENTICAL to ``SecondaryActionButtonStyle`` — same font, padding,
-/// and corner radius — so a row of actions lines up exactly and only the color differs. If you
-/// change the metrics in one, change them in the other; they are a matched pair, and the whole
-/// point is that a destructive button differs in color alone.
-/// Comes in two sizes because destructive actions appear at two scales in this app: inline row
-/// actions sitting beside `.secondaryAction` buttons, and full-width card CTAs ("Delete Selected").
-/// One style with a size knob keeps both rendering the same red, radius, and label treatment —
-/// the alternative was converting the large CTAs to caption size, which would have quietly
-/// demoted the most consequential buttons in the app.
-///
-/// ```swift
-/// Button("Delete") { }.buttonStyle(.destructiveAction)
-/// Button("Uninstall") { }.buttonStyle(.destructiveActionProminent)
-/// ```
-struct DestructiveActionButtonStyle: ButtonStyle {
-    /// Governs the exact geometrical scale of the destructive action trigger.
-    enum Size {
-        /// Matches ``SecondaryActionButtonStyle`` exactly. For rows of mixed actions.
-        case regular
-        /// For a card's primary destructive CTA. Mirrors `.controlSize(.large)` metrics.
-        case prominent
-    }
-
-    var size: Size = .regular
-    @Environment(\.isEnabled) private var isEnabled
-
-    private var font: Font {
-        switch size {
-        case .regular:   return .caption.weight(.medium)
-        case .prominent: return .body.weight(.semibold)
-        }
-    }
-    private var hPad: CGFloat { size == .regular ? 10 : 16 }
-    private var vPad: CGFloat { size == .regular ? 5 : 9 }
-    private var radius: CGFloat { size == .regular ? 6 : 8 }
-
-    /// Renders the capsule styling wrapped around a high-contrast destructive label.
-    /// - Parameter configuration: The active structural bridge mapping the style attributes.
-    /// - Returns: The active presentation hierarchy for the detail view.
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .labelStyle(.matched)
-            .font(font)
-            .foregroundStyle(.white)                   // icon AND title, on red
-            .padding(.horizontal, hPad)
-            .padding(.vertical, vPad)
-            .background(
-                RoundedRectangle(cornerRadius: radius, style: .continuous)
-                    .fill(Color.red.opacity(configuration.isPressed ? 0.75 : 1))
-            )
-            .opacity(isEnabled ? 1 : 0.45)
-            .contentShape(Rectangle())
-    }
-}
-
-extension ButtonStyle where Self == DestructiveActionButtonStyle {
-    /// Solid red, white label. Matches ``SecondaryActionButtonStyle`` in every dimension but color.
-    static var destructiveAction: DestructiveActionButtonStyle { DestructiveActionButtonStyle() }
-
-    /// Solid red at card-CTA scale. Use for a card's primary destructive action, not for row actions.
-    static var destructiveActionProminent: DestructiveActionButtonStyle {
-        DestructiveActionButtonStyle(size: .prominent)
-    }
+extension ButtonStyle where Self == NeutralActionButtonStyle {
+    /// Bordered secondary/neutral button; icon and title always share one color.
+    /// See ``NeutralActionButtonStyle``.
+    static var neutralAction: NeutralActionButtonStyle { NeutralActionButtonStyle() }
 }

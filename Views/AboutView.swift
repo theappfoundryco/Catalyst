@@ -148,7 +148,7 @@ struct AboutView: View {
                                 .font(.caption.weight(.medium))
                                 .foregroundStyle(.tint)
                             }
-                            .buttonStyle(.plain)
+                            .appButton(.plain)
                         }
 
                         if !info.releaseDate.isEmpty {
@@ -218,7 +218,7 @@ struct AboutView: View {
                                 )
                                 .contentShape(Rectangle())
                             }
-                            .buttonStyle(.plain)
+                            .appButton(.plain)
                         }
                     }
                 }

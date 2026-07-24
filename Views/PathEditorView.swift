@@ -89,7 +89,7 @@ struct PathEditorView: View {
                     Label("Clean Up \(issues) Issue\(issues == 1 ? "" : "s")", systemImage: "wand.and.sparkles")
                         .labelStyle(.matched)
                 }
-                .buttonStyle(.borderedProminent)
+                .appButton(.primary)
                 .tint(.pink)
             }
         }
@@ -119,7 +119,7 @@ struct PathEditorView: View {
                     Label("Restore Default", systemImage: "arrow.uturn.backward")
                         .labelStyle(.matched)
                 }
-                .buttonStyle(.bordered)
+                .appButton(.neutral)
             }
         }
         .cardStyle()
@@ -186,13 +186,13 @@ struct PathEditorView: View {
             Spacer()
 
             Button { vm.moveUp(entry) } label: { Image(systemName: "chevron.up") }
-                .buttonStyle(.borderless).disabled(index == 0).help("Move up")
+                .appButton(.borderless).disabled(index == 0).help("Move up")
             Button { vm.moveDown(entry) } label: { Image(systemName: "chevron.down") }
-                .buttonStyle(.borderless).disabled(index == vm.working.count - 1).help("Move down")
+                .appButton(.borderless).disabled(index == vm.working.count - 1).help("Move down")
             Button { vm.reveal(entry) } label: { Image(systemName: "magnifyingglass") }
-                .buttonStyle(.borderless).disabled(!entry.exists).help("Reveal in Finder")
+                .appButton(.borderless).disabled(!entry.exists).help("Reveal in Finder")
             Button { vm.remove(entry) } label: { Image(systemName: "trash").foregroundColor(.red) }
-                .buttonStyle(.borderless).help("Remove from list")
+                .appButton(.borderless).help("Remove from list")
         }
         .padding(.vertical, 6)
     }

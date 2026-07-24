@@ -53,7 +53,7 @@ struct RequirementsView: View {
                                     .foregroundColor(.secondary)
                                     .font(.caption)
                             }
-                            .buttonStyle(.borderless)
+                            .appButton(.borderless)
                             .disabled(vm.isInstalling)
                         }
                         .padding()
@@ -103,7 +103,7 @@ struct RequirementsView: View {
                                     .labelStyle(.matched)
                             }
                             .tint(.purple)
-                            .buttonStyle(.borderedProminent)
+                            .appButton(.primary)
                         }
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 40)
@@ -165,7 +165,7 @@ struct RequirementsView: View {
                         .frame(maxWidth: .infinity)
                         .padding()
                     }
-                    .buttonStyle(.borderedProminent)
+                    .appButton(.primary)
                     .tint(.purple)
                     .disabled(vm.isInstallDisabled)
                     .padding(.horizontal)
@@ -255,7 +255,7 @@ struct RequirementsView: View {
                                         Label("Retry Failed", systemImage: "arrow.clockwise")
                                             .font(.subheadline)
                                     }
-                                    .buttonStyle(.bordered)
+                                    .appButton(.neutral)
                                     .disabled(vm.isInstallDisabled)
                                     
                                     Button {
@@ -264,7 +264,7 @@ struct RequirementsView: View {
                                         Label("Export List", systemImage: "square.and.arrow.up")
                                             .font(.subheadline)
                                     }
-                                    .buttonStyle(.bordered)
+                                    .appButton(.neutral)
                                 }
                             }
                         }

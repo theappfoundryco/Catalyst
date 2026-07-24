@@ -38,7 +38,7 @@ struct SSDHealthView: View {
                             Image(systemName: "xmark.circle.fill")
                                 .foregroundColor(.secondary)
                         }
-                        .buttonStyle(.plain)
+                        .appButton(.plain)
                         .help("Dismiss")
                     }
                     .padding(.horizontal)
@@ -451,7 +451,7 @@ struct SSDHealthView: View {
                     Text("Scan Your Disk")
                 }
             }
-            .buttonStyle(.borderedProminent)
+            .appButton(.primary)
             .controlSize(.large)
             
             Text("You will be prompted for your admin password")
@@ -484,7 +484,7 @@ struct SSDHealthView: View {
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 420)
-            Button("Retry") { Task { await vm.checkPrerequisites() } }.buttonStyle(.bordered)
+            Button("Retry") { Task { await vm.checkPrerequisites() } }.appButton(.neutral)
         }
         // Match the framing of the other states (Ready-to-Scan) so the error
         // reads as a proper centered card, not a cramped floating cluster.

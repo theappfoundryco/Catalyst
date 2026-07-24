@@ -126,7 +126,7 @@ struct InfoDot: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
-        .buttonStyle(.plain)
+        .appButton(.plain)
         .help("More info")
         .popover(isPresented: $showPopover, arrowEdge: .bottom) {
             VStack(alignment: .leading, spacing: 8) {
@@ -141,7 +141,7 @@ struct InfoDot: View {
                     InfoCenter.shared.present(topic)
                 }
                 .font(.caption)
-                .buttonStyle(.link)
+                .appButton(.link)
             }
             .padding(12)
             .frame(width: 260)
@@ -173,7 +173,7 @@ struct AppInfoSheet: View {
                     Image(systemName: "xmark.circle.fill")
                         .foregroundStyle(.secondary)
                 }
-                .buttonStyle(.plain)
+                .appButton(.plain)
             }
 
             Picker("", selection: $selected) {

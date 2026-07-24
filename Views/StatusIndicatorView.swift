@@ -44,7 +44,7 @@ struct StatusIndicatorView: View {
                     .fill(Color(NSColor.controlBackgroundColor))
             )
         }
-        .buttonStyle(.plain)
+        .appButton(.plain)
         .help(networkMonitor.status.tooltip)
         .popover(isPresented: $showingPopover, arrowEdge: .top) {
             StatusPopoverView(networkMonitor: networkMonitor)
@@ -144,7 +144,7 @@ struct StatusPopoverView: View {
                         .labelStyle(.matched)
                 }
             }
-            .buttonStyle(.bordered)
+            .appButton(.neutral)
             .disabled(isRefreshing)
         }
         .padding()
@@ -461,7 +461,7 @@ struct UserProfileRow: View {
             )
             .animation(.easeInOut(duration: 0.12), value: isHovering)
         }
-        .buttonStyle(.plain)
+        .appButton(.plain)
         .onHover { isHovering = $0 }
         .help("Edit your name and avatar")
         .sheet(isPresented: $showingSheet) {
@@ -622,7 +622,7 @@ struct UserProfileSheet: View {
                 profile.avatarID = editedAvatarID
                 isPresented = false
             }
-            .buttonStyle(.borderedProminent)
+            .appButton(.primary)
             .keyboardShortcut(.defaultAction)
             .disabled(nameError != nil)
         }
@@ -658,7 +658,7 @@ struct AvatarTile: View, Equatable {
                                       lineWidth: isSelected ? 2 : 1)
                 )
         }
-        .buttonStyle(.plain)
+        .appButton(.plain)
         .help(avatarID == nil ? "No avatar (default placeholder)" : "")
     }
 }

@@ -351,7 +351,7 @@ struct UpdateBadgeView: View {
                 badge(icon: "arrow.triangle.2.circlepath.circle.fill", tint: .green,
                       text: "Relaunch to update")
             }
-            .buttonStyle(.plain)
+            .appButton(.plain)
             .help("Relaunch to update")
         }
     }

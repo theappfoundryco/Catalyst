@@ -108,7 +108,7 @@ struct MenuBarContentView: View {
                     Spacer()
                 }
             }
-            .buttonStyle(.plain)
+            .appButton(.plain)
             .font(.subheadline)
         }
         .padding(16)
@@ -148,7 +148,7 @@ struct MenuBarContentView: View {
             }
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .appButton(.plain)
         .font(.subheadline)
     }
 

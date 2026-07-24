@@ -210,7 +210,7 @@ struct LegalConsentSheet: View {
             Button { vm.acceptCurrent() } label: {
                 Text("Agree & Continue").frame(maxWidth: .infinity)
             }
-            .buttonStyle(.borderedProminent)
+            .appButton(.primary)
             .controlSize(.large)
             .disabled(!checked)
         }
@@ -234,7 +234,7 @@ struct LegalConsentSheet: View {
             }
             Spacer(minLength: 0)
             Button("Read") { NSWorkspace.shared.open(url) }
-                .buttonStyle(.link)
+                .appButton(.link)
                 .font(.body)
         }
         .padding(.horizontal, 14)

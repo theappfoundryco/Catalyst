@@ -203,13 +203,13 @@ struct GitGraphView: View {
                         }
                         .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
+                    .appButton(.plain)
 
                     Button { vm.removeRecent(path) } label: {
                         Image(systemName: "xmark.circle.fill")
                             .foregroundStyle(.secondary.opacity(0.6))
                     }
-                    .buttonStyle(.plain)
+                    .appButton(.plain)
                     .help("Remove from recents")
                 }
                 .padding(.vertical, 2)
@@ -380,7 +380,7 @@ private struct GitRepoDropZone: View {
             .frame(maxWidth: .infinity, minHeight: 160, maxHeight: .infinity)
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .appButton(.plain)
     }
 }
 
@@ -542,7 +542,7 @@ private struct GraphReferenceHeader: View {
                         Label("Refresh", systemImage: "arrow.clockwise")
                             .font(.caption)
                     }
-                    .buttonStyle(.borderedProminent)
+                    .appButton(.primary)
                     .help("Refresh graph")
                 }
             }
@@ -856,7 +856,7 @@ private struct FiltersPopover: View {
                     apply()
                     dismiss()
                 }
-                .buttonStyle(.borderedProminent)
+                .appButton(.primary)
                 .keyboardShortcut(.defaultAction)
             }
         }
@@ -938,7 +938,7 @@ private struct CommitDetailSheet: View {
                                 Button { copyToPasteboard(d.hash) } label: {
                                     Label("Copy", systemImage: "doc.on.doc")
                                 }
-                                .buttonStyle(.borderless)
+                                .appButton(.borderless)
                                 .font(.caption)
                             }
                         }

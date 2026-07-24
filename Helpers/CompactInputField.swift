@@ -118,7 +118,7 @@ struct CompactInputField: View {
                             .foregroundColor(.secondary)
                             .contentTransition(.symbolEffect(.replace))
                     }
-                    .buttonStyle(.plain)
+                    .appButton(.plain)
                     .contentShape(Rectangle())
                     .help(isRevealed ? "Hide" : "Show")
                     .accessibilityLabel(isRevealed ? "Hide passphrase" : "Show passphrase")

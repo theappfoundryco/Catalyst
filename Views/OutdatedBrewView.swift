@@ -61,7 +61,7 @@ struct OutdatedBrewView: View {
                                     .frame(maxWidth: .infinity)
                                     .padding()
                             }
-                            .buttonStyle(.borderedProminent)
+                            .appButton(.primary)
                             .tint(.orange)
                         }
                         .padding(.horizontal)
@@ -89,7 +89,7 @@ struct OutdatedBrewView: View {
                             .frame(maxWidth: .infinity)
                             .padding()
                     }
-                    .buttonStyle(.borderedProminent)
+                    .appButton(.primary)
                     .tint(.orange)
                     .disabled(vm.isUpdatingAll)
                     .padding(.horizontal)

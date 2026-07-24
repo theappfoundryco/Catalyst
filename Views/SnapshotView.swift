@@ -285,7 +285,7 @@ private struct LandingAction: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 6)
         }
-        .buttonStyle(.borderedProminent)
+        .appButton(.primary)
         .controlSize(.large)
         .tint(accent)
         .disabled(disabled)
@@ -439,18 +439,15 @@ private struct SnapshotCaptureReadyView: View {
                 ? "Saved to \(vm.lastExportURL?.lastPathComponent ?? "")"
                 : "\(totalItems) items · nothing leaves your Mac until you pick a location"
         ) {
-            /// `.bordered` (not `.secondaryAction`) so this matches the adjacent
-            /// Export button's height exactly. `SecondaryActionButtonStyle` is a
-            /// custom style with fixed padding — it ignores `controlSize`, which is
-            /// why Discard rendered noticeably shorter than Export. Both AppKit
-            /// styles honour `.large`, so they line up by construction rather than
-            /// by a hand-tuned frame height.
+            /// `.neutral` at `.controlSize(.large)` so it matches the adjacent Export
+            /// button's height — both the neutral style and `.borderedProminent` scale
+            /// with control size, so they line up rather than by a hand-tuned frame height.
             ///
             /// **Gotchas:** Attempting to force-match button heights with hardcoded frame modifiers breaks catastrophically when the user changes their system font size.
             Button { vm.discardCapture() } label: {
                 Text("Discard").fontWeight(.semibold)
             }
-            .buttonStyle(.bordered)
+            .appButton(.neutral)
             .controlSize(.large)
             .disabled(vm.isWorking)
 
@@ -459,7 +456,7 @@ private struct SnapshotCaptureReadyView: View {
                     .fontWeight(.semibold)
                     .frame(minWidth: 140)
             }
-            .buttonStyle(.borderedProminent)
+            .appButton(.primary)
             .tint(.green)
             .controlSize(.large)
             .disabled(vm.isWorking)
@@ -769,7 +766,7 @@ private struct SnapshotRestorePlanView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 4)
             }
-            .buttonStyle(.borderedProminent)
+            .appButton(.primary)
             .tint(.blue)
             .controlSize(.large)
             .disabled(vm.isWorking)
@@ -840,7 +837,7 @@ private struct SnapshotRestorePlanView: View {
                 Button { Task { await vm.applySecretsNow() } } label: {
                     Text("Apply Secrets").fontWeight(.semibold)
                 }
-                .buttonStyle(.borderedProminent)
+                .appButton(.primary)
                 .tint(.purple)
                 .controlSize(.large)
                 .disabled(vm.isWorking || vm.secretsValidation == .checking)
@@ -896,7 +893,7 @@ private struct SnapshotRestorePlanView: View {
                     if anyCollapsed { expanded = Set(vm.groupedActions.map { $0.kind }) }
                     else { expanded.removeAll() }
                 }
-                .buttonStyle(.plain)
+                .appButton(.plain)
                 .font(.caption.bold())
                 .disabled(vm.isWorking)
             }
@@ -936,7 +933,7 @@ private struct SnapshotRestorePlanView: View {
                         Button(selected == actionable ? "None" : "All") {
                             vm.setSection(kind, selected: selected != actionable)
                         }
-                        .buttonStyle(.plain)
+                        .appButton(.plain)
                         .font(.caption.bold())
                         .foregroundColor(.blue)
                         .disabled(vm.isWorking)
@@ -984,7 +981,7 @@ private struct SnapshotRestorePlanView: View {
                     .fontWeight(.semibold)
                     .frame(minWidth: 140)
             }
-            .buttonStyle(.borderedProminent)
+            .appButton(.primary)
             .tint(.blue)
             .controlSize(.large)
             .disabled(vm.isWorking)
@@ -1002,13 +999,13 @@ private struct SnapshotRestorePlanView: View {
                 Button { vm.cancel() } label: {
                     Text("Cancel").fontWeight(.semibold)
                 }
-                .buttonStyle(.bordered)
+                .appButton(.neutral)
                 .controlSize(.large)
             } else {
                 Button { vm.backToPreview() } label: {
                     Text("Back to Preview").fontWeight(.semibold)
                 }
-                .buttonStyle(.bordered)
+                .appButton(.neutral)
                 .controlSize(.large)
 
                 Button { vm.discardPlan() } label: {
@@ -1016,7 +1013,7 @@ private struct SnapshotRestorePlanView: View {
                         .fontWeight(.semibold)
                         .frame(minWidth: 140)
                 }
-                .buttonStyle(.borderedProminent)
+                .appButton(.primary)
                 .tint(.blue)
                 .controlSize(.large)
             }
