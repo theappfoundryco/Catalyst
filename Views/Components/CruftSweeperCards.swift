@@ -704,7 +704,7 @@ private struct CruftSummaryCard: View {
                     Label("Select All", systemImage: "checkmark.circle")
                         .font(.subheadline)
                 }
-                .buttonStyle(.secondaryAction)   // icon+title one color (CODING_STANDARDS 4.2 exception)
+                .buttonStyle(.bordered)
 
                 Button {
                     vm.selectSafe()
@@ -712,7 +712,7 @@ private struct CruftSummaryCard: View {
                     Label("Select Safe", systemImage: "leaf")
                         .font(.subheadline)
                 }
-                .buttonStyle(.secondaryAction)   // icon+title one color (CODING_STANDARDS 4.2 exception)
+                .buttonStyle(.bordered)
 
                 if !vm.selectedIDs.isEmpty {
                     Button {
@@ -721,7 +721,7 @@ private struct CruftSummaryCard: View {
                         Text("Clear")
                             .font(.subheadline)
                     }
-                    .buttonStyle(.secondaryAction)   // keep row geometry consistent
+                    .buttonStyle(.bordered)
                 }
 
                 Spacer()
