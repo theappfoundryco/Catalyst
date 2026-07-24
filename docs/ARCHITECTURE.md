@@ -960,7 +960,7 @@ design reference for the docs website.
   footer bar — `SectionDivider` then a padded `HStack` on
   `Color(NSColor.controlBackgroundColor)`, with a `.headline` count + `.caption`
   `.secondary` subtitle on the left and the action pinned right; the prominent button
-  is a semibold `Text` with `.frame(minWidth: 140)`, `.buttonStyle(.borderedProminent)`,
+  is a semibold `Text` with `.frame(minWidth: 140)`, `.appButton(.primary)`,
   `.controlSize(.large)`. It appears **only when there's something to act on**. Cruft
   Sweeper's delete bar is the canonical shape; Snapshot & Migrate reuses the exact
   grammar via the shared `SnapshotFooterBar` (CODING_STANDARDS 4.14).
