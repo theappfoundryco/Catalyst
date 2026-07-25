@@ -442,9 +442,10 @@ no corruption fallback, no new-file pbxproj registration. Reserve `ConfigStore`-
 JSON files under App Support for larger/structured stores (6.1). Pattern:
 `GitGraphPrefsStore` (`load()`/`save()` around a `JSONEncoder` + one defaults key).
 
-6.5 **The launch splash must NEVER gate on detection.** `AppViewModel.startupChecks`
-runs `fullRefresh()` in a background `Task` and flips `isAppReady` after the 1.5 s
-animation floor — nothing else. Gating on the full detection sweep meant any one slow or
+6.5 **Launch must NEVER gate on detection.** `AppViewModel.startupChecks`
+runs `fullRefresh()` in a background `Task` and returns — nothing else. (The splash and its
+`isAppReady` flag were deleted 2026-07-25; only `await legalViewModel.start()` is awaited, so
+the consent gate decision is made before the first paint.) Gating on the full detection sweep meant any one slow or
 stuck probe (brew `du`, a git CLT prompt, a hung fetch) trapped the user on the launch
 screen (it happened repeatedly). Every result is `@Published`, so the UI fills in as
 each check finishes.
@@ -504,9 +505,8 @@ chrome directly; never paint over the titlebar.**
   match the app's taller unified titlebar, attach an **empty toolbar** — `.toolbar {
   ToolbarItem(placement: .principal) { Color.clear.frame(width: 1, height: 1) } }` — which
   reserves the height without showing controls.
-- The launch **splash was removed entirely** (`LaunchScreenView` still exists but is unused
-  — deleting the file would break the pbxproj reference; strip it from the target in Xcode
-  to fully remove). The window appears already framed and loads content in place, like a
+- The launch **splash was removed entirely** (`LaunchScreenView.swift` deleted and unregistered
+  from `project.pbxproj` on 2026-07-25). The window appears already framed and loads content in place, like a
   normal native macOS app. The brief token-check flash is now the neutral `.checking`
   spinner ("Checking your access…") in the plain window, not a splash or a login form.
 

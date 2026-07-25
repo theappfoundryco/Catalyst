@@ -79,8 +79,6 @@ final class AppViewModel: ObservableObject {
     @Published var currentScreen: Screen = .dashboard {
         didSet { Telemetry.log(.featureOpened(feature: currentScreen.telemetryName)) }
     }
-    /// Set to true once the initial 1.5-second minimum animation floor and start checks complete.
-    @Published var isAppReady = false
     /// True when a global refresh is spinning across all view models.
     @Published var isPerformingFullRefresh = false
     /// A user-facing description of why the refresh is happening (e.g., "Installing Python...").
@@ -323,12 +321,12 @@ final class AppViewModel: ObservableObject {
     /// 1. Immediately triggers ``LogsViewModel/startup()`` to capture startup logs.
     /// 2. Evaluates ``didRunInitialDetection`` to run a detached ``fullRefresh()``.
     /// 3. Initiates ``LegalConsentViewModel/start()``.
-    /// 4. Awaits 1.5 seconds strictly for animation pacing, then reveals the main app by setting ``isAppReady``.
     ///
     /// **Gotchas:**
-    /// - Holds the launch screen artificially for 1.5s to prevent jarring flashes on M-series Macs
-    ///   where the detection happens almost instantly.
     /// - Only triggers the detection sweep once, guarded by `didRunInitialDetection`.
+    /// - There is no launch screen and no reveal delay. `LaunchScreenView` and the `isAppReady`
+    ///   flag it observed were removed (2026-07-25) — the view was never instantiated outside its
+    ///   own `#Preview`, so the 1.5s floor held nothing back and only delayed a no-op.
     func startupChecks() async {
         logger.log("Catalyst launched - running initial detection")
 
@@ -346,13 +344,9 @@ final class AppViewModel: ObservableObject {
         }
 
         // Resolve legal consent in parallel: refresh remote versions if the 14-day window elapsed,
-        // then compute whether the blocking sheet is needed.
-        Task { await legalViewModel.start() }
-
-        // Hold the launch screen only for the animation floor, then reveal the app.
-        try? await Task.sleep(for: .seconds(1.5))
-        withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
-            self.isAppReady = true
-        }
+        // then compute whether the blocking gate is needed. Awaited (not detached) so the gate
+        // decision is made before this returns — ContentView branches on `legalRequirement`, and a
+        // detached Task would let one frame of the main app paint before the gate swaps in.
+        await legalViewModel.start()
     }
 }

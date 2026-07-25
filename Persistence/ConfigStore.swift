@@ -177,4 +177,25 @@ final class ConfigStore {
         cache.lastLegalCheckISO = ISO8601DateFormatter().string(from: Date())
         save()
     }
+
+#if DEBUG
+    /// DEBUG-ONLY smoke-test hook: wipes every legal-consent field so the next `evaluate()` sees a
+    /// virgin install and re-presents ``LegalGateView``.
+    ///
+    /// Clears the *cached remote* versions and `lastLegalCheckISO` too, not just the accepted ones —
+    /// otherwise the 14-day cooldown stays satisfied and the run silently skips `fetchRemote()`,
+    /// so you'd be smoke-testing the bundled-fallback path every time and never the live JSON.
+    ///
+    /// **Gotchas:** Compiled out of Release entirely. If this ever ships, every user is re-prompted on every launch.
+    func resetLegalConsentForDebug() {
+        cache.acceptedPrivacyVersion = nil
+        cache.acceptedTermsVersion = nil
+        cache.legalAcceptedAtISO = nil
+        cache.cachedPrivacyVersion = nil
+        cache.cachedTermsVersion = nil
+        cache.lastLegalCheckISO = nil
+        save()
+        logger.log("🧪 DEBUG: legal consent reset — gate will re-present this launch")
+    }
+#endif
 }

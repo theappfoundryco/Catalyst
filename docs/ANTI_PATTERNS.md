@@ -103,7 +103,7 @@ Keep card edges defined with a border, not a shadow. **Use `cardStyle()` for eve
 
 **Look-preserving fix:** use a solid `Color(NSColor.controlBackgroundColor)` (or `windowBackgroundColor`) fill, which reads almost identically against the app's background, with no per-frame compositing. Reserve materials/blur for **static, non-scrolling** chrome (launch screen, sheet backdrops, popovers).
 
-**Audit hits to review:** `Components/CruftSweeperCards.swift:402` (`Material.thinMaterial`), `Components/DrCatalystCards.swift:157` (`Material.thickMaterial`). Fine if on a fixed header/overlay; replace if inside scrolling list content. (`LaunchScreen`/`gearlaunch`/`flameLaunch` blurs are fine — they never scroll. Note: `LaunchScreenView` is **unused** as of 2026-07-14, splash removed.)
+**Audit hits to review:** `Components/CruftSweeperCards.swift:402` (`Material.thinMaterial`), `Components/DrCatalystCards.swift:157` (`Material.thickMaterial`). Fine if on a fixed header/overlay; replace if inside scrolling list content. (`LaunchScreen`/`gearlaunch`/`flameLaunch` blurs are fine — they never scroll. Note: `LaunchScreenView` was deleted on 2026-07-25.)
 
 ---
 
