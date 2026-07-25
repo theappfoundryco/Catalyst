@@ -28,7 +28,7 @@ final class ConfigStore {
         // MARK: Legal consent (Privacy Policy / Terms & Conditions)
         /// All optional so decoding a pre-existing config.json (which lacks these keys) leaves them
         /// nil — that's exactly the "existing user hasn't accepted anything yet" state the blocking
-        /// consent sheet backfills. See `LegalConsent.swift`.
+        /// consent gate backfills. See `LegalConsent.swift`.
         ///
         /// **Gotchas:** Adding mandatory non-optional fields to this struct will hard-crash the app for all existing users when `JSONDecoder` fails to parse their v1 config file.
         /// Privacy Policy version the user has accepted on this Mac (nil = never accepted).

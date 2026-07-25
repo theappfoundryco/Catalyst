@@ -84,7 +84,8 @@ final class AppViewModel: ObservableObject {
     /// A user-facing description of why the refresh is happening (e.g., "Installing Python...").
     @Published var fullRefreshActionLabel: String? = nil
     /// Mirrors `legalViewModel.requirement` so `ContentView` (which observes this VM) can present
-    /// the blocking Privacy/Terms consent sheet. Non-nil ⇒ show the sheet.
+    /// the blocking Privacy/Terms consent gate. Non-nil ⇒ `ContentView` swaps `LegalGateView` in
+    /// place of the whole app.
     @Published var legalRequirement: LegalConsentRequirement?
 
     /// Guards the first full detection so it runs exactly once per launch. Kept after the removal
@@ -128,7 +129,7 @@ final class AppViewModel: ObservableObject {
     let pathEditorViewModel: PathEditorViewModel
     let gitGraphViewModel: GitGraphViewModel
     let snapshotViewModel: SnapshotViewModel
-    /// Owns versioned Privacy Policy / Terms & Conditions consent (blocking sheet + 14-day check).
+    /// Owns versioned Privacy Policy / Terms & Conditions consent (full-window gate + 14-day check).
     let legalViewModel = LegalConsentViewModel()
 
     /// Initializes the root ``AppViewModel`` and injects all downstream dependencies.
@@ -255,7 +256,7 @@ final class AppViewModel: ObservableObject {
             await self?.fullRefresh()
         }
 
-        // Mirror the legal-consent requirement so ContentView can present the blocking sheet.
+        // Mirror the legal-consent requirement so ContentView can swap in the blocking gate.
         self.legalViewModel.$requirement
             .removeDuplicates()
             .assign(to: &$legalRequirement)

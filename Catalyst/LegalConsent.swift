@@ -54,18 +54,14 @@ struct LegalVersions: Codable {
 }
 
 /// Describes which document(s) currently require (re)acceptance, and whether each is a fresh
-/// first-time acceptance or an update to a previously-accepted version (drives the sheet copy).
-struct LegalConsentRequirement: Equatable, Identifiable {
+/// first-time acceptance or an update to a previously-accepted version (drives the gate copy).
+struct LegalConsentRequirement: Equatable {
     var needsPrivacy: Bool
     var needsTerms: Bool
     var privacyIsUpdate: Bool
     var termsIsUpdate: Bool
     var privacyVersion: String
     var termsVersion: String
-
-    /// Stable identity for `.sheet(item:)` — identical requirements share an id so the sheet
-    /// doesn't churn/re-present on re-evaluation.
-    var id: String { "\(needsPrivacy)-\(needsTerms)-\(privacyVersion)-\(termsVersion)" }
 
     /// True if any required doc is an update (vs. a first-time acceptance) — headline says
     /// "We've updated…" instead of "Please review…".
@@ -76,7 +72,8 @@ struct LegalConsentRequirement: Equatable, Identifiable {
 
 @MainActor
 final class LegalConsentViewModel: ObservableObject {
-    /// Non-nil ⇒ the blocking sheet must be shown. Mirrored into `AppViewModel` for presentation.
+    /// Non-nil ⇒ the blocking gate must be shown. Mirrored into `AppViewModel`, which `ContentView`
+    /// branches on to swap ``LegalGateView`` in for the entire app.
     @Published private(set) var requirement: LegalConsentRequirement?
 
     private let config = ConfigStore.shared
@@ -111,8 +108,10 @@ final class LegalConsentViewModel: ObservableObject {
         return cached.compare(bundled, options: .numeric) == .orderedDescending ? cached : bundled
     }
 
-    /// Kick off at launch (behind the auth gate): refresh remote versions if the 14-day window has
-    /// elapsed, then evaluate what still needs consent.
+    /// Kick off at launch: refresh remote versions if the 14-day window has elapsed, then evaluate
+    /// what still needs consent. Awaited by `startupChecks()` so the gate decision lands before the
+    /// first paint. (`Identifiable`/`id` were dropped with the sheet — `removeDuplicates()` on the
+    /// mirror uses `Equatable`, and nothing else consumed the id.)
     func start() async {
         #if DEBUG
         /// Smoke test: wipe recorded consent so the gate always re-presents on a debug launch.
@@ -158,7 +157,7 @@ final class LegalConsentViewModel: ObservableObject {
         )
     }
 
-    /// User accepted from the blocking sheet — record BOTH current versions (harmless to re-write
+    /// User accepted from the blocking gate — record BOTH current versions (harmless to re-write
     /// an already-current one) and clear the requirement.
     func acceptCurrent() {
         config.recordLegalAcceptance(privacy: currentPrivacyVersion, terms: currentTermsVersion)
