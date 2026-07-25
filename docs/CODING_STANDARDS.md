@@ -444,8 +444,8 @@ JSON files under App Support for larger/structured stores (6.1). Pattern:
 
 6.5 **Launch must NEVER gate on detection.** `AppViewModel.startupChecks`
 runs `fullRefresh()` in a background `Task` and returns — nothing else. (The splash and its
-`isAppReady` flag were deleted 2026-07-25; only `await legalViewModel.start()` is awaited, so
-the consent gate decision is made before the first paint.) Gating on the full detection sweep meant any one slow or
+`isAppReady` flag were deleted 2026-07-25. The consent-gate decision is NOT made here — it is
+made synchronously in `AppViewModel.init`, because `.task` runs after the first render.) Gating on the full detection sweep meant any one slow or
 stuck probe (brew `du`, a git CLT prompt, a hung fetch) trapped the user on the launch
 screen (it happened repeatedly). Every result is `@Published`, so the UI fills in as
 each check finishes.

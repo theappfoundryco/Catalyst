@@ -260,6 +260,21 @@ final class AppViewModel: ObservableObject {
         self.legalViewModel.$requirement
             .removeDuplicates()
             .assign(to: &$legalRequirement)
+
+        // Decide the gate SYNCHRONOUSLY, here in init, before ContentView's body is ever evaluated.
+        //
+        // This must NOT wait for `startupChecks()`. That runs from ContentView's `.task`, which by
+        // definition fires *after* the view appears — so the full app (sidebar, dashboard, the lot)
+        // would render first, and only then get replaced by the gate. Awaiting the network inside
+        // `start()` made it worse, not better: `fetchRemote()` has a 10s timeout, so a new user on a
+        // slow connection could browse the app for ten seconds before being yanked into a consent
+        // screen they hadn't agreed to yet.
+        //
+        // `evaluate()` reads only ConfigStore, which loads config.json synchronously in its own
+        // init, so there is nothing to await — the accepted-vs-current comparison needs no network.
+        // The remote refresh still happens later in `startupChecks()`; it can only ever *add* a
+        // requirement (a newer published version), which is a correct mid-session re-prompt.
+        legalViewModel.evaluate()
     }
 
     /// Runs all VM startup/detection tasks in parallel.
@@ -344,10 +359,14 @@ final class AppViewModel: ObservableObject {
             Task { await self.fullRefresh() }
         }
 
-        // Resolve legal consent in parallel: refresh remote versions if the 14-day window elapsed,
-        // then compute whether the blocking gate is needed. Awaited (not detached) so the gate
-        // decision is made before this returns — ContentView branches on `legalRequirement`, and a
-        // detached Task would let one frame of the main app paint before the gate swaps in.
-        await legalViewModel.start()
+        // Refresh remote legal versions if the 14-day window elapsed, then re-evaluate.
+        //
+        // Detached on purpose. The gate decision that matters was ALREADY made synchronously in
+        // `init` — this is only the network top-up, and `fetchRemote()` carries a 10s timeout that
+        // must not hold `startupChecks()` open. It can only ever *add* a requirement (a newly
+        // published version), which is a correct mid-session re-prompt, never a missed first-launch
+        // one. Awaiting here bought nothing: `.task` already runs after first paint, so it could
+        // not have made the gate appear any earlier.
+        Task { await legalViewModel.start() }
     }
 }

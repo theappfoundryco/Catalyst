@@ -27,8 +27,10 @@ import Combine
 // MARK: - Config
 
 enum LegalConfig {
-    /// Versions shipped with THIS build — used before the first successful remote check and while
-    /// offline. Bump these in lock-step with the Vercel JSON when you publish new docs.
+    /// Versions shipped with THIS build. NOT merely an offline fallback: `currentPrivacyVersion` /
+    /// `currentTermsVersion` take `max(bundled, cached)`, so a bundled value NEWER than the cached
+    /// remote one wins and re-prompts immediately on update. That is the primary delivery path —
+    /// we publish new docs *with* a release. Bump these in lock-step with the Vercel JSON.
     static let bundledPrivacyVersion = "1.1"
     static let bundledTermsVersion   = "1.1"
 
@@ -108,24 +110,40 @@ final class LegalConsentViewModel: ObservableObject {
         return cached.compare(bundled, options: .numeric) == .orderedDescending ? cached : bundled
     }
 
-    /// Kick off at launch: refresh remote versions if the 14-day window has elapsed, then evaluate
-    /// what still needs consent. Awaited by `startupChecks()` so the gate decision lands before the
-    /// first paint. (`Identifiable`/`id` were dropped with the sheet — `removeDuplicates()` on the
-    /// mirror uses `Equatable`, and nothing else consumed the id.)
-    func start() async {
+    /// The DEBUG smoke-test reset lives HERE, not in ``start()``.
+    ///
+    /// `start()` runs from `ContentView`'s `.task`, i.e. after the first render. Resetting there
+    /// would let the main app paint, *then* wipe consent and swap the gate in — so a debug build
+    /// would exercise a different ordering than a real first launch, which is precisely the bug
+    /// this smoke test exists to catch. Resetting in `init` (before `AppViewModel.init` calls
+    /// `evaluate()`) makes a debug launch byte-for-byte identical to a virgin install.
+    ///
+    /// Opt OUT for a given run with `-KeepLegalConsent` in the scheme's launch arguments
+    /// (Product → Scheme → Edit Scheme → Run → Arguments). Default is ON: the failure mode this
+    /// guards (issue #20 — gate never appears for a new user) is invisible on any Mac that has
+    /// already accepted, which is every developer's Mac.
+    ///
+    /// **Gotchas:** Wrapped in `#if DEBUG`, so a Release build can never reset a real user's consent.
+    init() {
         #if DEBUG
-        /// Smoke test: wipe recorded consent so the gate always re-presents on a debug launch.
-        ///
-        /// Opt OUT for a given run by adding `-KeepLegalConsent` to the scheme's launch arguments
-        /// (Product → Scheme → Edit Scheme → Run → Arguments). Default is ON, because the failure
-        /// mode this guards (issue #20 — gate never appears for a new user) is invisible on any Mac
-        /// that has already accepted, which is every developer's Mac.
-        ///
-        /// **Gotchas:** Wrapped in `#if DEBUG`, so a Release build can never reset a real user's consent.
         if !ProcessInfo.processInfo.arguments.contains("-KeepLegalConsent") {
             config.resetLegalConsentForDebug()
         }
         #endif
+    }
+
+    /// Network top-up at launch: refresh remote versions if the 14-day window has elapsed, then
+    /// re-evaluate.
+    ///
+    /// Fired DETACHED from `startupChecks()`. It is not what gates the app — the decision that
+    /// matters is made synchronously in `AppViewModel.init` via ``evaluate()``, because
+    /// `startupChecks()` runs from `ContentView`'s `.task`, which fires after the first render and
+    /// therefore cannot gate it. This call can only ever *add* a requirement (a newly published
+    /// version), which is a correct mid-session re-prompt.
+    ///
+    /// (`Identifiable`/`id` were dropped from ``LegalConsentRequirement`` with the sheet —
+    /// `removeDuplicates()` on the mirror uses `Equatable`, and nothing else consumed the id.)
+    func start() async {
         await refreshIfDue()
         evaluate()
     }
