@@ -6,7 +6,6 @@ import SwiftUI
 /// ```
 struct DrCatalystView: View {
     @ObservedObject var vm: DrCatalystViewModel
-    @State private var isRefreshing = false
     
     var body: some View {
         SmoothPageScroll {
@@ -80,21 +79,11 @@ struct DrCatalystView: View {
         .navigationTitle("Dr. Catalyst")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                if isRefreshing || vm.isScanning {
-                    ProgressView()
-                        .controlSize(.small)
-                } else {
-                    Button {
-                        Task {
-                            isRefreshing = true
-                            try? await Task.sleep(for: .seconds(1.5))
-                            await vm.scan()
-                            isRefreshing = false
-                        }
-                    } label: {
-                        Label("Refresh", systemImage: "arrow.clockwise")
-                    }
-                }
+                RefreshToolbarContent(
+                    isLoading: vm.isScanning,
+                    label: "Refresh",
+                    minimumDelay: 1.5
+                ) { await vm.scan() }
             }
         }
         .onAppear {
@@ -131,65 +120,29 @@ struct DrCatalystView: View {
         }
     }
     
+    /// **Rationale:** Circular gauges read a 0-100 scale more intuitively than a bare number.
+    /// The gauge, dividers, spacing and card chrome all live in ``HeroStatBar`` — this screen
+    /// used to hand-roll a native `Gauge` with its own colour thresholds, which disagreed with
+    /// Battery Health and SSD Health on what a given score meant (issue #24).
     private var dashboardHeader: some View {
-        HStack(spacing: 0) {
-            /// 1. Vitality Gauge + Label
-            ///
-            /// **Rationale:** Circular gauges provide a more intuitive reading of a 0-100 scale than a raw numerical string.
-            VStack(spacing: 20) {
-                Text("System Vitality")
-                    .font(.headline)
-                    .foregroundColor(.secondary)
-                
-                Gauge(value: Double(vm.currentScore), in: 0...100) {
-                    /// Not shown when using .accessoryCircular
-                    ///
-                    /// **Gotchas:** SwiftUI automatically strips standard `Text` modifiers from gauges using `.accessoryCircular`; trying to style the label here does nothing.
-                } currentValueLabel: {
-                    Text("\(vm.currentScore)")
-                        .font(.system(size: 20, weight: .bold, design: .rounded))
-                }
-                .gaugeStyle(.accessoryCircularCapacity)
-                .tint(vm.currentScore > 80 ? .green : (vm.currentScore > 50 ? .orange : .red))
-                .scaleEffect(1.4)
-            }
-            .frame(maxWidth: .infinity)
-            
-            SectionDivider()
-                .frame(height: 100)
-            
-            /// 2. Issues Count
-            ///
-            /// **Rationale:** Separating the issue count into its own UI group keeps the visual hierarchy balanced.
+        HeroStatBar(title: "System Vitality", score: vm.currentScore) {
+            /// Issues count — kept in its own column so the visual hierarchy stays balanced.
             StatColumnHeader(label: "Issues", value: "\(vm.issues.count)", subtext: vm.issues.isEmpty ? "All Clear" : "Found")
-                .frame(maxWidth: .infinity)
-            
-            SectionDivider()
-                .frame(height: 100)
-            
-            /// 3. Scans
-            ///
-            /// **Rationale:** Visually segments the scan metrics to draw the user's eye to completion rates.
+                .heroColumn()
+
+            /// Scans — segments the scan metrics to draw the eye to completion rates.
             StatColumnHeader(label: "Scans", value: "\(vm.history.count)", subtext: "Total")
-                .frame(maxWidth: .infinity)
-            
-            SectionDivider()
-                .frame(height: 100)
-            
-            /// 4. Last Scan
-            ///
-            /// **Rationale:** Relative timestamps provide immediate context on data freshness without forcing users to parse dates.
+                .heroColumn()
+
+            /// Last scan — relative timestamps give freshness context without parsing dates.
             if let lastScan = vm.history.last?.date {
                 StatColumnHeader(label: "Last Scan", value: lastScan.formatted(date: .omitted, time: .shortened), subtext: lastScan.formatted(date: .abbreviated, time: .omitted))
-                    .frame(maxWidth: .infinity)
+                    .heroColumn()
             } else {
                 StatColumnHeader(label: "Last Scan", value: "Never", subtext: "Run Scan")
-                    .frame(maxWidth: .infinity)
+                    .heroColumn()
             }
         }
-        .padding(.vertical, 40)
-        .background(Color(NSColor.controlBackgroundColor))
-        .cornerRadius(12)
     }
     
     /// Computeds

@@ -1232,10 +1232,60 @@ struct SnapshotRestoreService {
         let zshrc = mgr.zshrcPath
         let fm = FileManager.default
 
+        let current = (try? String(contentsOf: zshrc, encoding: .utf8)) ?? ""
+        let existed = fm.fileExists(atPath: zshrc.path)
+
+        /// 0. Destructive-write guards (#13).
+        ///
+        /// These run BEFORE the backup so a refusal leaves the Mac untouched — no
+        /// stray backup file, no partial state.
+        ///
+        /// **Rationale:** During v1.3 development a restore from a near-empty source
+        /// profile truncated the maintainer's ~/.zshrc, taking `brew shellenv` with
+        /// it. Losing that one line drops Homebrew's bin from PATH, which takes out
+        /// npm, the CA bundle and every other brew-installed tool at once — a failure
+        /// that looks like "my Mac broke", not "the restore was wrong".
+        if existed {
+            /// Guard A — never shrink. A snapshot captured on a fresh Mac is a
+            /// legitimate 3-line file; writing it over an established 200-line
+            /// profile is not a restore, it's a deletion.
+            ///
+            /// **Gotchas:** Measure against the SAME stripped basis `shellPlan` uses
+            /// (`.zshrc_catalyst` source lines removed). Catalyst re-adds that line
+            /// itself in step 3, so counting it here would make an otherwise
+            /// idempotent re-restore look like a shrink and refuse for no reason.
+            let currentBytes = current
+                .components(separatedBy: .newlines)
+                .filter { !$0.contains(".zshrc_catalyst") }
+                .joined(separator: "\n")
+                .utf8.count
+            let incomingBytes = profile.utf8.count
+            if currentBytes > 0 && incomingBytes < currentBytes {
+                await onOutput(
+                    "❌ Refusing to restore: the imported profile (\(incomingBytes) bytes) is smaller "
+                    + "than your current ~/.zshrc (\(currentBytes) bytes). This would discard "
+                    + "\(currentBytes - incomingBytes) bytes of your own configuration. "
+                    + "Nothing was changed.\n")
+                return false
+            }
+
+            /// Guard B — never drop `brew shellenv`. The single highest-blast-radius
+            /// line in a Mac dev profile.
+            if current.contains("brew shellenv") && !profile.contains("brew shellenv") {
+                await onOutput(
+                    "❌ Refusing to restore: your current ~/.zshrc initialises Homebrew "
+                    + "(`brew shellenv`) but the imported profile does not. Writing it would "
+                    + "remove Homebrew from your PATH and break every brew-installed tool. "
+                    + "Nothing was changed.\n")
+                return false
+            }
+        }
+
         /// 1. Back up any existing ~/.zshrc — refuse to overwrite without one.
         ///
         /// **Rationale:** Failsafe design prevents irreversible destruction of developer-defined aliases on catastrophic I/O failures.
-        if fm.fileExists(atPath: zshrc.path) {
+        var backupURL: URL?
+        if existed {
             let stamp = ISO8601DateFormatter().string(from: Date())
                 .replacingOccurrences(of: ":", with: "-")
             let backup = zshrc.deletingLastPathComponent()
@@ -1243,10 +1293,43 @@ struct SnapshotRestoreService {
             do {
                 try? fm.removeItem(at: backup)
                 try fm.copyItem(at: zshrc, to: backup)
-                await onOutput("Backed up existing ~/.zshrc → \(backup.lastPathComponent)\n")
             } catch {
                 await onOutput("⚠️ Could not back up existing ~/.zshrc: \(error.localizedDescription)\n")
                 return false
+            }
+
+            /// Guard C — verify the backup actually landed. `copyItem` returning
+            /// without throwing is not proof the bytes are on disk: a full volume or
+            /// a revoked sandbox grant can yield a 0-byte file. Compare sizes before
+            /// trusting it, and bin a bad backup so it can't be mistaken for a good one.
+            let backupBytes = ((try? fm.attributesOfItem(atPath: backup.path))?[.size] as? Int) ?? 0
+            let originalBytes = ((try? fm.attributesOfItem(atPath: zshrc.path))?[.size] as? Int) ?? 0
+            guard backupBytes > 0, backupBytes == originalBytes else {
+                try? fm.removeItem(at: backup)
+                await onOutput(
+                    "❌ Backup verification failed — wrote \(backupBytes) bytes but the original is "
+                    + "\(originalBytes). Refusing to overwrite ~/.zshrc without a good backup. "
+                    + "Nothing was changed.\n")
+                return false
+            }
+            backupURL = backup
+            await onOutput("Backed up existing ~/.zshrc → \(backup.lastPathComponent) (\(backupBytes) bytes, verified)\n")
+        }
+
+        /// Restores the verified backup over ~/.zshrc. Used when a later step proves
+        /// the newly written profile is unusable — the user should never be left
+        /// holding a broken shell plus a manual recovery instruction.
+        func rollBack() async {
+            guard let backupURL else { return }
+            do {
+                try? fm.removeItem(at: zshrc)
+                try fm.copyItem(at: backupURL, to: zshrc)
+                await onOutput("↩️ Rolled back to your previous ~/.zshrc.\n")
+            } catch {
+                await onOutput(
+                    "❌ Roll-back failed: \(error.localizedDescription). Your original file is still at "
+                    + "\(backupURL.lastPathComponent) — restore it with: "
+                    + "cp ~/\(backupURL.lastPathComponent) ~/.zshrc\n")
             }
         }
 
@@ -1258,6 +1341,7 @@ struct SnapshotRestoreService {
             await onOutput("Wrote imported profile to ~/.zshrc\n")
         } catch {
             await onOutput("❌ Failed to write ~/.zshrc: \(error.localizedDescription)\n")
+            await rollBack()
             return false
         }
 
@@ -1275,7 +1359,11 @@ struct SnapshotRestoreService {
                 await onOutput(result.combinedOutput + "\n")
             }
             if !result.succeeded {
-                await onOutput("⚠️ Imported ~/.zshrc has syntax issues (above). Your previous file is backed up.\n")
+                /// A profile that fails `zsh -n` will break every new terminal the
+                /// user opens. Don't just warn and walk away with it in place —
+                /// put the known-good file back automatically.
+                await onOutput("⚠️ Imported ~/.zshrc has syntax issues (above) — restoring your previous file.\n")
+                await rollBack()
                 return false
             }
         }

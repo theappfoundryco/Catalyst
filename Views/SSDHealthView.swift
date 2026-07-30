@@ -7,7 +7,6 @@ import SwiftUI
 struct SSDHealthView: View {
     @ObservedObject var vm: SSDHealthViewModel
     var onNavigateToDashboard: () -> Void
-    @State private var isRefreshing = false
     
     // Grid Columns for Metric Cards (3 columns)
     private let metricColumns = [
@@ -100,20 +99,12 @@ struct SSDHealthView: View {
         .navigationTitle("Disk Vitals")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                if vm.setupState == .scanning || isRefreshing {
-                    ProgressView()
-                        .controlSize(.small)
-                } else if vm.setupState == .ready && vm.report != nil {
-                    Button {
-                        Task {
-                            isRefreshing = true
-                            try? await Task.sleep(for: .seconds(1))
-                            await vm.scan()
-                            isRefreshing = false
-                        }
-                    } label: {
-                        Label("Re-Scan", systemImage: "arrow.clockwise")
-                    }
+                if vm.setupState == .scanning || (vm.setupState == .ready && vm.report != nil) {
+                    RefreshToolbarContent(
+                        isLoading: vm.setupState == .scanning,
+                        label: "Re-Scan",
+                        minimumDelay: 1
+                    ) { await vm.scan() }
                     .help("Re-scan SSD health")
                 }
             }
@@ -268,54 +259,29 @@ struct SSDHealthView: View {
             }
         }
         
-        return HStack(spacing: 0) {
-            // 1. Vitality Gauge + Label
-            VStack(spacing: 20) {
-                Text("Health Score")
-                    .font(.headline)
-                    .foregroundColor(.secondary)
-                
-                VitalityGauge(score: report.healthScore)
-                    .frame(width: 100, height: 100) // Match DrCatalyst size
-            }
-            .frame(maxWidth: .infinity)
-            
-            SectionDivider()
-                .frame(height: 100)
-            
-            // 2. Issues Breakdown
+        return HeroStatBar(title: "Health Score", score: report.healthScore) {
+            // Issues breakdown
             HStack(spacing: 16) {
                 StatBadge_Small(count: criticalCount, label: "Critical", color: .red)
                 StatBadge_Small(count: warningCount, label: "Warnings", color: .orange)
                 StatBadge_Small(count: infoCount, label: "Info", color: .blue)
             }
-            .frame(maxWidth: .infinity)
-            
-            SectionDivider()
-                .frame(height: 100)
-            
-            // 3. Temperature / Protection
+            .heroColumn()
+
             StatColumnHeader(
                 label: "Temperature",
                 value: "\(report.healthMetrics.temperatureCelsius)°C",
                 subtext: temperatureDescription(report.healthMetrics.temperatureCelsius)
             )
-            .frame(maxWidth: .infinity)
-            
-            SectionDivider()
-                .frame(height: 100)
-            
-            // 4. Last Scan
+            .heroColumn()
+
             StatColumnHeader(
                 label: "Last Scan",
                 value: report.scanDate.formatted(date: .omitted, time: .shortened),
                 subtext: report.scanDate.formatted(date: .abbreviated, time: .omitted)
             )
-            .frame(maxWidth: .infinity)
+            .heroColumn()
         }
-        .padding(.vertical, 40) // Match DrCatalyst padding
-        .background(Color(NSColor.controlBackgroundColor))
-        .cornerRadius(12)
     }
     
     @ViewBuilder

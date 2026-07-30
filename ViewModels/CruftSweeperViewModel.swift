@@ -86,9 +86,18 @@ final class CruftSweeperViewModel: ObservableObject {
     ///
     /// - Parameter expanded: `true` to expand all, `false` to collapse all.
     func toggleAllGroups(expanded: Bool) {
-        for index in groupedCruft.indices {
-            groupedCruft[index].isExpanded = expanded
+        /// Mutate a local copy and assign ONCE (#22).
+        ///
+        /// **Gotchas:** Writing `groupedCruft[index]` in a loop fires
+        /// `objectWillChange` on every iteration. SwiftUI coalesces those into one
+        /// render, but each write still triggers copy-on-write bookkeeping across
+        /// the whole array — needless churn right before the expensive layout pass.
+        guard !groupedCruft.isEmpty else { return }
+        var updated = groupedCruft
+        for index in updated.indices {
+            updated[index].isExpanded = expanded
         }
+        groupedCruft = updated
     }
 
     // MARK: - Scanning
@@ -113,6 +122,7 @@ final class CruftSweeperViewModel: ObservableObject {
         foundCruft.removeAll()
         selectedIDs.removeAll()
         groupedCruft.removeAll()
+        largestItemSize = 1
         filesScanned = 0
         scanStatus = "Scanning..."
         lastProgressFlush = 0
@@ -166,6 +176,17 @@ final class CruftSweeperViewModel: ObservableObject {
         }
     }
 
+    /// Largest single item's size, used to scale the per-row size bars. Floored
+    /// at 1 to avoid division by zero.
+    ///
+    /// **Gotchas:** This was a computed property reading `foundCruft.map { $0.size }.max()`
+    /// (#22). Every visible row read it during layout, so each row triggered a full
+    /// O(n) pass *and allocated a fresh n-element array*. "Expand All" over a deep
+    /// scan made that O(n²) on the main thread — ~5k items meant 5k allocations of
+    /// 5k elements in a single layout pass, which is the beach ball. It's computed
+    /// once in `processResults()` now and read as a stored value.
+    @Published private(set) var largestItemSize: Int64 = 1
+
     // MARK: - Result Processing and Grouping
     /// Coalesces the raw unorganized cruft items into structured UI groups.
     ///
@@ -175,6 +196,8 @@ final class CruftSweeperViewModel: ObservableObject {
         let result = scanner.groupResults(foundCruft)
         self.foundCruft = result.deduped
         self.groupedCruft = result.groups
+        /// `lazy` keeps this a single streaming pass with no intermediate array.
+        self.largestItemSize = max(result.deduped.lazy.map(\.size).max() ?? 1, 1)
     }
 
     // MARK: - Actions
@@ -195,6 +218,7 @@ final class CruftSweeperViewModel: ObservableObject {
         foundCruft.removeAll()
         groupedCruft.removeAll()
         selectedIDs.removeAll()
+        largestItemSize = 1
         filesScanned = 0
         scanStatus = "Ready"
         isScanning = false
@@ -317,9 +341,4 @@ final class CruftSweeperViewModel: ObservableObject {
         ByteCountFormatter.string(fromByteCount: totalFoundSize, countStyle: .file)
     }
 
-    /// Largest single item's size, used to scale the per-row size bars. Floored
-    /// at 1 to avoid division by zero.
-    var largestItemSize: Int64 {
-        max(foundCruft.map { $0.size }.max() ?? 1, 1)
-    }
 }

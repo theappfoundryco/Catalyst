@@ -240,6 +240,16 @@ one file that answers "what does Catalyst report about me?" is easier to audit t
 scattered across 167 source files. If that ever changes, it changes there, in public, in a commit you
 can read.
 
+You may notice `.gitignore` excludes `GoogleService-Info.plist`. That is a **standing guard, not a
+hidden provider** — nothing in the app reads it and no SDK is linked to read it with.
+`GoogleService-Info` is the fixed filename Firebase's tooling emits, and this repository is public;
+the rule is there so that if anyone ever does wire a provider up, its configuration can't be
+published permanently by an absent-minded `git add -A`. Should such a file exist, it is held by the
+repository's code owners and distributed out of band — `/Telemetry/` is a CODEOWNERS-protected path,
+so nothing lands there without code-owner review. [`Telemetry/README.md`](Telemetry/README.md) has
+the full explanation, including the rule that enabling telemetry must change this section of this
+README in the same commit.
+
 Found a security issue? Please report it privately — see [`SECURITY.md`](SECURITY.md).
 
 ## Project layout

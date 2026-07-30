@@ -39,12 +39,13 @@ methods (or the extracted `PrerequisiteInstaller`) over calling `DashboardViewMo
 
 ---
 
-## 2. Snapshot-restore safety guard — carried, worth an hour
+## 2. ~~Snapshot-restore safety guard~~ — SHIPPED 2026-07-30 (issue #13)
 
-A restore is capable of writing a 0-byte backup and dropping `brew shellenv` from `~/.zshrc`.
-This cost the maintainer's own Mac its npm, CA bundle and `~/.zshrc` during v1.13 development.
-Guard: refuse to write a backup that's smaller than the original, and refuse to write a profile
-that lost a line matching `brew shellenv`.
+Implemented in `SnapshotRestoreService.restoreMainProfile`: refuses to shrink the profile,
+refuses to drop `brew shellenv`, verifies the backup's byte count before overwriting, and rolls
+back automatically when the write fails or `zsh -n` rejects the result.
+`ShellConfigManager.backupCatalystConfig()` is now copy-to-temp → verify → `replaceItemAt`
+instead of remove-then-copy. Kept here as a pointer; delete once merged.
 
 ---
 
@@ -73,15 +74,18 @@ the banner never dismisses.
 
 ---
 
-## 5. Environment-health false negatives — low priority
+## 5. ~~Environment-health false negatives~~ — SHIPPED 2026-07-30 (issue #10)
 
-The maintainer's Mac has `which npm` → exit 0 but `npm root -g` / `npm config get cache` →
-exit **127**, while `node -v` succeeds. Catalyst reports the Node card from a toolchain that's
-half-broken and says nothing about it.
+`NodeDoctor.presentButNotWorking(_:)` now raises a critical issue when `command -v npm` succeeds
+but the binary exits 127. The underlying cause turned out to be partly ours: `checkAvailability`
+probed with `useLoginShell: true` while `run()` used a bare `zsh -c`, which sources no profile —
+so npm was reported broken on machines where it was fine. Both probes now use a login shell, and
+the empty `catch {}` that hid the whole thing reports instead.
 
-Not a Catalyst bug — the machine's npm shim is genuinely broken. But it's a case worth handling:
-when a tool resolves on PATH yet fails to execute, that's more useful to surface as "npm is
-present but not working" than to silently report whatever the probe returned.
+**Still open, generalised:** the same resolves-but-fails-to-execute probe would be worth extracting
+into a shared `ToolProbe` helper. The pattern is duplicated across `NodeDoctor`, `ConflictDoctor`,
+`GitDoctor` and `JavaDoctor`, and seven more empty `catch {}` blocks remain in `Checkers/` — see
+`cache/HANG-SWEEP-2026-07-30.md` §7.
 
 ---
 

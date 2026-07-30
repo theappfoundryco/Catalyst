@@ -272,3 +272,67 @@ its bounds. A field flush against the scroll edge loses part of its ring.
 one. Where the container already has horizontal padding, move 4pt of it inside the clip
 boundary (`.padding(.horizontal, 22 - inset)`) rather than adding to it — the visual margin
 stays identical.
+
+> **Stale reference (2026-07-30):** `AuthGateView` no longer exists on `main` — neither it nor
+> `LegalGateView` appears anywhere in the Swift sources, and `focusRingInset` is undefined. The
+> replacement constant arrives with the unmerged `acceptancesheet` branch. The 4pt rule still
+> holds; repoint the symbol when that branch lands.
+
+---
+
+## Rule 14 — *reserved*
+
+Claimed by the unmerged `acceptancesheet` branch (2026-07-25 session, legal-consent gate). Left
+empty on `main` so the two don't collide on merge. Do not reuse this number.
+
+---
+
+## Rule 15 — A busy state must modify the resting view, never replace it (2026-07-30)
+
+**Symptom:** on macOS 26, the Liquid Glass capsule behind a toolbar button visibly shrinks to a
+small pill around the spinner the moment a refresh starts, then pops back afterwards.
+
+**Avoid:** branching at the root of the item.
+
+```swift
+ToolbarItem(placement: .primaryAction) {
+    if vm.isLoading {
+        ProgressView().controlSize(.small)      // ❌ different root view
+    } else {
+        Button { … } label: { Label("Refresh", systemImage: "arrow.clockwise") }
+    }
+}
+```
+
+**Why it breaks:** swapping the root view changes the item's *identity*. SwiftUI tears down the
+Button, and any container that sizes itself to its content — the glass capsule here — re-measures
+against the spinner's much smaller intrinsic width. Nothing about the visual style causes this;
+it's a plain identity change, so the same thing happens to any self-sizing container.
+
+**Look-preserving fix:** one Button, always. Swap only the label, and keep the outgoing label in
+the layout at zero opacity so it goes on reserving its footprint.
+
+```swift
+Button { … } label: {
+    Label("Refresh", systemImage: "arrow.clockwise")
+        .opacity(busy ? 0 : 1)
+        .overlay { if busy { ProgressView().controlSize(.small) } }
+}
+.disabled(busy)
+.accessibilityLabel(busy ? "Refresh in progress" : "Refresh")
+```
+
+`.hidden()` or an `if` inside the label both remove it from layout and reintroduce the collapse —
+`.opacity(0)` is doing real work here, not cosmetics. Block re-entrancy with `.disabled`, not by
+declining to render the Button. Add the `.accessibilityLabel`: the label is now invisible rather
+than absent, so VoiceOver would otherwise still announce the resting title mid-refresh.
+
+**Shared implementation:** `Helpers/RefreshToolbarContent.swift`. Use it unless the action is
+synchronous or the item sits inside a `ToolbarItemGroup`; in those two cases inline the same
+technique (`NetworkDiagnosticsView`, `GitGraphView` are the precedents).
+
+**Related trap, same family:** a toolbar group gated on a loaded state (`if case .loaded = state`)
+disappears entirely when a refresh flips the state back to `.loading`. Git Graph did this — Refresh
+made filters, options and Open Another vanish along with the graph. A refresh should hold the
+loaded state and drive a separate `isLoading` flag; only a *first* load or a retry-after-failure
+should return to the empty state. See CODING_STANDARDS 12.55.

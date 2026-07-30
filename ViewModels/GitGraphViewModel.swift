@@ -260,9 +260,42 @@ final class GitGraphViewModel: ObservableObject {
     }
 
     /// Re-reads the current repository (summary + graph), if one is actively loaded.
+    ///
+    /// **Rationale:** Refresh keeps the UI in place. This used to delegate straight to
+    /// ``load(repoPath:)``, which flips ``state`` to `.loading` and clears ``graph`` —
+    /// so pressing Refresh blanked the commit graph AND made the entire toolbar group
+    /// (filters, options, Open Another, Refresh) disappear, since the toolbar only
+    /// renders in the `.loaded` case. A refresh should never look like a teardown.
+    ///
+    /// Staying `.loaded` for the duration means the toolbar and the existing graph
+    /// remain on screen while ``isGraphLoading`` drives the spinner in the Refresh
+    /// button, then the new summary and graph swap in.
+    ///
+    /// **Gotchas:** A first load — or a retry after `.failed` — genuinely has nothing
+    /// to keep on screen and still needs the full reset path.
     func reload() {
         guard let repoPath else { return }
-        load(repoPath: repoPath)
+        guard case .loaded = state else {
+            load(repoPath: repoPath)
+            return
+        }
+
+        isGraphLoading = true
+        Task {
+            /// 12.56 — `reloadGraph()` guards on this flag, so a cancelled reload that skipped
+            /// the clear would block every later refresh, not just leave a spinner running.
+            defer { isGraphLoading = false }
+            do {
+                /// Summary first so the card is never newer than the graph below it.
+                let summary = try await service.summary(for: repoPath)
+                state = .loaded(summary)
+                let commits = await service.commits(for: repoPath, options: options)
+                graph = GitGraphLayoutEngine.layout(commits)
+            } catch {
+                state = .failed(error.localizedDescription)
+                logger.log("⚠️ GitGraph reload failed: \(error.localizedDescription)")
+            }
+        }
     }
 
     /// Re-reads **only** the commit graph, leaving the summary card in place.
@@ -271,12 +304,18 @@ final class GitGraphViewModel: ObservableObject {
     /// - Keeps the current graph on screen (so the reference row stays visible) while the
     ///   refresh button shows a spinner, then swaps in the freshly-laid-out graph instantaneously to avoid flicker.
     func reloadGraph() {
-        guard let repoPath, case .loaded = state else { return }
+        /// `!isGraphLoading` guards against overlapping fetches. Now that `reload()`
+        /// stays `.loaded` while it works, the filters and options controls remain
+        /// live during a refresh and could otherwise kick off a second fetch that
+        /// races the first to assign `graph`.
+        guard let repoPath, case .loaded = state, !isGraphLoading else { return }
         isGraphLoading = true
         Task {
+            /// 12.56 — this function guards on `isGraphLoading`, so skipping the clear locks
+            /// out every subsequent graph refresh permanently.
+            defer { isGraphLoading = false }
             let commits = await service.commits(for: repoPath, options: options)
             graph = GitGraphLayoutEngine.layout(commits)
-            isGraphLoading = false
         }
     }
 

@@ -33,13 +33,11 @@ struct SSHKeyView: View {
         .navigationTitle("SSH Keys")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                if vm.state == .scanning {
-                    ProgressView().controlSize(.small)
-                } else {
-                    Button { Task { await vm.scan() } } label: {
-                        Label("Re-Scan", systemImage: "arrow.clockwise")
-                    }
-                }
+                RefreshToolbarContent(
+                    isLoading: vm.state == .scanning,
+                    label: "Re-Scan",
+                    minimumDelay: 0
+                ) { await vm.scan() }
             }
         }
         .task { if vm.state == .idle { await vm.scan() } }

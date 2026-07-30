@@ -43,13 +43,11 @@ struct BatteryHealthView: View {
         .navigationTitle("Battery Health")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                if vm.state == .scanning {
-                    ProgressView().controlSize(.small)
-                } else {
-                    Button { Task { await vm.scan() } } label: {
-                        Label("Re-Scan", systemImage: "arrow.clockwise")
-                    }
-                }
+                RefreshToolbarContent(
+                    isLoading: vm.state == .scanning,
+                    label: "Re-Scan",
+                    minimumDelay: 0
+                ) { await vm.scan() }
             }
         }
         .task { if vm.state == .idle { await vm.scan() } }
@@ -133,45 +131,28 @@ struct BatteryHealthView: View {
     /// - Parameter report: The compiled system profile capturing battery metadata.
     /// - Returns: The active presentation hierarchy for the detail view.
     private func hero(_ report: BatteryReport) -> some View {
-        HStack(spacing: 0) {
-            VStack(spacing: 16) {
-                Text("Battery Health")
-                    .font(.headline).foregroundColor(.secondary)
-                VitalityGauge(score: report.maxCapacityPercent)
-                    .frame(width: 100, height: 100)
-            }
-            .frame(maxWidth: .infinity)
-
-            SectionDivider().frame(height: 100)
-
+        HeroStatBar(title: "Battery Health", score: report.maxCapacityPercent) {
             StatColumnHeader(
                 label: "Maximum Capacity",
                 value: "\(report.maxCapacityPercent)%",
                 subtext: "of design capacity"
             )
-            .frame(maxWidth: .infinity)
-
-            SectionDivider().frame(height: 100)
+            .heroColumn()
 
             StatColumnHeader(
                 label: "Cycle Count",
                 value: "\(report.cycleCount)",
                 subtext: "charge cycles"
             )
-            .frame(maxWidth: .infinity)
-
-            SectionDivider().frame(height: 100)
+            .heroColumn()
 
             StatColumnHeader(
                 label: "Condition",
                 value: report.condition,
                 subtext: report.powerSource
             )
-            .frame(maxWidth: .infinity)
+            .heroColumn()
         }
-        .padding(.vertical, 40)
-        .background(Color(NSColor.controlBackgroundColor))
-        .cornerRadius(12)
     }
 
     // MARK: - States

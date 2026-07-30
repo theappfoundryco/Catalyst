@@ -153,15 +153,37 @@ final class PythonManager {
     /// Upgrade pip for a specific Python installation. Logs progress; the VM
     /// invalidates caches and re-detects afterward.
     ///
+    /// What happened when we tried to upgrade an interpreter's pip.
+    ///
+    /// **Rationale:** `upgradePip` used to return `Void`, so the "Homebrew owns this pip" case
+    /// existed only as a log line. The caller couldn't react, the Upgrade button stayed on the
+    /// row, `pip list --outdated` went on truthfully reporting pip as outdated, and the user
+    /// could press Upgrade forever while it failed identically every time.
+    enum PipUpgradeOutcome: Equatable {
+        /// Upgraded in place, in whichever prefix the chosen install mode targets.
+        case upgraded
+        /// Homebrew owned the pip in its own prefix, so the upgrade was redirected to the
+        /// user site instead. `python -m pip` resolves to the new copy; Homebrew's is untouched.
+        case upgradedToUserSite
+        /// Homebrew owns it AND the user-site retry also failed — only the formula can help.
+        case managedByHomebrew(formula: String)
+        case failed
+    }
+
     /// - Parameter python: The isolated Python scope targeted for pip synchronization.
-    func upgradePip(for python: PythonInstallation) async {
+    /// - Returns: The outcome, so the caller can stop offering an upgrade that cannot work.
+    @discardableResult
+    func upgradePip(for python: PythonInstallation) async -> PipUpgradeOutcome {
         logger.log("⬆️ Upgrading pip for Python \(python.version)...")
 
         let flags = InstallPreferences.pipFlags(forPythonVersion: python.version)
         let py = InputSanitizer.singleQuote(python.path.path)
         do {
+            /// A pip install reaches PyPI, so it needs a bound (12.17). 180s covers a cold
+            /// index fetch and a wheel download without letting a wedged request sit forever.
             let result = try await AsyncProcessRunner.shared.run(
-                command: "\(py) -m pip install --upgrade pip \(flags)"
+                command: "\(py) -m pip install --upgrade pip \(flags)",
+                timeoutSeconds: 180
             )
             if !result.combinedOutput.isEmpty {
                 logger.log(result.combinedOutput, category: .terminal)
@@ -169,22 +191,52 @@ final class PythonManager {
 
             if result.succeeded {
                 logger.log("✅ pip upgraded successfully for Python \(python.version)")
+                return .upgraded
             } else if Self.isNoRecordFileError(result.combinedOutput) {
-                /// This pip is owned by Homebrew (no RECORD file), so pip can't
-                /// uninstall it to upgrade in place. Forcing it with
-                /// --ignore-installed "works" (pip --version shows the new version)
-                /// but leaves Homebrew's old dist-info behind, so `pip list` keeps
-                /// reporting pip as outdated forever and the environment is left
-                /// inconsistent. The integrity-respecting path is to let Homebrew
-                /// own it — update via the formula, not pip.
+                /// Homebrew's pip has no `RECORD`, so pip refuses to uninstall it — and an
+                /// in-place upgrade means uninstall-then-install. Rather than give up, retry
+                /// into the USER site, which never touches Homebrew's prefix and therefore has
+                /// nothing to uninstall.
                 ///
-                /// **Gotchas:** Attempting to force-upgrade Homebrew's pip via Python directly corrupts the `dist-info` manifest, causing Catalyst to enter an infinite upgrade loop.
-                logger.log("ℹ️ pip for Python \(python.version) is managed by Homebrew and can't be upgraded with pip (no RECORD file). Update it with: brew upgrade \(python.formula)")
+                /// **Rationale:** The user site precedes system site-packages on `sys.path`, so
+                /// `python -m pip` resolves to the new copy afterwards — which is also how
+                /// Catalyst probes it, so the row clears on the next scan. Homebrew's own copy
+                /// is left exactly as the formula laid it down: `brew doctor` stays clean and
+                /// the next `brew upgrade` isn't fighting us. This is strictly *less* invasive
+                /// than the System-wide mode the user already opted into.
+                ///
+                /// **Gotchas:** Do NOT reach for `--ignore-installed` here. It appears to work —
+                /// `pip --version` reports the new number — but it writes a second dist-info
+                /// alongside Homebrew's stale one, so `pip list` keeps reporting pip as
+                /// outdated forever and the environment is left permanently inconsistent.
+                /// That was the infinite upgrade loop this codebase already learned about once.
+                if !flags.contains("--user") {
+                    logger.log("ℹ️ Homebrew owns pip for Python \(python.version) (no RECORD file) — retrying into the user site so Homebrew's copy stays intact…")
+
+                    let userFlags = flags.isEmpty ? "--user" : "\(flags) --user"
+                    let retry = try await AsyncProcessRunner.shared.run(
+                        command: "\(py) -m pip install --upgrade pip \(userFlags)",
+                        timeoutSeconds: 180
+                    )
+                    if !retry.combinedOutput.isEmpty {
+                        logger.log(retry.combinedOutput, category: .terminal)
+                    }
+                    if retry.succeeded {
+                        logger.log("✅ pip upgraded for Python \(python.version) into the user site (Homebrew's copy left untouched)")
+                        return .upgradedToUserSite
+                    }
+                    logger.log("❌ User-site retry failed for Python \(python.version)")
+                }
+
+                logger.log("ℹ️ pip for Python \(python.version) is managed by Homebrew and couldn't be upgraded with pip. Update it with: brew upgrade \(python.formula)")
+                return .managedByHomebrew(formula: python.formula)
             } else {
                 logger.log("❌ Failed to upgrade pip for Python \(python.version)")
+                return .failed
             }
         } catch {
             logger.log("❌ Error upgrading pip: \(error.localizedDescription)")
+            return .failed
         }
     }
 

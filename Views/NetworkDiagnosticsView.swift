@@ -43,17 +43,27 @@ struct NetworkDiagnosticsView: View {
         .navigationTitle("Network Diagnostics")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                if vm.state == .running {
-                    ProgressView().controlSize(.small)
-                } else {
-                    Button {
-                        vm.reset()
-                    } label: {
-                        Image(systemName: "arrow.clockwise")
-                    }
-                    .help("Reset diagnostics")
-                    .disabled(vm.report == nil && vm.state == .idle)
+                /// Single stable Button; only the label swaps. Branching at the top
+                /// level here made the Liquid Glass capsule collapse around the
+                /// spinner on macOS 26 — see `RefreshToolbarContent` for the full
+                /// explanation. This one can't use that component because the action
+                /// is synchronous (`vm.reset()`), so the technique is inlined.
+                Button {
+                    vm.reset()
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .opacity(vm.state == .running ? 0 : 1)
+                        .overlay {
+                            if vm.state == .running {
+                                ProgressView()
+                                    .progressViewStyle(.circular)
+                                    .controlSize(.small)
+                            }
+                        }
                 }
+                .help("Reset diagnostics")
+                .disabled(vm.state == .running || (vm.report == nil && vm.state == .idle))
+                .accessibilityLabel(vm.state == .running ? "Diagnostics running" : "Reset diagnostics")
             }
         }
     }

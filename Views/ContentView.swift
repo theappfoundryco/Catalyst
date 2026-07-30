@@ -169,7 +169,7 @@ struct ContentView: View {
                         .padding(.bottom, 6)
                 }
                 .navigationTitle("Catalyst")
-                .navigationSplitViewColumnWidth(min: 235, ideal: 235)
+                .navigationSplitViewColumnWidth(min: 250, ideal: 250)
             } detail: {
                 NavigationStack {
                     /// Main content

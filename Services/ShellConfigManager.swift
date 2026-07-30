@@ -118,11 +118,39 @@ final class ShellConfigManager {
         try content.write(to: catalystConfigPath, atomically: true, encoding: .utf8)
     }
     
-    /// Triggers replication of active configurations generating restorable persistent historical clones.
-    func backupCatalystConfig() {
+    /// Snapshots `.zshrc_catalyst` to `.zshrc_catalyst.backup`.
+    ///
+    /// **Gotchas:** This used to delete the old backup and *then* copy (#13). If the
+    /// copy failed — full volume, missing source, revoked grant — the user was left
+    /// with no backup at all, which is strictly worse than a stale one. Write to a
+    /// temporary sibling first and only swap it in once the bytes are verified, so
+    /// the previous backup survives any failure.
+    ///
+    /// - Returns: `true` if a verified backup is now in place.
+    @discardableResult
+    func backupCatalystConfig() -> Bool {
         let backupURL = homeDir.appendingPathComponent(".zshrc_catalyst.backup")
-        try? fm.removeItem(at: backupURL)
-        try? fm.copyItem(at: catalystConfigPath, to: backupURL)
+        let tempURL = homeDir.appendingPathComponent(".zshrc_catalyst.backup.tmp")
+
+        guard fm.fileExists(atPath: catalystConfigPath.path) else { return false }
+
+        try? fm.removeItem(at: tempURL)
+        do {
+            try fm.copyItem(at: catalystConfigPath, to: tempURL)
+        } catch {
+            return false
+        }
+
+        /// Verify before swapping — a throw-free `copyItem` doesn't guarantee bytes.
+        let copied = ((try? fm.attributesOfItem(atPath: tempURL.path))?[.size] as? Int) ?? 0
+        let source = ((try? fm.attributesOfItem(atPath: catalystConfigPath.path))?[.size] as? Int) ?? 0
+        guard copied > 0, copied == source else {
+            try? fm.removeItem(at: tempURL)
+            return false
+        }
+
+        _ = try? fm.replaceItemAt(backupURL, withItemAt: tempURL)
+        return fm.fileExists(atPath: backupURL.path)
     }
 
     // MARK: - Managed Blocks
