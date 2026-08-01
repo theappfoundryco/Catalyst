@@ -142,14 +142,37 @@ final class ShellConfigManager {
         }
 
         /// Verify before swapping — a throw-free `copyItem` doesn't guarantee bytes.
-        let copied = ((try? fm.attributesOfItem(atPath: tempURL.path))?[.size] as? Int) ?? 0
-        let source = ((try? fm.attributesOfItem(atPath: catalystConfigPath.path))?[.size] as? Int) ?? 0
-        guard copied > 0, copied == source else {
+        ///
+        /// **Gotchas:** Size equality, not `> 0`. An empty `.zshrc_catalyst` is a legitimate
+        /// state (freshly created, nothing added yet), and refusing to back it up reported a
+        /// failure for a file that was faithfully copied.
+        let copied = ((try? fm.attributesOfItem(atPath: tempURL.path))?[.size] as? Int) ?? -1
+        let source = ((try? fm.attributesOfItem(atPath: catalystConfigPath.path))?[.size] as? Int) ?? -2
+        guard copied == source else {
             try? fm.removeItem(at: tempURL)
             return false
         }
 
-        _ = try? fm.replaceItemAt(backupURL, withItemAt: tempURL)
+        /// `replaceItemAt` REQUIRES an existing item to replace — it throws
+        /// `NSFileNoSuchFileError` when there isn't one, it does not create the destination.
+        ///
+        /// **Gotchas:** Calling it unconditionally meant the FIRST backup on any Mac silently
+        /// failed: the throw went into a `try?`, the function reported `false`, and
+        /// `.zshrc_catalyst.backup.tmp` was orphaned in the user's home directory — recreated
+        /// and re-orphaned on every subsequent call, because a backup never came into
+        /// existence to replace. The backup this function exists to make was never made.
+        do {
+            if fm.fileExists(atPath: backupURL.path) {
+                _ = try fm.replaceItemAt(backupURL, withItemAt: tempURL)
+            } else {
+                try fm.moveItem(at: tempURL, to: backupURL)
+            }
+        } catch {
+            /// Leave the previous backup (if any) untouched and take the temp file with us —
+            /// a stale backup beats no backup, and a stray `.tmp` in `~` beats neither.
+            try? fm.removeItem(at: tempURL)
+            return false
+        }
         return fm.fileExists(atPath: backupURL.path)
     }
 

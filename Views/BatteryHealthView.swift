@@ -81,13 +81,20 @@ struct BatteryHealthView: View {
                     gradient: gradient(cycleColor(report.cycleCount))
                 )
 
+                /// Wording comes from macOS, the verdict comes from `needsService`.
+                ///
+                /// **Gotchas:** This used to test `condition == "Normal"`. Since the service
+                /// started preferring Apple's own string (#23) that literal no longer holds —
+                /// "Good" is a healthy value, and every non-English Mac reports a translated
+                /// one — so a healthy battery drew the orange warning triangle. Any new
+                /// condition-driven UI reads the boolean, never the string.
                 SSDHealthMetricCard(
-                    icon: report.condition == "Normal" ? "checkmark.seal.fill" : "exclamationmark.triangle.fill",
+                    icon: report.needsService ? "exclamationmark.triangle.fill" : "checkmark.seal.fill",
                     title: "Condition",
                     value: report.condition,
-                    subtitle: report.condition == "Normal" ? "Healthy" : "Consider servicing",
-                    color: report.condition == "Normal" ? .green : .orange,
-                    gradient: gradient(report.condition == "Normal" ? .green : .orange)
+                    subtitle: report.needsService ? "Consider servicing" : "Healthy",
+                    color: report.needsService ? .orange : .green,
+                    gradient: gradient(report.needsService ? .orange : .green)
                 )
 
                 if let temp = report.temperatureCelsius {

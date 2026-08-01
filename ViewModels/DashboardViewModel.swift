@@ -496,6 +496,17 @@ final class DashboardViewModel: ObservableObject {
             }
         }
         pipUpgradeTargets = targets
+
+        /// Drop Homebrew-owned markers for interpreters that are no longer reporting an
+        /// outdated pip — the marker's whole job is to suppress an upgrade action that
+        /// can't work, and once pip is current there is no action to suppress.
+        ///
+        /// **Gotchas:** Without this the state is session-sticky in the wrong direction. A user
+        /// who hits the wall, runs `brew upgrade python@3.12` from the Homebrew card two screens
+        /// over, and comes back still sees "pip here is managed by Homebrew" against a pip that
+        /// is now perfectly current — with no way to clear it short of relaunching the app, in
+        /// the one session where they actually fixed it.
+        brewManagedPips = brewManagedPips.filter { targets[$0.key] != nil }
     }
 
     /// Contacts Catalyst APIs to retrieve the master list of compatible Python formulas for this architecture.

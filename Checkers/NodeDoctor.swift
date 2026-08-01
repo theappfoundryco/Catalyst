@@ -65,7 +65,26 @@ struct NodeDoctor: Doctor, AvailabilityCheckable {
             let npmRootResult = try await AsyncProcessRunner.shared.run(command: "npm root -g", useLoginShell: true)
 
             if npmRootResult.succeeded {
-                let globalPath = npmRootResult.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+                /// LAST non-empty line, not the whole of stdout.
+                ///
+                /// **Gotchas:** A login shell sources the user's profile, and plenty of profiles
+                /// print something — a greeting, a version banner, an `nvm` notice. Trimming the
+                /// full stdout then hands `attributesOfItem` "Welcome back!\n/usr/local/lib/…",
+                /// which throws and, since the `catch` below now surfaces a card, reports a
+                /// broken toolchain on a perfectly healthy Mac. The path is always the last
+                /// thing `npm root -g` writes.
+                let globalPath = npmRootResult.stdout
+                    .components(separatedBy: .newlines)
+                    .map { $0.trimmingCharacters(in: .whitespaces) }
+                    .last { !$0.isEmpty } ?? ""
+
+                /// A global root that doesn't exist yet is not a fault. `npm config set prefix
+                /// ~/.npm-global` — the standard advice for avoiding `sudo npm` — reports the
+                /// path before anything has been installed into it, so the directory is simply
+                /// absent. There is nothing to own and nothing to warn about.
+                guard !globalPath.isEmpty,
+                      FileManager.default.fileExists(atPath: globalPath) else { return issues }
+
                 let attrs = try FileManager.default.attributesOfItem(atPath: globalPath)
                 if let ownerID = attrs[.ownerAccountID] as? Int, ownerID == 0 {
                      issues.append(HealthIssue(

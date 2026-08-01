@@ -14,8 +14,19 @@ struct BatteryReport: Sendable {
     let cycleCount: Int
     /// Maximum capacity as a percentage of design (battery "health").
     let maxCapacityPercent: Int
-    /// Apple-style condition: "Normal" / "Service Recommended".
+    /// The condition string as macOS itself words it — "Normal", "Good", "Service Recommended",
+    /// and localized on a non-English Mac. **Display only.** Never branch on its value; use
+    /// ``needsService``, which is computed once from signals that survive translation.
     let condition: String
+    /// Whether the UI should present this battery as needing attention.
+    ///
+    /// **Gotchas:** The views used to derive this themselves with `condition == "Normal"`. That
+    /// broke the moment the service started preferring Apple's own string over its own wording
+    /// (#23): `sppower_battery_health` reports "Good" on plenty of healthy Macs, and anything at
+    /// all on a localized one — so a perfectly fine battery rendered an orange warning triangle
+    /// and "Consider servicing". Deciding it here, from the numbers, keeps the displayed wording
+    /// Apple's and the judgement ours.
+    let needsService: Bool
     let designCapacitymAh: Int?
     let fullChargeCapacitymAh: Int?
     let temperatureCelsius: Double?
@@ -23,6 +34,7 @@ struct BatteryReport: Sendable {
     static let empty = BatteryReport(
         hasBattery: false, chargePercent: 0, isCharging: false, powerSource: "AC Power",
         timeRemaining: nil, cycleCount: 0, maxCapacityPercent: 0, condition: "Unknown",
+        needsService: false,
         designCapacitymAh: nil, fullChargeCapacitymAh: nil, temperatureCelsius: nil
     )
 }
@@ -134,6 +146,21 @@ final class BatteryHealthService: Sendable {
             return "Normal"
         }()
 
+        /// Decided from numbers, not from `condition`'s wording (#23).
+        ///
+        /// **Gotchas:** Never invert this into "healthy unless the string says Normal". Apple
+        /// returns "Good" on many healthy Macs and a translated word on every non-English one,
+        /// so an allowlist of English strings marks good batteries as failing — which is exactly
+        /// the bug that preferring Apple's string introduced downstream. The string is only ever
+        /// consulted for tokens that unambiguously mean *bad*; absent one, the capacity and the
+        /// permanent-failure flag decide, and both are locale-proof.
+        let needsService: Bool = {
+            if permanentFailure != 0 { return true }
+            if healthPercent > 0 && healthPercent < 80 { return true }
+            let lowered = condition.lowercased()
+            return ["service", "replace", "poor", "check"].contains { lowered.contains($0) }
+        }()
+
         var tempC: Double? = nil
         if let t = intValue("Temperature", in: ioreg), t > 0 {
             tempC = Double(t) / 100.0
@@ -148,6 +175,7 @@ final class BatteryHealthService: Sendable {
             cycleCount: cycleCount,
             maxCapacityPercent: healthPercent,
             condition: condition,
+            needsService: needsService,
             designCapacitymAh: design,
             fullChargeCapacitymAh: rawMax,
             temperatureCelsius: tempC

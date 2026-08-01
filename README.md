@@ -226,13 +226,24 @@ The deeper design — layers, the composition root, the safety invariants — is
 **Catalyst sends nothing about you.** No analytics SDK, no crash reporter, no account, no identifier.
 Firebase Analytics and Crashlytics were removed at v1.0.
 
-The app makes exactly two kinds of network request, both `GET`s for static files you can open in a
-browser yourself:
+The app makes exactly four kinds of network request, all `GET`s for static files you can open in a
+browser yourself. None carries a request body, a cookie, an identifier, or a parameter derived from
+your machine:
 
 | Request | Purpose |
 |---|---|
 | `data.theappfoundry.co/catalyst/…` | The package catalogs shown in the app |
 | `updates.theappfoundry.co/catalyst/appcast.xml` | The Sparkle update feed |
+| `pypi.org/pypi/pip/json` | PyPI's own metadata, to tell whether your pip is current |
+| `theappfoundry.co/legal/catalyst.json` | Published privacy/terms version numbers, checked at most once every 14 days |
+
+Plus the ones you trigger yourself and can see coming: Network Diagnostics pings `1.1.1.1` and
+resolves a hostname, the Homebrew installer fetches Homebrew's script, and `brew`/`pip` contact
+their own servers when you install something — the same requests those tools make from a terminal.
+
+The full accounting, including what's stored on your Mac and how the `sudo` password is handled, is
+the [Catalyst privacy policy](https://theappfoundry.co/catalyst/privacy). It is written to be
+checkable against this source tree, not instead of it.
 
 [`Telemetry/Telemetry.swift`](Telemetry/Telemetry.swift) remains as a single choke point where a
 provider *could* be wired in; every method is a no-op outside debug builds. It's kept deliberately —

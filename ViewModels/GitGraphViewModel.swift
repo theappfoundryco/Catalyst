@@ -279,6 +279,11 @@ final class GitGraphViewModel: ObservableObject {
             load(repoPath: repoPath)
             return
         }
+        /// Same re-entrancy guard as ``reloadGraph()``. The toolbar disables Refresh while a
+        /// reload is in flight, so this isn't reachable from the UI today — but the two entry
+        /// points assign the same `state` and `graph`, and only one of them being guarded is
+        /// the kind of asymmetry that stops being true the next time a caller is added.
+        guard !isGraphLoading else { return }
 
         isGraphLoading = true
         Task {
