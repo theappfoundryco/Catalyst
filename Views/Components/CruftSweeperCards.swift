@@ -515,19 +515,33 @@ struct ResultsDashboard: View {
                                     }
                                 },
                                 content: {
-                                    VStack(spacing: 0) {
+                                    /// Hoisted out of the row loop — recomputing these
+                                    /// per row is pure waste once a group holds
+                                    /// thousands of items.
+                                    let lastItemID = group.items.last?.id
+                                    let maxSize = Double(vm.largestItemSize)
+
+                                    /// `LazyVStack`, not `VStack` (#22).
+                                    ///
+                                    /// **Gotchas:** `SmoothPageScroll` is a `List` whose
+                                    /// entire content is a SINGLE row, so List's own
+                                    /// virtualization does nothing here — a plain
+                                    /// `VStack` built and laid out every item of every
+                                    /// expanded group synchronously. `LazyVStack`
+                                    /// materializes rows as they approach the viewport.
+                                    LazyVStack(spacing: 0) {
                                         SectionDivider().padding(.vertical, 8)
                                         ForEach(group.items) { item in
                                             CruftItemRow(
                                                 item: item,
                                                 isSelected: vm.selectedIDs.contains(item.id),
-                                                fractionOfMax: Double(item.size) / Double(vm.largestItemSize),
+                                                fractionOfMax: Double(item.size) / maxSize,
                                                 onToggle: { vm.toggleSelection(item.id) }
                                             )
                                             .equatable()
                                             .padding(.vertical, 8)
 
-                                            if item.id != group.items.last?.id {
+                                            if item.id != lastItemID {
                                                 SectionDivider()
                                             }
                                         }
@@ -890,14 +904,21 @@ struct CruftItemRow: View, Equatable {
 struct InstantDisclosureGroup<Label: View, Content: View>: View {
     @Binding var isExpanded: Bool
     let label: Label
-    let content: Content
-    
-    init(isExpanded: Binding<Bool>, @ViewBuilder label: () -> Label, @ViewBuilder content: () -> Content) {
+    /// Stored as a closure, NOT as a built view (#22).
+    ///
+    /// **Gotchas:** This used to be `let content: Content` assigned `content()` in
+    /// `init`. That evaluated the entire subtree for every group the moment the
+    /// parent body ran — collapsed groups included — so `if isExpanded` gated only
+    /// *display*, never construction. Keeping the closure defers the work until the
+    /// group is actually open, which is the whole point of a disclosure group.
+    let content: () -> Content
+
+    init(isExpanded: Binding<Bool>, @ViewBuilder label: () -> Label, @ViewBuilder content: @escaping () -> Content) {
         self._isExpanded = isExpanded
         self.label = label()
-        self.content = content()
+        self.content = content
     }
-    
+
     var body: some View {
         VStack(spacing: 0) {
             Button {
@@ -922,7 +943,7 @@ struct InstantDisclosureGroup<Label: View, Content: View>: View {
             .appButton(.plain)
             
             if isExpanded {
-                content
+                content()
                     /// Ensure no transition animation
                     ///
                     /// **Gotchas:** SwiftUI's default transition animations on list rows can cause visual stuttering during rapid multi-select operations.

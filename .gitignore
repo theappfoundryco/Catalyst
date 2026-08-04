@@ -54,3 +54,11 @@ cache/
 
 # website repos
 theappfoundryco/
+
+# Telemetry provider config — NEVER commit.
+#
+# Catalyst links no analytics SDK today (Telemetry/Telemetry.swift is a no-op facade). This is
+# a standing guard: it's the filename Firebase tooling emits by convention, and on a PUBLIC repo
+# a single `git add -A` would publish it permanently. The real file is CODEOWNERS-held and
+# distributed out of band. See Telemetry/README.md.
+Telemetry/GoogleService-Info.plist

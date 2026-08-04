@@ -226,19 +226,40 @@ The deeper design — layers, the composition root, the safety invariants — is
 **Catalyst sends nothing about you.** No analytics SDK, no crash reporter, no account, no identifier.
 Firebase Analytics and Crashlytics were removed at v1.0.
 
-The app makes exactly two kinds of network request, both `GET`s for static files you can open in a
-browser yourself:
+The app makes exactly four kinds of network request, all `GET`s for static files you can open in a
+browser yourself. None carries a request body, a cookie, an identifier, or a parameter derived from
+your machine:
 
 | Request | Purpose |
 |---|---|
 | `data.theappfoundry.co/catalyst/…` | The package catalogs shown in the app |
 | `updates.theappfoundry.co/catalyst/appcast.xml` | The Sparkle update feed |
+| `pypi.org/pypi/pip/json` | PyPI's own metadata, to tell whether your pip is current |
+| `theappfoundry.co/legal/catalyst.json` | Published privacy/terms version numbers, checked at most once every 14 days |
+
+Plus the ones you trigger yourself and can see coming: Network Diagnostics pings `1.1.1.1` and
+resolves a hostname, the Homebrew installer fetches Homebrew's script, and `brew`/`pip` contact
+their own servers when you install something — the same requests those tools make from a terminal.
+
+The full accounting, including what's stored on your Mac and how the `sudo` password is handled, is
+the [Catalyst privacy policy](https://theappfoundry.co/catalyst/privacy). It is written to be
+checkable against this source tree, not instead of it.
 
 [`Telemetry/Telemetry.swift`](Telemetry/Telemetry.swift) remains as a single choke point where a
 provider *could* be wired in; every method is a no-op outside debug builds. It's kept deliberately —
 one file that answers "what does Catalyst report about me?" is easier to audit than provider calls
 scattered across 167 source files. If that ever changes, it changes there, in public, in a commit you
 can read.
+
+You may notice `.gitignore` excludes `GoogleService-Info.plist`. That is a **standing guard, not a
+hidden provider** — nothing in the app reads it and no SDK is linked to read it with.
+`GoogleService-Info` is the fixed filename Firebase's tooling emits, and this repository is public;
+the rule is there so that if anyone ever does wire a provider up, its configuration can't be
+published permanently by an absent-minded `git add -A`. Should such a file exist, it is held by the
+repository's code owners and distributed out of band — `/Telemetry/` is a CODEOWNERS-protected path,
+so nothing lands there without code-owner review. [`Telemetry/README.md`](Telemetry/README.md) has
+the full explanation, including the rule that enabling telemetry must change this section of this
+README in the same commit.
 
 Found a security issue? Please report it privately — see [`SECURITY.md`](SECURITY.md).
 

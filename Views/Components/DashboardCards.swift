@@ -177,6 +177,7 @@ struct InstalledPythonsCard: View {
                             isPipUpgradeAvailable: vm.isPipUpgradeAvailable(for: python),
                             isSystemPythonConflict: vm.isSystemPythonConflict(for: python),
                             latestPipVersion: vm.pipUpgradeTargets[python.path.path],
+                            brewManagedPipFormula: vm.brewManagedPipFormula(for: python),
                             systemPythonVersion: vm.systemPythonVersion,
                             installMode: installPrefs.mode,
                             onRepair: { Task { await vm.repairPip(for: python) } },
@@ -213,6 +214,9 @@ struct PythonInstallationRow: View, Equatable {
     let isPipUpgradeAvailable: Bool
     let isSystemPythonConflict: Bool
     let latestPipVersion: String?
+    /// Non-nil when this interpreter's pip belongs to Homebrew and pip can't upgrade it in
+    /// place. Replaces the Upgrade affordance with an explanation and the command that works.
+    let brewManagedPipFormula: String?
     let systemPythonVersion: String
     /// Current global install tier. On a 3.12+ interpreter it decides whether
     /// the Upgrade action is offered and which pip flags the backend applies.
@@ -249,6 +253,7 @@ struct PythonInstallationRow: View, Equatable {
         lhs.isPipUpgradeAvailable == rhs.isPipUpgradeAvailable &&
         lhs.isSystemPythonConflict == rhs.isSystemPythonConflict &&
         lhs.latestPipVersion == rhs.latestPipVersion &&
+        lhs.brewManagedPipFormula == rhs.brewManagedPipFormula &&
         lhs.systemPythonVersion == rhs.systemPythonVersion &&
         lhs.installMode == rhs.installMode
     }
@@ -325,6 +330,30 @@ struct PythonInstallationRow: View, Equatable {
                     .controlSize(.small)
                     .disabled(isBusy)
                 }
+            }
+
+            /// pip belongs to Homebrew — explain instead of offering a doomed button.
+            ///
+            /// **Rationale:** pip refuses to uninstall a distribution with no `RECORD` file, which
+            /// is exactly what `brew` leaves behind. Before this, the row kept showing Upgrade,
+            /// every press failed with `uninstall-no-record-file`, and the only explanation went
+            /// to the log. The command that actually works belongs on screen.
+            if let formula = brewManagedPipFormula {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "info.circle")
+                        .foregroundColor(.secondary)
+                        .font(.caption)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("pip here is managed by Homebrew")
+                            .font(.caption.weight(.medium))
+                        Text("It can't be upgraded with pip. Update it with: brew upgrade \(formula)")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                            .textSelection(.enabled)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(.top, 2)
             }
 
             // pip upgrade available on a 3.12+ (externally-managed) interpreter:

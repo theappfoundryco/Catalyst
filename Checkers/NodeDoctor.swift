@@ -54,10 +54,37 @@ struct NodeDoctor: Doctor, AvailabilityCheckable {
             ))
         }
         
+        /// `npm root -g` must run in a LOGIN shell (#10).
+        ///
+        /// **Gotchas:** `checkAvailability` probes `node -v` with `useLoginShell: true`
+        /// while this call used a bare `zsh -c`. A bare shell sources no profile, so
+        /// nvm/brew never reach PATH and npm exits 127 — on a machine where npm is
+        /// perfectly fine. The asymmetry made the card silently report nothing.
+        /// Both probes must use the same environment or the comparison is meaningless.
         do {
-            let npmRootResult = try await AsyncProcessRunner.shared.run(command: "npm root -g")
+            let npmRootResult = try await AsyncProcessRunner.shared.run(command: "npm root -g", useLoginShell: true)
+
             if npmRootResult.succeeded {
-                let globalPath = npmRootResult.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+                /// LAST non-empty line, not the whole of stdout.
+                ///
+                /// **Gotchas:** A login shell sources the user's profile, and plenty of profiles
+                /// print something — a greeting, a version banner, an `nvm` notice. Trimming the
+                /// full stdout then hands `attributesOfItem` "Welcome back!\n/usr/local/lib/…",
+                /// which throws and, since the `catch` below now surfaces a card, reports a
+                /// broken toolchain on a perfectly healthy Mac. The path is always the last
+                /// thing `npm root -g` writes.
+                let globalPath = npmRootResult.stdout
+                    .components(separatedBy: .newlines)
+                    .map { $0.trimmingCharacters(in: .whitespaces) }
+                    .last { !$0.isEmpty } ?? ""
+
+                /// A global root that doesn't exist yet is not a fault. `npm config set prefix
+                /// ~/.npm-global` — the standard advice for avoiding `sudo npm` — reports the
+                /// path before anything has been installed into it, so the directory is simply
+                /// absent. There is nothing to own and nothing to warn about.
+                guard !globalPath.isEmpty,
+                      FileManager.default.fileExists(atPath: globalPath) else { return issues }
+
                 let attrs = try FileManager.default.attributesOfItem(atPath: globalPath)
                 if let ownerID = attrs[.ownerAccountID] as? Int, ownerID == 0 {
                      issues.append(HealthIssue(
@@ -69,11 +96,59 @@ struct NodeDoctor: Doctor, AvailabilityCheckable {
                         fixID: .fixNPMOwnership
                     ))
                 }
+            } else if let brokenIssue = await Self.presentButNotWorking(npmRootResult) {
+                /// Resolves on PATH but won't execute — surface it rather than
+                /// rendering the card from a half-broken toolchain and saying nothing.
+                issues.append(brokenIssue)
             }
         } catch {
+            /// Never swallow silently — a probe that couldn't even launch is itself
+            /// a finding, and an empty `catch` is what hid #10 for two releases.
+            issues.append(HealthIssue(
+                category: .node,
+                title: "Node Check Failed",
+                description: "Could not probe the Node toolchain: \(error.localizedDescription)",
+                severity: .warning,
+                autoFixAvailable: false
+            ))
         }
-        
+
         return issues
+    }
+
+    /// Distinguishes "npm isn't installed" from "npm is installed but broken".
+    ///
+    /// A non-zero exit from `npm root -g` is ambiguous on its own. If the shell
+    /// can still *resolve* npm on PATH (`command -v npm` → 0) while the binary
+    /// fails to run (typically 127 from a stale nvm shim or a dangling Node
+    /// symlink), that's a broken toolchain — not a missing one — and the user
+    /// needs to be told, because every downstream npm reading is untrustworthy.
+    ///
+    /// - Parameter result: The failed `npm root -g` invocation.
+    /// - Returns: A `HealthIssue` when npm resolves but can't execute, else `nil`.
+    private static func presentButNotWorking(
+        _ result: AsyncProcessRunner.ProcessResult
+    ) async -> HealthIssue? {
+        let looksUnexecutable = result.exitCode == 127
+            || result.stderr.lowercased().contains("command not found")
+            || result.stderr.lowercased().contains("no such file or directory")
+        guard looksUnexecutable else { return nil }
+
+        /// `command -v` is a shell builtin — no extra process, and unlike `which`
+        /// it honours functions and aliases the way the user's shell actually would.
+        let resolves = (try? await AsyncProcessRunner.shared.run(
+            command: "command -v npm", useLoginShell: true))?.succeeded ?? false
+        guard resolves else { return nil }
+
+        return HealthIssue(
+            category: .node,
+            title: "npm is present but not working",
+            description: "npm resolves on your PATH but fails to execute (exit \(result.exitCode)). "
+                + "This is usually a stale nvm shim or a broken Node symlink — reinstall Node, "
+                + "or run `nvm use --delete-prefix <version>` to repoint the shim.",
+            severity: .critical,
+            autoFixAvailable: false
+        )
     }
     
     /// Attempts to apply fixes for identified Node environment issues.
@@ -86,7 +161,7 @@ struct NodeDoctor: Doctor, AvailabilityCheckable {
     func fix(_ issue: HealthIssue) async -> Bool {
         if issue.fixID == .fixNPMOwnership {
             do {
-                let npmRootResult = try await AsyncProcessRunner.shared.run(command: "npm root -g")
+                let npmRootResult = try await AsyncProcessRunner.shared.run(command: "npm root -g", useLoginShell: true)
                 _ = npmRootResult.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
                 
                 return false

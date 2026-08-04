@@ -118,6 +118,11 @@ final class DashboardViewModel: ObservableObject {
     /// `pip list --outdated`), so it honors Requires-Python and is correct
     /// per-interpreter — unlike the old single global PyPI `info.version`.
     @Published var pipUpgradeTargets: [String: String] = [:]
+
+    /// Interpreter path → Homebrew formula, for pips that Homebrew owns and pip therefore
+    /// cannot upgrade in place (no `RECORD` file). Populated only after an upgrade attempt
+    /// actually returns that error — see `upgradePip(for:)`. Session-scoped by design.
+    @Published private(set) var brewManagedPips: [String: String] = [:]
     
     /// Indicates if a `brew update` is running.
     @Published var isBrewUpdating = false
@@ -221,6 +226,22 @@ final class DashboardViewModel: ObservableObject {
         }
         
         isDetecting = true
+        /// MUST be a `defer`, and MUST sit after the guard above.
+        ///
+        /// **Gotchas:** This was a plain assignment on the far side of two `async let` batches.
+        /// If anything in that fan-out hung — a probe with no `timeoutSeconds`, a superseded
+        /// Python scan being waited out (12.18b) — or if the task was simply CANCELLED because
+        /// the user navigated away from Dashboard mid-detection, the assignment never ran and
+        /// `isDetecting` stayed `true` forever. Combined with `guard !isDetecting` two lines up
+        /// that is not a stuck spinner, it is a **permanent deadlock**: every later
+        /// `runDetection()` — including `fullRefresh()` and the toolbar Refresh button — returns
+        /// instantly at the guard, and `isBusy` keeps every control on the screen disabled.
+        /// Nothing short of relaunching the app recovers it.
+        ///
+        /// Placement matters: after the guard, so an early return can never clear the flag that
+        /// belongs to the detection currently in flight. All twelve busy flags in this file
+        /// follow the same shape for the same reason.
+        defer { isDetecting = false }
         hasLoadedOnce = true
         logger.log("🔍 Starting detection...")
         
@@ -240,7 +261,6 @@ final class DashboardViewModel: ObservableObject {
         _ = await (pipLaunch, availPyLaunch)
         logger.debugLog("🐛 det: batch2 COMPLETE (pip/availVersions)")
 
-        isDetecting = false
         logger.log("✅ Detection complete")
 
         // pip-upgrade availability is a non-critical hint, and the per-interpreter
@@ -347,6 +367,8 @@ final class DashboardViewModel: ObservableObject {
     /// - Parameter installation: The Python target to repair.
     func repairPip(for installation: PythonInstallation) async {
         repairingPipFor = installation.version
+        /// Same reasoning as `upgradePip` — identical shape, identical stranding risk.
+        defer { repairingPipFor = nil }
 
         _ = await python.repairPip(for: installation)
 
@@ -354,8 +376,6 @@ final class DashboardViewModel: ObservableObject {
         pythonService.invalidateCache()
         await detectInstalledPythons()
         await detectPipUpgrades()
-
-        repairingPipFor = nil
     }
 
     /// Triggers `pip install --upgrade pip` for a specific Python installation.
@@ -366,14 +386,44 @@ final class DashboardViewModel: ObservableObject {
     /// - Parameter installation: The Python target to upgrade.
     func upgradePip(for installation: PythonInstallation) async {
         upgradingPipFor = installation.version
+        /// Clear the lock on EVERY exit path, not just the happy one.
+        ///
+        /// **Gotchas:** This used to be a plain assignment on the last line. Anything that
+        /// suspended in between — a wedged `pip list --outdated` inside `detectPipUpgrades()`,
+        /// or the task being cancelled because the user navigated away — left `upgradingPipFor`
+        /// set, and the row's spinner never stopped. The visible bug ("infinite spinner after
+        /// upgrading pip") was two faults stacked: this missing `defer`, and the missing process
+        /// timeout that made the hang reachable in the first place. Fix both; either alone still
+        /// leaves a way to strand the UI.
+        defer { upgradingPipFor = nil }
 
-        await python.upgradePip(for: installation)
+        let outcome = await python.upgradePip(for: installation)
+        if case .upgradedToUserSite = outcome {
+            /// Redirected into the user site because Homebrew owned the copy in its prefix.
+            /// Nothing to record — `python -m pip` now resolves to the new version, so the next
+            /// `detectPipUpgrades()` sees it as current and the row clears on its own.
+            logger.log("ℹ️ pip for Python \(installation.version) now resolves from your user site. Homebrew's copy is unchanged; `brew upgrade \(installation.formula)` will still manage it.")
+        }
+        if case .managedByHomebrew(let formula) = outcome {
+            /// Record it so the row stops offering an upgrade that provably cannot work.
+            ///
+            /// **Rationale:** pip is genuinely outdated here, so `pip list --outdated` will keep
+            /// reporting it and `detectPipUpgrades()` would re-add the target on every refresh —
+            /// the user presses Upgrade, gets `uninstall-no-record-file`, and the button comes
+            /// straight back. Forcing it with `--ignore-installed` is worse: pip reports the new
+            /// version while Homebrew's old dist-info stays behind, so the row is pinned to
+            /// "upgrade available" permanently and the environment is left inconsistent.
+            ///
+            /// **Gotchas:** Deliberately session-scoped, NOT persisted. `brew upgrade <formula>`
+            /// or a proper pip reinstall both make this recoverable, and a value cached to disk
+            /// would go on hiding a legitimate upgrade long after the cause was fixed.
+            brewManagedPips[installation.path.path] = formula
+        }
 
         // Invalidate cache to ensure fresh pip version data
         pythonService.invalidateCache()
         await detectInstalledPythons()
         await detectPipUpgrades()
-        upgradingPipFor = nil
     }
     
     /// Synchronous helper to determine if a specific python has a known pip upgrade pending.
@@ -381,8 +431,20 @@ final class DashboardViewModel: ObservableObject {
     /// - Parameter python: The installation to check.
     /// - Returns: `true` if this specific interpreter's isolated pip is outdated.
     func isPipUpgradeAvailable(for python: PythonInstallation) -> Bool {
-        // Present only when this interpreter's own pip reported pip as outdated.
+        // Present only when this interpreter's own pip reported pip as outdated AND we haven't
+        // already learned that pip is Homebrew-owned — offering an action that fails identically
+        // every time is worse than offering nothing.
         pipUpgradeTargets[python.path.path] != nil
+            && brewManagedPips[python.path.path] == nil
+    }
+
+    /// The Homebrew formula owning this interpreter's pip, when that's why no upgrade is offered.
+    /// Drives the explanatory row that replaces the Upgrade button.
+    ///
+    /// - Parameter python: The installation to check.
+    /// - Returns: The formula name (e.g. `python@3.12`), or `nil` if pip isn't brew-owned.
+    func brewManagedPipFormula(for python: PythonInstallation) -> String? {
+        brewManagedPips[python.path.path]
     }
     
     /// Checks if the installed Homebrew Python major/minor version matches the system-level python fallback.
@@ -434,16 +496,27 @@ final class DashboardViewModel: ObservableObject {
             }
         }
         pipUpgradeTargets = targets
+
+        /// Drop Homebrew-owned markers for interpreters that are no longer reporting an
+        /// outdated pip — the marker's whole job is to suppress an upgrade action that
+        /// can't work, and once pip is current there is no action to suppress.
+        ///
+        /// **Gotchas:** Without this the state is session-sticky in the wrong direction. A user
+        /// who hits the wall, runs `brew upgrade python@3.12` from the Homebrew card two screens
+        /// over, and comes back still sees "pip here is managed by Homebrew" against a pip that
+        /// is now perfectly current — with no way to clear it short of relaunching the app, in
+        /// the one session where they actually fixed it.
+        brewManagedPips = brewManagedPips.filter { targets[$0.key] != nil }
     }
 
     /// Contacts Catalyst APIs to retrieve the master list of compatible Python formulas for this architecture.
     private func loadAvailablePythonVersions() async {
         logger.debugLog("🐛 det: availableVersions start")
         isLoadingAvailableVersions = true
+        defer { isLoadingAvailableVersions = false }
         let result = await python.fetchAvailableVersions(installed: installedPythons)
         availablePythonVersions = result.versions
         recommendedVersion = result.recommended
-        isLoadingAvailableVersions = false
         logger.debugLog("🐛 det: availableVersions end (\(result.versions.count))")
     }
     
@@ -457,13 +530,13 @@ final class DashboardViewModel: ObservableObject {
         guard !isInstallingBrew else { return }
 
         isInstallingBrew = true
+        defer { isInstallingBrew = false }
         brewInstallOutput = ""
         brewUnlinkedKegs = []
         installError = nil
 
         let success = await brew.installHomebrew()
 
-        isInstallingBrew = false
         if success {
             await onGlobalRefresh?("Refreshing after Homebrew install...")
         } else {
@@ -480,6 +553,7 @@ final class DashboardViewModel: ObservableObject {
         guard !isInstallingCommandLineTools else { return }
         
         isInstallingCommandLineTools = true
+        defer { isInstallingCommandLineTools = false }
         logger.log("🛠️ Requesting Command Line Tools installation...")
         
         do {
@@ -503,7 +577,6 @@ final class DashboardViewModel: ObservableObject {
             logger.log("❌ Error requesting install: \(error.localizedDescription)")
         }
         
-        isInstallingCommandLineTools = false
     }
 
     /// Installs the specific Python version saved in `selectedVersionToInstall` via Homebrew.
@@ -514,6 +587,7 @@ final class DashboardViewModel: ObservableObject {
         guard let version = selectedVersionToInstall, !isInstallingPython else { return }
 
         isInstallingPython = true
+        defer { isInstallingPython = false }
         installError = nil
 
         if await python.install(version: version) {
@@ -524,7 +598,6 @@ final class DashboardViewModel: ObservableObject {
             installError = "Python \(version) installation failed. See the Logs screen for details."
         }
 
-        isInstallingPython = false
         await onGlobalRefresh?("Refreshing after Python install...")
     }
 
@@ -533,10 +606,10 @@ final class DashboardViewModel: ObservableObject {
         guard !isUninstallingBrew else { return }
         
         isUninstallingBrew = true
+        defer { isUninstallingBrew = false }
 
         await brew.uninstallHomebrew()
 
-        isUninstallingBrew = false
         await onGlobalRefresh?("Refreshing after Homebrew uninstall...")
     }
     
@@ -545,6 +618,7 @@ final class DashboardViewModel: ObservableObject {
         guard !isUninstallingPython, !selectedVersionsToUninstall.isEmpty else { return }
         
         isUninstallingPython = true
+        defer { isUninstallingPython = false }
 
         await python.uninstall(versions: selectedVersionsToUninstall)
         selectedVersionsToUninstall.removeAll()
@@ -552,7 +626,6 @@ final class DashboardViewModel: ObservableObject {
         // Invalidate cache before full refresh
         pythonService.invalidateCache()
         
-        isUninstallingPython = false
         await onGlobalRefresh?("Refreshing after Python uninstall...")
     }
     // MARK: - Homebrew Maintenance
@@ -568,27 +641,27 @@ final class DashboardViewModel: ObservableObject {
     /// Executes `brew update` to refresh local Homebrew taps.
     func updateBrew() async {
         isBrewUpdating = true
+        defer { isBrewUpdating = false }
         brewInstallOutput = ""
         await brew.update { self.brewInstallOutput += $0 }
-        isBrewUpdating = false
         await loadBrewStats()
     }
 
     /// Executes `brew upgrade` to update all outdated formulae and casks simultaneously.
     func upgradeAllBrew() async {
         isBrewUpgrading = true
+        defer { isBrewUpgrading = false }
         brewInstallOutput = ""
         await brew.upgradeAll { self.brewInstallOutput += $0 }
-        isBrewUpgrading = false
         await loadBrewStats()
     }
 
     /// Executes `brew cleanup` to reclaim SSD space from stale lock files and old downloads.
     func cleanupBrew() async {
         isBrewCleaning = true
+        defer { isBrewCleaning = false }
         brewInstallOutput = ""
         await brew.cleanup { self.brewInstallOutput += $0 }
-        isBrewCleaning = false
         await loadBrewStats()
     }
 
@@ -599,12 +672,12 @@ final class DashboardViewModel: ObservableObject {
     /// 2. Evaluates the string against ``BrewMaintenanceManager/parseUnlinkedKegs(from:)``.
     func doctorBrew() async {
         isRunningBrewDoctor = true
+        defer { isRunningBrewDoctor = false }
         brewInstallOutput = ""
         brewUnlinkedKegs = [] // Reset previous detections
         await brew.doctor { self.brewInstallOutput += $0 }
         // Parse results for unlinked kegs
         brewUnlinkedKegs = brew.parseUnlinkedKegs(from: brewInstallOutput)
-        isRunningBrewDoctor = false
     }
 
     /// Re-links any detached kegs discovered by a prior ``doctorBrew()`` scan.
@@ -612,8 +685,8 @@ final class DashboardViewModel: ObservableObject {
         guard !brewUnlinkedKegs.isEmpty else { return }
 
         isBrewLinking = true
+        defer { isBrewLinking = false }
         await brew.link(kegs: brewUnlinkedKegs) { self.brewInstallOutput += $0 }
-        isBrewLinking = false
 
         // Re-run doctor to verify fixes
         await doctorBrew()

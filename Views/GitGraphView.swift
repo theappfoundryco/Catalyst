@@ -39,6 +39,12 @@ struct GitGraphView: View {
         content
             .navigationTitle("Git Graph")
             .toolbar {
+                /// View controls — what you're looking at and which repo.
+                ///
+                /// **Rationale:** Grouped together because all three change the *subject* of the
+                /// view (filter it, reconfigure it, swap the repo). Refresh doesn't: it re-reads
+                /// what's already on screen. Putting it in the same capsule invited a misclick
+                /// on the one control that discards nothing but costs a full re-read.
                 ToolbarItemGroup(placement: .primaryAction) {
                     if case .loading = vm.state {
                         ProgressView().controlSize(.small)
@@ -48,10 +54,41 @@ struct GitGraphView: View {
                         Button { vm.chooseRepository() } label: {
                             Label("Open Another", systemImage: "folder.badge.plus")
                         }
+                        .help("Open a different repository")
+                    }
+                }
+
+                /// Visual break between the two groups.
+                ///
+                /// **Gotchas:** `ToolbarSpacer` is macOS 26+, and this target deploys back to
+                /// 15.7 — hence the availability gate. Without it the two groups still render,
+                /// they just share one Liquid Glass capsule on Tahoe, which is the thing being
+                /// fixed. On 15.x there's no glass grouping to break up, so losing the spacer
+                /// costs nothing there.
+                if #available(macOS 26.0, *) {
+                    ToolbarSpacer(.fixed, placement: .primaryAction)
+                }
+
+                /// Refresh — deliberately its own item, and its own capsule.
+                ToolbarItem(placement: .primaryAction) {
+                    if case .loaded = vm.state {
+                        /// Stable label swap rather than replacing the Button, so the
+                        /// Liquid Glass capsule doesn't collapse around the spinner.
+                        /// See `RefreshToolbarContent` and ANTI_PATTERNS Rule 15.
                         Button { vm.reload() } label: {
                             Label("Refresh", systemImage: "arrow.clockwise")
+                                .opacity(vm.isGraphLoading ? 0 : 1)
+                                .overlay {
+                                    if vm.isGraphLoading {
+                                        ProgressView()
+                                            .progressViewStyle(.circular)
+                                            .controlSize(.small)
+                                    }
+                                }
                         }
+                        .disabled(vm.isGraphLoading)
                         .help("Reload this repository")
+                        .accessibilityLabel(vm.isGraphLoading ? "Reloading repository" : "Refresh")
                     }
                 }
             }

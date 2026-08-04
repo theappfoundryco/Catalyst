@@ -146,7 +146,17 @@ final class DetectionService {
         guard python.pipAvailable else { return nil }
         let command = "\(InputSanitizer.singleQuote(python.path.path)) -m pip list --outdated --format=json 2>/dev/null"
         do {
-            let result = try await AsyncProcessRunner.shared.run(command: command)
+            /// `pip list --outdated` reaches PyPI, so it is network-bound and MUST carry a
+            /// timeout (12.17).
+            ///
+            /// **Gotchas:** Without one, a stalled index request hangs this probe forever. That
+            /// matters more than it looks: `DashboardViewModel.detectPipUpgrades()` fans these
+            /// out across every interpreter in a `withTaskGroup`, and a task group does not
+            /// finish until its slowest child does — so ONE wedged interpreter strands the whole
+            /// group, and with it whatever awaited it. That was the infinite spinner after a
+            /// failed pip upgrade: `upgradePip` never reached the line clearing its busy flag.
+            /// 45s is generous for a cold index fetch and still bounded.
+            let result = try await AsyncProcessRunner.shared.run(command: command, timeoutSeconds: 45)
             /// Standardized JSON schema for PyPI update checking results.
 struct PipOutdated: Codable {
                 let name: String

@@ -10,7 +10,6 @@ struct DashboardView: View {
     @State private var showUninstallPythonConfirmation = false
     @State private var showInstallConfirmation = false
     @State private var showSystemPythonErrorPopover = false
-    @State private var isRefreshing = false
     
     var body: some View {
         // SmoothPageScroll (NSScrollView-backed List) for native macOS scroll
@@ -58,21 +57,11 @@ struct DashboardView: View {
         .navigationTitle("Dashboard")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                if isRefreshing || vm.isBusy {
-                    ProgressView()
-                        .controlSize(.small)
-                } else {
-                    Button {
-                        Task {
-                            isRefreshing = true
-                            try? await Task.sleep(for: .seconds(1.5))
-                            await vm.runDetection(force: true)
-                            isRefreshing = false
-                        }
-                    } label: {
-                        Label("Refresh", systemImage: "arrow.clockwise")
-                    }
-                }
+                RefreshToolbarContent(
+                    isLoading: vm.isBusy,
+                    label: "Refresh",
+                    minimumDelay: 1.5
+                ) { await vm.runDetection(force: true) }
             }
         }
     }

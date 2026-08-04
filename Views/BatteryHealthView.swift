@@ -43,13 +43,11 @@ struct BatteryHealthView: View {
         .navigationTitle("Battery Health")
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                if vm.state == .scanning {
-                    ProgressView().controlSize(.small)
-                } else {
-                    Button { Task { await vm.scan() } } label: {
-                        Label("Re-Scan", systemImage: "arrow.clockwise")
-                    }
-                }
+                RefreshToolbarContent(
+                    isLoading: vm.state == .scanning,
+                    label: "Re-Scan",
+                    minimumDelay: 0
+                ) { await vm.scan() }
             }
         }
         .task { if vm.state == .idle { await vm.scan() } }
@@ -83,13 +81,20 @@ struct BatteryHealthView: View {
                     gradient: gradient(cycleColor(report.cycleCount))
                 )
 
+                /// Wording comes from macOS, the verdict comes from `needsService`.
+                ///
+                /// **Gotchas:** This used to test `condition == "Normal"`. Since the service
+                /// started preferring Apple's own string (#23) that literal no longer holds —
+                /// "Good" is a healthy value, and every non-English Mac reports a translated
+                /// one — so a healthy battery drew the orange warning triangle. Any new
+                /// condition-driven UI reads the boolean, never the string.
                 SSDHealthMetricCard(
-                    icon: report.condition == "Normal" ? "checkmark.seal.fill" : "exclamationmark.triangle.fill",
+                    icon: report.needsService ? "exclamationmark.triangle.fill" : "checkmark.seal.fill",
                     title: "Condition",
                     value: report.condition,
-                    subtitle: report.condition == "Normal" ? "Healthy" : "Consider servicing",
-                    color: report.condition == "Normal" ? .green : .orange,
-                    gradient: gradient(report.condition == "Normal" ? .green : .orange)
+                    subtitle: report.needsService ? "Consider servicing" : "Healthy",
+                    color: report.needsService ? .orange : .green,
+                    gradient: gradient(report.needsService ? .orange : .green)
                 )
 
                 if let temp = report.temperatureCelsius {
@@ -133,45 +138,28 @@ struct BatteryHealthView: View {
     /// - Parameter report: The compiled system profile capturing battery metadata.
     /// - Returns: The active presentation hierarchy for the detail view.
     private func hero(_ report: BatteryReport) -> some View {
-        HStack(spacing: 0) {
-            VStack(spacing: 16) {
-                Text("Battery Health")
-                    .font(.headline).foregroundColor(.secondary)
-                VitalityGauge(score: report.maxCapacityPercent)
-                    .frame(width: 100, height: 100)
-            }
-            .frame(maxWidth: .infinity)
-
-            SectionDivider().frame(height: 100)
-
+        HeroStatBar(title: "Battery Health", score: report.maxCapacityPercent) {
             StatColumnHeader(
                 label: "Maximum Capacity",
                 value: "\(report.maxCapacityPercent)%",
                 subtext: "of design capacity"
             )
-            .frame(maxWidth: .infinity)
-
-            SectionDivider().frame(height: 100)
+            .heroColumn()
 
             StatColumnHeader(
                 label: "Cycle Count",
                 value: "\(report.cycleCount)",
                 subtext: "charge cycles"
             )
-            .frame(maxWidth: .infinity)
-
-            SectionDivider().frame(height: 100)
+            .heroColumn()
 
             StatColumnHeader(
                 label: "Condition",
                 value: report.condition,
                 subtext: report.powerSource
             )
-            .frame(maxWidth: .infinity)
+            .heroColumn()
         }
-        .padding(.vertical, 40)
-        .background(Color(NSColor.controlBackgroundColor))
-        .cornerRadius(12)
     }
 
     // MARK: - States

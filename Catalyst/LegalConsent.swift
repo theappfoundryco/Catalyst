@@ -27,12 +27,17 @@ import Combine
 // MARK: - Config
 
 enum LegalConfig {
-    /// Versions shipped with THIS build. NOT merely an offline fallback: `currentPrivacyVersion` /
-    /// `currentTermsVersion` take `max(bundled, cached)`, so a bundled value NEWER than the cached
-    /// remote one wins and re-prompts immediately on update. That is the primary delivery path —
-    /// we publish new docs *with* a release. Bump these in lock-step with the Vercel JSON.
-    static let bundledPrivacyVersion = "1.1"
-    static let bundledTermsVersion   = "1.1"
+    /// Versions shipped with THIS build — the floor for what the app considers current, used
+    /// before the first successful remote check and while offline.
+    ///
+    /// THREE PLACES MUST AGREE, and this is one of them:
+    ///   1. here,
+    ///   2. `theappfoundryco/public/legal/catalyst.json` (what the remote check serves),
+    ///   3. `theappfoundryco/src/consts.ts` → `LEGAL_VERSIONS.catalyst*` (what the page prints).
+    /// A page that prints a version the JSON doesn't serve is the silent failure: the document
+    /// reads as updated while nobody is ever re-prompted for it.
+    static let bundledPrivacyVersion = "1.3"
+    static let bundledTermsVersion   = "1.3"
 
     /// Canonical, stable URLs for the full documents (Catalyst-specific legal pages).
     static let privacyURL = URL(string: "https://theappfoundry.co/catalyst/privacy")!
@@ -100,14 +105,47 @@ final class LegalConsentViewModel: ObservableObject {
         Self.newer(LegalConfig.bundledTermsVersion, config.cachedTermsVersion)
     }
 
-    /// Returns whichever of the two version strings is newer, treating `nil`/blank as "absent".
+    /// Picks the later of the build's bundled version and the cached remote one.
     ///
-    /// Uses `.numeric` comparison so "1.10" correctly sorts above "1.9" — a plain lexicographic
-    /// `>` puts "1.9" first and would skip the re-prompt on the tenth revision.
-    static func newer(_ bundled: String, _ cached: String?) -> String {
+    /// NOT "cached else bundled". A release that ships new documents lands on machines whose
+    /// cache still holds the PREVIOUS versions and whose 14-day timer may have up to two weeks
+    /// left to run — preferring the cache there would leave every existing user un-prompted for
+    /// the new documents for that whole window, which is the one thing this file exists to
+    /// prevent. Taking the later value means a release re-prompts on first launch, and a document
+    /// published between releases still re-prompts within 14 days.
+    ///
+    /// It also makes a remote regression harmless: if the JSON is ever rolled back or served
+    /// stale, consent never silently walks backwards below what this build ships.
+    /// - Parameters:
+    ///   - bundled: The version compiled into this build. Acts as the floor.
+    ///   - cached: The last version a successful remote check reported, if any.
+    /// - Returns: Whichever version is later.
+    /// **Gotchas:** `nil` is not the only "absent". A blank or whitespace-only cached value must
+    /// fall back to the bundled floor too — caching `""` would make `accepted != current`
+    /// permanently true and lock every user behind a gate they could never clear.
+    private static func newer(_ bundled: String, _ cached: String?) -> String {
         guard let cached = cached?.trimmingCharacters(in: .whitespacesAndNewlines),
               !cached.isEmpty else { return bundled }
-        return cached.compare(bundled, options: .numeric) == .orderedDescending ? cached : bundled
+        return isNewer(cached, than: bundled) ? cached : bundled
+    }
+
+    /// Compares dotted version strings component-wise as integers, so "1.10" correctly sorts
+    /// above "1.9" — lexicographic comparison gets that backwards. Missing trailing components
+    /// count as 0 ("1.3" == "1.3.0"); a non-numeric component counts as 0, which keeps a
+    /// malformed remote value from ever outranking the bundled floor.
+    /// - Parameters:
+    ///   - lhs: The candidate version.
+    ///   - rhs: The version to beat.
+    /// - Returns: True when `lhs` is strictly later than `rhs`.
+    private static func isNewer(_ lhs: String, than rhs: String) -> Bool {
+        let l = lhs.split(separator: ".").map { Int($0) ?? 0 }
+        let r = rhs.split(separator: ".").map { Int($0) ?? 0 }
+        for i in 0..<max(l.count, r.count) {
+            let a = i < l.count ? l[i] : 0
+            let b = i < r.count ? r[i] : 0
+            if a != b { return a > b }
+        }
+        return false
     }
 
     /// The DEBUG smoke-test reset lives HERE, not in ``start()``.

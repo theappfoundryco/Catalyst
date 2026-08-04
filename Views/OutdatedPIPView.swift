@@ -7,7 +7,6 @@ import SwiftUI
 /// ```
 struct OutdatedPIPView: View {
     @ObservedObject var vm: OutdatedPIPViewModel
-    @State private var isRefreshing = false
     
     /// Filtered to only show pip packages
     var pipPackages: [OutdatedPackage] {
@@ -157,22 +156,14 @@ struct OutdatedPIPView: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 if vm.hasScannedOnce {
-                    if isRefreshing || vm.isLoading {
-                        ProgressView()
-                            .controlSize(.small)
-                    } else {
-                        Button {
-                            Task {
-                                isRefreshing = true
-                                // try? await Task.sleep(for: .seconds(1.5))
-                                await vm.checkForPipUpdates(force: true)
-                                isRefreshing = false
-                            }
-                        } label: {
-                            Label("Scan Again", systemImage: "arrow.clockwise")
-                        }
-                        .disabled(vm.isUpdatingAll || vm.updatingPackage != nil || vm.availablePythonVersions.isEmpty)
-                    }
+                    RefreshToolbarContent(
+                        isLoading: vm.isLoading,
+                        label: "Scan Again",
+                        minimumDelay: 0,
+                        isDisabled: vm.isUpdatingAll
+                            || vm.updatingPackage != nil
+                            || vm.availablePythonVersions.isEmpty
+                    ) { await vm.checkForPipUpdates(force: true) }
                 }
             }
         }

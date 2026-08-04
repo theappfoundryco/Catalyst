@@ -274,30 +274,88 @@ one. Where the container already has horizontal padding, move 4pt of it inside t
 boundary (`.padding(.horizontal, 22 - inset)`) rather than adding to it — the visual margin
 stays identical.
 
-## Rule 14 — Never auto-present a `.sheet` at launch, and never host one in `.background()` (2026-07-25)
+> **Resolved (2026-08-04):** `acceptancesheet` has landed. `LegalGateView.focusRingInset` is
+> defined at `Catalyst/LegalConsent.swift:292` and applied at 366–367, so the symbol this rule
+> names now exists. `AuthGateView` remains retired.
 
-**Symptom:** a sheet that is supposed to appear on first launch simply never appears — no crash,
-no console warning. It works perfectly when you trigger the same sheet from a button.
+---
 
-**Cause — two compounding bugs, both silent:**
+## Rule 14 — Never present a sheet from a zero-size layer, or before the window is key (2026-07-25)
 
-1. **Presented before the window is key.** State resolved during `startupChecks()` lands at t≈0,
-   before the `NSWindow` becomes key. SwiftUI drops sheet presentations requested that early and
-   never retries. User-triggered sheets are immune because a click implies the window is already
-   key — which is exactly why this survives manual testing.
-2. **Hosted on a zero-size view inside `.background(...)`.** `.background` content is a
-   layout-only layer and an unreliable presentation anchor. `.background(Color.clear.sheet(...))`
-   is a workaround for "two `.sheet` modifiers on one view" that trades a loud bug for a silent one.
+**Symptom:** a fully built, correctly wired consent sheet that had **never once appeared** for a
+new user. No error, no warning, no log line — issue #20.
 
-**How it shipped:** issue #20. The legal-consent sheet was invisible to 100% of new users for
-multiple releases. Nobody caught it because every developer's Mac had already accepted, so the
-requirement was nil and there was nothing to present.
+**Cause:** two faults compounding.
 
-**Fix:** if it blocks the app, make it a **view swap, not a sheet** — branch at the root and
-render the gate in place of the content (`ContentView` → `LegalGateView`). A swap has no
-presentation machinery to race. If you genuinely need a second sheet on one view, restructure so
-each sheet is on a different real view in the hierarchy, not a `Color.clear` in a background.
+1. The sheet was hosted on a `Color.clear` inside `.background(...)`. That's a layout-only layer
+   with no size, and an unreliable presentation anchor.
+2. The requirement resolved at t≈0, before the `NSWindow` was key. SwiftUI **silently drops** a
+   sheet presentation requested that early — no error, and it never retries.
 
-**Corollary — test the empty state, not your state.** Any launch-gated UI must be verified from a
-virgin install. Ship a `#if DEBUG` reset (see `ConfigStore.resetLegalConsentForDebug()`) so the
-blank slate is the default in development, not something you have to remember to construct.
+The neighbouring `AppInfoSheet` worked fine and masked the problem, because it's user-triggered:
+a click guarantees the window is already key.
+
+**Avoid:** `.background(Color.clear.sheet(item:))`, and any presentation driven by state that
+settles during `init` or first layout.
+
+**Fix:** for anything that must gate the *whole* app, don't present at all — **swap the root
+view**. `LegalGateView` replaces `ContentView` entirely until accepted, decided synchronously in
+`AppViewModel.init` so the main UI never paints first. Network top-ups run detached and can only
+*add* a requirement, never miss a first-launch one.
+
+> **Why this stayed invisible:** every developer's Mac had already accepted, so the requirement
+> evaluated to `nil` and there was nothing to present. The `#if DEBUG` reset in
+> `LegalConsentViewModel.init` now makes the virgin-install state the default in development.
+> See also CODING_STANDARDS §6.5.
+
+---
+
+## Rule 15 — A busy state must modify the resting view, never replace it (2026-07-30)
+
+**Symptom:** on macOS 26, the Liquid Glass capsule behind a toolbar button visibly shrinks to a
+small pill around the spinner the moment a refresh starts, then pops back afterwards.
+
+**Avoid:** branching at the root of the item.
+
+```swift
+ToolbarItem(placement: .primaryAction) {
+    if vm.isLoading {
+        ProgressView().controlSize(.small)      // ❌ different root view
+    } else {
+        Button { … } label: { Label("Refresh", systemImage: "arrow.clockwise") }
+    }
+}
+```
+
+**Why it breaks:** swapping the root view changes the item's *identity*. SwiftUI tears down the
+Button, and any container that sizes itself to its content — the glass capsule here — re-measures
+against the spinner's much smaller intrinsic width. Nothing about the visual style causes this;
+it's a plain identity change, so the same thing happens to any self-sizing container.
+
+**Look-preserving fix:** one Button, always. Swap only the label, and keep the outgoing label in
+the layout at zero opacity so it goes on reserving its footprint.
+
+```swift
+Button { … } label: {
+    Label("Refresh", systemImage: "arrow.clockwise")
+        .opacity(busy ? 0 : 1)
+        .overlay { if busy { ProgressView().controlSize(.small) } }
+}
+.disabled(busy)
+.accessibilityLabel(busy ? "Refresh in progress" : "Refresh")
+```
+
+`.hidden()` or an `if` inside the label both remove it from layout and reintroduce the collapse —
+`.opacity(0)` is doing real work here, not cosmetics. Block re-entrancy with `.disabled`, not by
+declining to render the Button. Add the `.accessibilityLabel`: the label is now invisible rather
+than absent, so VoiceOver would otherwise still announce the resting title mid-refresh.
+
+**Shared implementation:** `Helpers/RefreshToolbarContent.swift`. Use it unless the action is
+synchronous or the item sits inside a `ToolbarItemGroup`; in those two cases inline the same
+technique (`NetworkDiagnosticsView`, `GitGraphView` are the precedents).
+
+**Related trap, same family:** a toolbar group gated on a loaded state (`if case .loaded = state`)
+disappears entirely when a refresh flips the state back to `.loading`. Git Graph did this — Refresh
+made filters, options and Open Another vanish along with the graph. A refresh should hold the
+loaded state and drive a separate `isLoading` flag; only a *first* load or a retry-after-failure
+should return to the empty state. See CODING_STANDARDS 12.55.

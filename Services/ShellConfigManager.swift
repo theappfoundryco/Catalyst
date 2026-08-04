@@ -118,11 +118,62 @@ final class ShellConfigManager {
         try content.write(to: catalystConfigPath, atomically: true, encoding: .utf8)
     }
     
-    /// Triggers replication of active configurations generating restorable persistent historical clones.
-    func backupCatalystConfig() {
+    /// Snapshots `.zshrc_catalyst` to `.zshrc_catalyst.backup`.
+    ///
+    /// **Gotchas:** This used to delete the old backup and *then* copy (#13). If the
+    /// copy failed — full volume, missing source, revoked grant — the user was left
+    /// with no backup at all, which is strictly worse than a stale one. Write to a
+    /// temporary sibling first and only swap it in once the bytes are verified, so
+    /// the previous backup survives any failure.
+    ///
+    /// - Returns: `true` if a verified backup is now in place.
+    @discardableResult
+    func backupCatalystConfig() -> Bool {
         let backupURL = homeDir.appendingPathComponent(".zshrc_catalyst.backup")
-        try? fm.removeItem(at: backupURL)
-        try? fm.copyItem(at: catalystConfigPath, to: backupURL)
+        let tempURL = homeDir.appendingPathComponent(".zshrc_catalyst.backup.tmp")
+
+        guard fm.fileExists(atPath: catalystConfigPath.path) else { return false }
+
+        try? fm.removeItem(at: tempURL)
+        do {
+            try fm.copyItem(at: catalystConfigPath, to: tempURL)
+        } catch {
+            return false
+        }
+
+        /// Verify before swapping — a throw-free `copyItem` doesn't guarantee bytes.
+        ///
+        /// **Gotchas:** Size equality, not `> 0`. An empty `.zshrc_catalyst` is a legitimate
+        /// state (freshly created, nothing added yet), and refusing to back it up reported a
+        /// failure for a file that was faithfully copied.
+        let copied = ((try? fm.attributesOfItem(atPath: tempURL.path))?[.size] as? Int) ?? -1
+        let source = ((try? fm.attributesOfItem(atPath: catalystConfigPath.path))?[.size] as? Int) ?? -2
+        guard copied == source else {
+            try? fm.removeItem(at: tempURL)
+            return false
+        }
+
+        /// `replaceItemAt` REQUIRES an existing item to replace — it throws
+        /// `NSFileNoSuchFileError` when there isn't one, it does not create the destination.
+        ///
+        /// **Gotchas:** Calling it unconditionally meant the FIRST backup on any Mac silently
+        /// failed: the throw went into a `try?`, the function reported `false`, and
+        /// `.zshrc_catalyst.backup.tmp` was orphaned in the user's home directory — recreated
+        /// and re-orphaned on every subsequent call, because a backup never came into
+        /// existence to replace. The backup this function exists to make was never made.
+        do {
+            if fm.fileExists(atPath: backupURL.path) {
+                _ = try fm.replaceItemAt(backupURL, withItemAt: tempURL)
+            } else {
+                try fm.moveItem(at: tempURL, to: backupURL)
+            }
+        } catch {
+            /// Leave the previous backup (if any) untouched and take the temp file with us —
+            /// a stale backup beats no backup, and a stray `.tmp` in `~` beats neither.
+            try? fm.removeItem(at: tempURL)
+            return false
+        }
+        return fm.fileExists(atPath: backupURL.path)
     }
 
     // MARK: - Managed Blocks

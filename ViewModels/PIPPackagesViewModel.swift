@@ -99,6 +99,10 @@ final class PIPPackagesViewModel: ObservableObject {
         guard forceRefresh || !hasLoadedOnce else { return }
         
         isLoading = true
+        /// Same permanent-deadlock shape as `DashboardViewModel.runDetection` — see the note
+        /// there. `guard !isLoading` above means a flag left set by a hung or cancelled load
+        /// blocks every later call at the guard, with no way back short of relaunching.
+        defer { isLoading = false }
         logger.log("📦 Loading installed pip packages...")
         
         // Always reload Python versions on force refresh, or if empty
@@ -113,7 +117,6 @@ final class PIPPackagesViewModel: ObservableObject {
         await loadPipPackagesForSelectedPython(forceRefresh: forceRefresh)
         
         hasLoadedOnce = true
-        isLoading = false
     }
     
     /// Scans the system for installed Pythons using ``PythonService``.
