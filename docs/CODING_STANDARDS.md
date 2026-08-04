@@ -442,9 +442,10 @@ no corruption fallback, no new-file pbxproj registration. Reserve `ConfigStore`-
 JSON files under App Support for larger/structured stores (6.1). Pattern:
 `GitGraphPrefsStore` (`load()`/`save()` around a `JSONEncoder` + one defaults key).
 
-6.5 **The launch splash must NEVER gate on detection.** `AppViewModel.startupChecks`
-runs `fullRefresh()` in a background `Task` and flips `isAppReady` after the 1.5 s
-animation floor — nothing else. Gating on the full detection sweep meant any one slow or
+6.5 **Launch must NEVER gate on detection.** `AppViewModel.startupChecks`
+runs `fullRefresh()` in a background `Task` and returns — nothing else. (The splash and its
+`isAppReady` flag were deleted 2026-07-25. The consent-gate decision is NOT made here — it is
+made synchronously in `AppViewModel.init`, because `.task` runs after the first render.) Gating on the full detection sweep meant any one slow or
 stuck probe (brew `du`, a git CLT prompt, a hung fetch) trapped the user on the launch
 screen (it happened repeatedly). Every result is `@Published`, so the UI fills in as
 each check finishes.
@@ -504,9 +505,8 @@ chrome directly; never paint over the titlebar.**
   match the app's taller unified titlebar, attach an **empty toolbar** — `.toolbar {
   ToolbarItem(placement: .principal) { Color.clear.frame(width: 1, height: 1) } }` — which
   reserves the height without showing controls.
-- The launch **splash was removed entirely** (`LaunchScreenView` still exists but is unused
-  — deleting the file would break the pbxproj reference; strip it from the target in Xcode
-  to fully remove). The window appears already framed and loads content in place, like a
+- The launch **splash was removed entirely** (`LaunchScreenView.swift` deleted and unregistered
+  from `project.pbxproj` on 2026-07-25). The window appears already framed and loads content in place, like a
   normal native macOS app. The brief token-check flash is now the neutral `.checking`
   spinner ("Checking your access…") in the plain window, not a splash or a login form.
 
@@ -686,7 +686,7 @@ alongside deleted code is worse than no rule.
 - **12.18 Single-flight coalescing: no `await` between check and set.** In `PythonService.detectPythons`, nothing may suspend between `if let inFlightScan { … }` and `inFlightScan = task`. A suspension (we had one via the `async` `homebrewPrefix` interpolated into a log line) lets concurrent `@MainActor` callers all pass the check → a scan stampede.
 - **12.18b Invalidating a cache must not free the in-flight slot.** The same stampede through the opposite door. `invalidateCache()` used to do `inFlightScan = nil` alongside the generation bump, reasoning that a running scan shouldn't be cancelled since callers await it. But nilling the slot makes it look *free* while the scan is still spawning subprocesses, so the next caller starts a SECOND concurrent scan. **Rule:** a generation bump alone retires a scan — the guard in the completion block already stops it publishing a stale result. Leave the task parked; the next caller waits it out (`🐛 py waiting out superseded scan`) and then starts fresh. Neither cancel nor drop. Corollary: the `defer` that clears the slot must compare the **slot's own stored generation**, not `scanGeneration` — after an invalidate those differ, so a `scanGeneration` comparison skips cleanup and strands every later caller on a finished task. *(The launch-time trigger that originally exposed this — entitlement landing mid-scan — is gone, but any caller of `invalidateCache()` during a live scan reproduces it. Do not simplify this away on the grounds that the original trigger no longer exists.)*
 - **12.19 Debug logging is `#if DEBUG` only.** High-volume `🐛` tracing goes through `Logger.debugLog(_:)` (an `@autoclosure` wrapped in `#if DEBUG`) so it's free in Release. Don't add raw ungated `logger.log("🐛…")`. `cut_release.sh` **fails fast** if the Release config has `DEBUG` in `SWIFT_ACTIVE_COMPILATION_CONDITIONS`.
-- **12.20 Versioned legal consent.** The blocking Privacy/Terms sheet + acceptance state is `LegalConsentViewModel`/`ConfigStore`; the "current" version is `cached ?? bundled`, cached from the static `theappfoundry.co/legal/catalyst.json` (14-day TTL). Keep bundled `LegalConfig.*Version` in sync when you publish new docs. Present the sheet on its **own** view node (`.background(Color.clear.sheet(item:))`) — never a 2nd `.sheet` on a view that already has one. With no sign-in there is no consent checkbox, so the blocking sheet is the only path and must catch everyone.
+- **12.20 Versioned legal consent.** The blocking Privacy/Terms **gate** + acceptance state is `LegalConsentViewModel`/`ConfigStore`; the "current" version is **`max(bundled, cached)`** (`.numeric` compare), cached from the static `theappfoundry.co/legal/catalyst.json` (14-day TTL). When you publish new docs, bump the JSON **and** `LegalConfig.*Version` in the same release. **It is a full-window view swap in `ContentView`, never a `.sheet`** — the requirement resolves before the `NSWindow` is key and SwiftUI silently drops sheets presented that early, which is exactly how issue #20 shipped (see ANTI_PATTERNS "Auto-presenting a sheet at launch"). With no sign-in there is no consent checkbox, so the gate is the only path and must catch everyone.
 - **12.21 zshrc edits go through managed blocks only.** Anything modifying the user's shell (Default-Python card, Aliases, Shortcuts) writes a sentinel-delimited block in `~/.zshrc_catalyst` via `ShellConfigManager.writeManagedBlock`/`removeManagedBlock`, found by marker, never by line number. **Never edit `~/.zshrc` directly** beyond the existing `source` line. Verify targets exist before writing, `zsh -n` after, roll back on parse failure.
 - **12.22 Package-name comparison is PEP 503-canonical.** When diffing installed vs snapshot pip packages, canonicalize names (lowercase + collapse `[-_.]+`→`-`) on both sides. Raw compare treats `importlib_resources` and `importlib-resources` as different → a phantom "N to install" whose restore is a no-op.
 - **12.23 Snapshot files get a stamped icon on export.** `SnapshotViewModel.export` calls `NSWorkspace.setIcon(_:forFile:)` with `CatalystSnapshotDoc.icns` — Launch Services won't reliably apply the `CFBundleTypeIconFile` type icon to a freshly-written file. Needs `import AppKit`.

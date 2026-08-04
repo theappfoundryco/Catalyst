@@ -103,7 +103,7 @@ Keep card edges defined with a border, not a shadow. **Use `cardStyle()` for eve
 
 **Look-preserving fix:** use a solid `Color(NSColor.controlBackgroundColor)` (or `windowBackgroundColor`) fill, which reads almost identically against the app's background, with no per-frame compositing. Reserve materials/blur for **static, non-scrolling** chrome (launch screen, sheet backdrops, popovers).
 
-**Audit hits to review:** `Components/CruftSweeperCards.swift:402` (`Material.thinMaterial`), `Components/DrCatalystCards.swift:157` (`Material.thickMaterial`). Fine if on a fixed header/overlay; replace if inside scrolling list content. (`LaunchScreen`/`gearlaunch`/`flameLaunch` blurs are fine — they never scroll. Note: `LaunchScreenView` is **unused** as of 2026-07-14, splash removed.)
+**Audit hits to review:** `Components/CruftSweeperCards.swift:402` (`Material.thinMaterial`), `Components/DrCatalystCards.swift:157` (`Material.thickMaterial`). Fine if on a fixed header/overlay; replace if inside scrolling list content. (`LaunchScreen`/`gearlaunch`/`flameLaunch` blurs are fine — they never scroll. Note: `LaunchScreenView` was deleted on 2026-07-25.)
 
 ---
 
@@ -267,8 +267,37 @@ owns vertical scrolling.
 **Cause:** AppKit draws the focus ring *outside* the control's frame, and `ScrollView` clips to
 its bounds. A field flush against the scroll edge loses part of its ring.
 
-**Fix:** inset the scroll *content* by `AuthGateView.focusRingInset` (4pt) and subtract
+**Fix:** inset the scroll *content* by `LegalGateView.focusRingInset` (4pt — the constant moved
+here when `AuthGateView` was retired with the sign-in gate) and subtract
 `inset * 2` from any `minHeight` so the padding doesn't turn a fitting layout into a scrolling
 one. Where the container already has horizontal padding, move 4pt of it inside the clip
 boundary (`.padding(.horizontal, 22 - inset)`) rather than adding to it — the visual margin
 stays identical.
+
+## Rule 14 — Never auto-present a `.sheet` at launch, and never host one in `.background()` (2026-07-25)
+
+**Symptom:** a sheet that is supposed to appear on first launch simply never appears — no crash,
+no console warning. It works perfectly when you trigger the same sheet from a button.
+
+**Cause — two compounding bugs, both silent:**
+
+1. **Presented before the window is key.** State resolved during `startupChecks()` lands at t≈0,
+   before the `NSWindow` becomes key. SwiftUI drops sheet presentations requested that early and
+   never retries. User-triggered sheets are immune because a click implies the window is already
+   key — which is exactly why this survives manual testing.
+2. **Hosted on a zero-size view inside `.background(...)`.** `.background` content is a
+   layout-only layer and an unreliable presentation anchor. `.background(Color.clear.sheet(...))`
+   is a workaround for "two `.sheet` modifiers on one view" that trades a loud bug for a silent one.
+
+**How it shipped:** issue #20. The legal-consent sheet was invisible to 100% of new users for
+multiple releases. Nobody caught it because every developer's Mac had already accepted, so the
+requirement was nil and there was nothing to present.
+
+**Fix:** if it blocks the app, make it a **view swap, not a sheet** — branch at the root and
+render the gate in place of the content (`ContentView` → `LegalGateView`). A swap has no
+presentation machinery to race. If you genuinely need a second sheet on one view, restructure so
+each sheet is on a different real view in the hierarchy, not a `Color.clear` in a background.
+
+**Corollary — test the empty state, not your state.** Any launch-gated UI must be verified from a
+virgin install. Ship a `#if DEBUG` reset (see `ConfigStore.resetLegalConsentForDebug()`) so the
+blank slate is the default in development, not something you have to remember to construct.

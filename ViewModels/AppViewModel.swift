@@ -79,14 +79,13 @@ final class AppViewModel: ObservableObject {
     @Published var currentScreen: Screen = .dashboard {
         didSet { Telemetry.log(.featureOpened(feature: currentScreen.telemetryName)) }
     }
-    /// Set to true once the initial 1.5-second minimum animation floor and start checks complete.
-    @Published var isAppReady = false
     /// True when a global refresh is spinning across all view models.
     @Published var isPerformingFullRefresh = false
     /// A user-facing description of why the refresh is happening (e.g., "Installing Python...").
     @Published var fullRefreshActionLabel: String? = nil
     /// Mirrors `legalViewModel.requirement` so `ContentView` (which observes this VM) can present
-    /// the blocking Privacy/Terms consent sheet. Non-nil ⇒ show the sheet.
+    /// the blocking Privacy/Terms consent gate. Non-nil ⇒ `ContentView` swaps `LegalGateView` in
+    /// place of the whole app.
     @Published var legalRequirement: LegalConsentRequirement?
 
     /// Guards the first full detection so it runs exactly once per launch. Kept after the removal
@@ -130,7 +129,7 @@ final class AppViewModel: ObservableObject {
     let pathEditorViewModel: PathEditorViewModel
     let gitGraphViewModel: GitGraphViewModel
     let snapshotViewModel: SnapshotViewModel
-    /// Owns versioned Privacy Policy / Terms & Conditions consent (blocking sheet + 14-day check).
+    /// Owns versioned Privacy Policy / Terms & Conditions consent (full-window gate + 14-day check).
     let legalViewModel = LegalConsentViewModel()
 
     /// Initializes the root ``AppViewModel`` and injects all downstream dependencies.
@@ -257,10 +256,25 @@ final class AppViewModel: ObservableObject {
             await self?.fullRefresh()
         }
 
-        // Mirror the legal-consent requirement so ContentView can present the blocking sheet.
+        // Mirror the legal-consent requirement so ContentView can swap in the blocking gate.
         self.legalViewModel.$requirement
             .removeDuplicates()
             .assign(to: &$legalRequirement)
+
+        // Decide the gate SYNCHRONOUSLY, here in init, before ContentView's body is ever evaluated.
+        //
+        // This must NOT wait for `startupChecks()`. That runs from ContentView's `.task`, which by
+        // definition fires *after* the view appears — so the full app (sidebar, dashboard, the lot)
+        // would render first, and only then get replaced by the gate. Awaiting the network inside
+        // `start()` made it worse, not better: `fetchRemote()` has a 10s timeout, so a new user on a
+        // slow connection could browse the app for ten seconds before being yanked into a consent
+        // screen they hadn't agreed to yet.
+        //
+        // `evaluate()` reads only ConfigStore, which loads config.json synchronously in its own
+        // init, so there is nothing to await — the accepted-vs-current comparison needs no network.
+        // The remote refresh still happens later in `startupChecks()`; it can only ever *add* a
+        // requirement (a newer published version), which is a correct mid-session re-prompt.
+        legalViewModel.evaluate()
     }
 
     /// Runs all VM startup/detection tasks in parallel.
@@ -323,12 +337,12 @@ final class AppViewModel: ObservableObject {
     /// 1. Immediately triggers ``LogsViewModel/startup()`` to capture startup logs.
     /// 2. Evaluates ``didRunInitialDetection`` to run a detached ``fullRefresh()``.
     /// 3. Initiates ``LegalConsentViewModel/start()``.
-    /// 4. Awaits 1.5 seconds strictly for animation pacing, then reveals the main app by setting ``isAppReady``.
     ///
     /// **Gotchas:**
-    /// - Holds the launch screen artificially for 1.5s to prevent jarring flashes on M-series Macs
-    ///   where the detection happens almost instantly.
     /// - Only triggers the detection sweep once, guarded by `didRunInitialDetection`.
+    /// - There is no launch screen and no reveal delay. `LaunchScreenView` and the `isAppReady`
+    ///   flag it observed were removed (2026-07-25) — the view was never instantiated outside its
+    ///   own `#Preview`, so the 1.5s floor held nothing back and only delayed a no-op.
     func startupChecks() async {
         logger.log("Catalyst launched - running initial detection")
 
@@ -345,14 +359,14 @@ final class AppViewModel: ObservableObject {
             Task { await self.fullRefresh() }
         }
 
-        // Resolve legal consent in parallel: refresh remote versions if the 14-day window elapsed,
-        // then compute whether the blocking sheet is needed.
+        // Refresh remote legal versions if the 14-day window elapsed, then re-evaluate.
+        //
+        // Detached on purpose. The gate decision that matters was ALREADY made synchronously in
+        // `init` — this is only the network top-up, and `fetchRemote()` carries a 10s timeout that
+        // must not hold `startupChecks()` open. It can only ever *add* a requirement (a newly
+        // published version), which is a correct mid-session re-prompt, never a missed first-launch
+        // one. Awaiting here bought nothing: `.task` already runs after first paint, so it could
+        // not have made the gate appear any earlier.
         Task { await legalViewModel.start() }
-
-        // Hold the launch screen only for the animation floor, then reveal the app.
-        try? await Task.sleep(for: .seconds(1.5))
-        withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
-            self.isAppReady = true
-        }
     }
 }

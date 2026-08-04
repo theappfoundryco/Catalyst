@@ -9,12 +9,13 @@ import Combine
 ///     build-bundled fallback so we work offline / before the first fetch),
 ///   • what the user has accepted on THIS Mac (persisted in ConfigStore → survives force-quit +
 ///     relaunch), and
-///   • a blocking, non-dismissable sheet that gates the app until the user accepts.
+///   • a full-window, non-dismissable gate (``LegalGateView``) that REPLACES the app until the
+///     user accepts.
 ///
-/// With no sign-in there is no consent checkbox, so the blocking sheet is the ONLY path and
-/// catches everyone: fresh installs, existing installs with nothing stored yet, and later version
-/// bumps alike. Version comparison is exact-match ("accepted != current" ⇒ must re-accept), so any
-/// change on either axis re-prompts only for the doc(s) that changed.
+/// With no sign-in there is no consent checkbox, so the gate is the ONLY path and catches everyone:
+/// fresh installs, existing installs with nothing stored yet, and later version bumps alike.
+/// Version comparison is exact-match ("accepted != current" ⇒ must re-accept), so any change on
+/// either axis re-prompts only for the doc(s) that changed.
 ///
 /// NETWORK NOTE: the versions JSON is served from theappfoundry.co at a path OUTSIDE `/catalyst/*`,
 /// so it never invokes the Vercel Edge Middleware — it's a plain static asset. That means one Edge
@@ -26,8 +27,10 @@ import Combine
 // MARK: - Config
 
 enum LegalConfig {
-    /// Versions shipped with THIS build — used before the first successful remote check and while
-    /// offline. Bump these in lock-step with the Vercel JSON when you publish new docs.
+    /// Versions shipped with THIS build. NOT merely an offline fallback: `currentPrivacyVersion` /
+    /// `currentTermsVersion` take `max(bundled, cached)`, so a bundled value NEWER than the cached
+    /// remote one wins and re-prompts immediately on update. That is the primary delivery path —
+    /// we publish new docs *with* a release. Bump these in lock-step with the Vercel JSON.
     static let bundledPrivacyVersion = "1.1"
     static let bundledTermsVersion   = "1.1"
 
@@ -53,18 +56,14 @@ struct LegalVersions: Codable {
 }
 
 /// Describes which document(s) currently require (re)acceptance, and whether each is a fresh
-/// first-time acceptance or an update to a previously-accepted version (drives the sheet copy).
-struct LegalConsentRequirement: Equatable, Identifiable {
+/// first-time acceptance or an update to a previously-accepted version (drives the gate copy).
+struct LegalConsentRequirement: Equatable {
     var needsPrivacy: Bool
     var needsTerms: Bool
     var privacyIsUpdate: Bool
     var termsIsUpdate: Bool
     var privacyVersion: String
     var termsVersion: String
-
-    /// Stable identity for `.sheet(item:)` — identical requirements share an id so the sheet
-    /// doesn't churn/re-present on re-evaluation.
-    var id: String { "\(needsPrivacy)-\(needsTerms)-\(privacyVersion)-\(termsVersion)" }
 
     /// True if any required doc is an update (vs. a first-time acceptance) — headline says
     /// "We've updated…" instead of "Please review…".
@@ -75,21 +74,75 @@ struct LegalConsentRequirement: Equatable, Identifiable {
 
 @MainActor
 final class LegalConsentViewModel: ObservableObject {
-    /// Non-nil ⇒ the blocking sheet must be shown. Mirrored into `AppViewModel` for presentation.
+    /// Non-nil ⇒ the blocking gate must be shown. Mirrored into `AppViewModel`, which `ContentView`
+    /// branches on to swap ``LegalGateView`` in for the entire app.
     @Published private(set) var requirement: LegalConsentRequirement?
 
     private let config = ConfigStore.shared
     private let session = URLSession(configuration: .ephemeral)
 
-    /// Effective "current" versions: last-known remote (cached in ConfigStore) else this build's
-    /// bundled values. URLs are stable constants, so they never need caching.
+    /// Effective "current" versions: the NEWER of this build's bundled value and the last-known
+    /// remote value cached in ConfigStore. URLs are stable constants, so they never need caching.
+    ///
+    /// WHY `max` AND NOT `cached ?? bundled`: with the coalescing form, the first successful remote
+    /// check set `cached` permanently and the bundled constant was never consulted again. Shipping a
+    /// build with a bumped `bundledTermsVersion` therefore did nothing — the user kept the stale
+    /// cached version and was not re-prompted until the 14-day remote check happened to fire. Since
+    /// we publish new docs *with* the release, the build must be able to win. Taking the max also
+    /// makes the value monotonic, so a bad/rolled-back remote payload can never walk a user's
+    /// current version backwards and silently drop a consent requirement they already satisfied.
     ///
     /// **Gotchas:** Hardcoding dynamic URLs in the binary forces an app update every time a Notion page moves; caching only the version identifier keeps the routing fully dynamic.
-    private var currentPrivacyVersion: String { config.cachedPrivacyVersion ?? LegalConfig.bundledPrivacyVersion }
-    private var currentTermsVersion: String { config.cachedTermsVersion ?? LegalConfig.bundledTermsVersion }
+    private var currentPrivacyVersion: String {
+        Self.newer(LegalConfig.bundledPrivacyVersion, config.cachedPrivacyVersion)
+    }
+    private var currentTermsVersion: String {
+        Self.newer(LegalConfig.bundledTermsVersion, config.cachedTermsVersion)
+    }
 
-    /// Kick off at launch (behind the auth gate): refresh remote versions if the 14-day window has
-    /// elapsed, then evaluate what still needs consent.
+    /// Returns whichever of the two version strings is newer, treating `nil`/blank as "absent".
+    ///
+    /// Uses `.numeric` comparison so "1.10" correctly sorts above "1.9" — a plain lexicographic
+    /// `>` puts "1.9" first and would skip the re-prompt on the tenth revision.
+    static func newer(_ bundled: String, _ cached: String?) -> String {
+        guard let cached = cached?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !cached.isEmpty else { return bundled }
+        return cached.compare(bundled, options: .numeric) == .orderedDescending ? cached : bundled
+    }
+
+    /// The DEBUG smoke-test reset lives HERE, not in ``start()``.
+    ///
+    /// `start()` runs from `ContentView`'s `.task`, i.e. after the first render. Resetting there
+    /// would let the main app paint, *then* wipe consent and swap the gate in — so a debug build
+    /// would exercise a different ordering than a real first launch, which is precisely the bug
+    /// this smoke test exists to catch. Resetting in `init` (before `AppViewModel.init` calls
+    /// `evaluate()`) makes a debug launch byte-for-byte identical to a virgin install.
+    ///
+    /// Opt OUT for a given run with `-KeepLegalConsent` in the scheme's launch arguments
+    /// (Product → Scheme → Edit Scheme → Run → Arguments). Default is ON: the failure mode this
+    /// guards (issue #20 — gate never appears for a new user) is invisible on any Mac that has
+    /// already accepted, which is every developer's Mac.
+    ///
+    /// **Gotchas:** Wrapped in `#if DEBUG`, so a Release build can never reset a real user's consent.
+    init() {
+        #if DEBUG
+        if !ProcessInfo.processInfo.arguments.contains("-KeepLegalConsent") {
+            config.resetLegalConsentForDebug()
+        }
+        #endif
+    }
+
+    /// Network top-up at launch: refresh remote versions if the 14-day window has elapsed, then
+    /// re-evaluate.
+    ///
+    /// Fired DETACHED from `startupChecks()`. It is not what gates the app — the decision that
+    /// matters is made synchronously in `AppViewModel.init` via ``evaluate()``, because
+    /// `startupChecks()` runs from `ContentView`'s `.task`, which fires after the first render and
+    /// therefore cannot gate it. This call can only ever *add* a requirement (a newly published
+    /// version), which is a correct mid-session re-prompt.
+    ///
+    /// (`Identifiable`/`id` were dropped from ``LegalConsentRequirement`` with the sheet —
+    /// `removeDuplicates()` on the mirror uses `Equatable`, and nothing else consumed the id.)
     func start() async {
         await refreshIfDue()
         evaluate()
@@ -122,7 +175,7 @@ final class LegalConsentViewModel: ObservableObject {
         )
     }
 
-    /// User accepted from the blocking sheet — record BOTH current versions (harmless to re-write
+    /// User accepted from the blocking gate — record BOTH current versions (harmless to re-write
     /// an already-current one) and clear the requirement.
     func acceptCurrent() {
         config.recordLegalAcceptance(privacy: currentPrivacyVersion, terms: currentTermsVersion)
@@ -146,6 +199,12 @@ final class LegalConsentViewModel: ObservableObject {
             let (data, resp) = try await session.data(for: req)
             guard let http = resp as? HTTPURLResponse, http.statusCode == 200 else { return }
             let v = try JSONDecoder().decode(LegalVersions.self, from: data)
+            /// Reject a structurally-valid but empty payload (`{"privacy":{"version":""}}`). Caching
+            /// a blank version would make `accepted != current` true forever and lock every user
+            /// behind a gate they can never clear, since acceptance would record the blank too.
+            guard !v.privacy.version.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                  !v.terms.version.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            else { return }
             /// Only stamps lastLegalCheck on success → a failed check retries next launch.
             ///
             /// **Rationale:** Ensures offline planes/trains don't artificially exhaust the 14-day cooldown timer without ever actually verifying the remote JSON state.
@@ -158,65 +217,140 @@ final class LegalConsentViewModel: ObservableObject {
     }
 }
 
-// MARK: - Blocking sheet
+// MARK: - Blocking gate
 
-/// Non-dismissable consent sheet. No close/cancel affordance and `interactiveDismissDisabled(true)`
-/// (blocks Escape / click-away), so the only way forward is to agree. Because the requirement is
-/// recomputed from persisted state on every launch, a force-quit mid-sheet simply re-shows it.
-struct LegalConsentSheet: View {
+/// Full-window consent gate — NOT a sheet. Replaces the app's entire content (sidebar, toolbar and
+/// all) until the user accepts, exactly like the old `AuthGateView` sign-in gate did.
+///
+/// WHY NOT A SHEET: the previous `.sheet(item:)` was hosted on a zero-size `Color.clear` inside
+/// `.background(...)` — a layout-only layer and an unreliable presentation anchor. Worse, the
+/// requirement resolves at t≈0, before the `NSWindow` is key, and SwiftUI silently drops sheet
+/// presentations requested before that. Net effect: brand-new users were never prompted at all
+/// (issue #20). A view swap has no presentation machinery to race, so it cannot fail this way.
+///
+/// LAYOUT: the flexible background — not the card — drives the window's minimum size. The card
+/// lives in an `.overlay` so its fixed height never becomes the window minimum (as a `ZStack`
+/// sibling it would push the min height past the screen and disable native full-screen). No
+/// `.ignoresSafeArea()`: the gate stays below the native titlebar so the real traffic lights stay
+/// visible and functional.
+struct LegalGateView: View {
     @ObservedObject var vm: LegalConsentViewModel
     let requirement: LegalConsentRequirement
     @State private var checked = false
 
+    /// One fixed card size regardless of how many documents need accepting, so the window doesn't
+    /// resize between the one-doc and two-doc cases.
+    static let cardWidth: CGFloat = 540
+    static let cardHeight: CGFloat = 600
+
+    /// Room for the AppKit focus ring, drawn OUTSIDE a control's frame and therefore clipped by the
+    /// enclosing ScrollView. Matches the old auth gate's inset.
+    static let focusRingInset: CGFloat = 4
+
     var body: some View {
-        VStack(spacing: 20) {
-            Image(systemName: "checkmark.shield.fill")
-                .font(.system(size: 54))
-                .foregroundStyle(.tint)
+        Color(NSColor.windowBackgroundColor)
+            .overlay(alignment: .center) {
+                consentCard.frame(width: Self.cardWidth, height: Self.cardHeight)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            /// Empty principal item reserves the SAME taller unified titlebar the main app uses, so
+            /// the window chrome doesn't jump height when the gate clears.
+            ///
+            /// **Gotchas:** Without a toolbar the window falls back to the compact toolbar-less titlebar, and the whole card visibly shifts up the moment the user accepts.
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Color.clear.frame(width: 1, height: 1)
+                }
+            }
+    }
 
-            Text(headline)
-                .font(.title.weight(.bold))
-                .multilineTextAlignment(.center)
+    // MARK: Card
 
-            Text(bodyText)
-                .font(.body)
+    /// Fixed-size card. Only the state content scrolls — the brand mark stays put.
+    private var consentCard: some View {
+        VStack(spacing: 24) {
+            brandMark
+
+            ScrollView(.vertical) {
+                VStack(spacing: 18) {
+                    Text(headline)
+                        .font(.title2.weight(.bold))
+                        .multilineTextAlignment(.center)
+
+                    Text(bodyText)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                    VStack(spacing: 10) {
+                        if requirement.needsPrivacy {
+                            docRow(title: "Privacy Policy",
+                                   version: requirement.privacyVersion,
+                                   url: LegalConfig.privacyURL,
+                                   updated: requirement.privacyIsUpdate)
+                        }
+                        if requirement.needsTerms {
+                            docRow(title: "Terms & Conditions",
+                                   version: requirement.termsVersion,
+                                   url: LegalConfig.termsURL,
+                                   updated: requirement.termsIsUpdate)
+                        }
+                    }
+
+                    Toggle(isOn: $checked) {
+                        Text(agreeLabel)
+                            .font(.callout)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .toggleStyle(.checkbox)
+
+                    Button { vm.acceptCurrent() } label: {
+                        Text("Agree & Continue").frame(maxWidth: .infinity)
+                    }
+                    .appButton(.primary)
+                    .controlSize(.large)
+                    .disabled(!checked)
+
+                    Text("Catalyst won't open until you accept. You can read either document in your browser first.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, Self.focusRingInset)
+                .padding(.vertical, Self.focusRingInset)
+            }
+            .scrollBounceBehavior(.basedOnSize)
+        }
+        .frame(maxWidth: 460)
+        .padding(30)
+        .background(Self.cardChrome)
+    }
+
+    /// Shared card shell, mirroring the old auth gate so the two gates are visually identical.
+    static var cardChrome: some View {
+        RoundedRectangle(cornerRadius: 20)
+            .fill(Color(NSColor.controlBackgroundColor))
+            .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(Color.primary.opacity(0.08)))
+    }
+
+    // MARK: Brand
+
+    private var brandMark: some View {
+        VStack(spacing: 12) {
+            Image(nsImage: NSApp.applicationIconImage)
+                .resizable()
+                .interpolation(.high)
+                .frame(width: 72, height: 72)
+            Text("Catalyst")
+                .font(.system(size: 30, weight: .bold, design: .rounded))
+            Text("Mission control for your Mac dev environment")
+                .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-
-            VStack(spacing: 10) {
-                if requirement.needsPrivacy {
-                    docRow(title: "Privacy Policy",
-                           version: requirement.privacyVersion,
-                           url: LegalConfig.privacyURL,
-                           updated: requirement.privacyIsUpdate)
-                }
-                if requirement.needsTerms {
-                    docRow(title: "Terms & Conditions",
-                           version: requirement.termsVersion,
-                           url: LegalConfig.termsURL,
-                           updated: requirement.termsIsUpdate)
-                }
-            }
-
-            Toggle(isOn: $checked) {
-                Text(agreeLabel)
-                    .font(.body)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-            }
-            .toggleStyle(.checkbox)
-
-            Button { vm.acceptCurrent() } label: {
-                Text("Agree & Continue").frame(maxWidth: .infinity)
-            }
-            .appButton(.primary)
-            .controlSize(.large)
-            .disabled(!checked)
         }
-        .padding(36)
-        .frame(width: 540)
-        .interactiveDismissDisabled(true)
     }
 
     // MARK: Rows
@@ -274,9 +408,9 @@ struct LegalConsentSheet: View {
     }
 
     private var agreeLabel: String {
-        /// Doc names are already listed in the rows above, so keep this short enough for one line.
-        ///
-        /// **Rationale:** Long wrapping disclaimer text pushes the primary "Accept" button below the fold on 13-inch MacBooks, preventing users from actually entering the app.
+        /// Doc names are already listed in the rows above, so this stays short. It may now wrap
+        /// freely — the card's ScrollView absorbs any overflow, so a long label can no longer push
+        /// the primary button below the fold on a 13-inch MacBook.
         (requirement.needsPrivacy && requirement.needsTerms)
             ? "I have read and agree to both documents above."
             : "I have read and agree to the \(docPhrase) above."
