@@ -120,8 +120,12 @@ final class LegalConsentViewModel: ObservableObject {
     ///   - bundled: The version compiled into this build. Acts as the floor.
     ///   - cached: The last version a successful remote check reported, if any.
     /// - Returns: Whichever version is later.
+    /// **Gotchas:** `nil` is not the only "absent". A blank or whitespace-only cached value must
+    /// fall back to the bundled floor too — caching `""` would make `accepted != current`
+    /// permanently true and lock every user behind a gate they could never clear.
     private static func newer(_ bundled: String, _ cached: String?) -> String {
-        guard let cached else { return bundled }
+        guard let cached = cached?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !cached.isEmpty else { return bundled }
         return isNewer(cached, than: bundled) ? cached : bundled
     }
 
@@ -142,16 +146,6 @@ final class LegalConsentViewModel: ObservableObject {
             if a != b { return a > b }
         }
         return false
-    }
-
-    /// Returns whichever of the two version strings is newer, treating `nil`/blank as "absent".
-    ///
-    /// Uses `.numeric` comparison so "1.10" correctly sorts above "1.9" — a plain lexicographic
-    /// `>` puts "1.9" first and would skip the re-prompt on the tenth revision.
-    static func newer(_ bundled: String, _ cached: String?) -> String {
-        guard let cached = cached?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !cached.isEmpty else { return bundled }
-        return cached.compare(bundled, options: .numeric) == .orderedDescending ? cached : bundled
     }
 
     /// The DEBUG smoke-test reset lives HERE, not in ``start()``.

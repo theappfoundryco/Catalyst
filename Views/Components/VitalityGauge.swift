@@ -78,7 +78,11 @@ struct VitalityGauge: View {
 
             /// Progress
             Circle()
-                .trim(from: 0.0, to: CGFloat(score) / 100.0)
+                /// Clamp the TRIM only, never the score or the grade. `.trim` is undefined outside
+                /// 0…1 and an out-of-range score renders as a corrupt ring; the number and the grey
+                /// ``VitalityGrade/unknown`` label still report the real value, so a bad score stays
+                /// visible rather than being silently flattened to 0 or 100.
+                .trim(from: 0.0, to: min(max(CGFloat(score) / 100.0, 0), 1))
                 .stroke(style: StrokeStyle(lineWidth: 15, lineCap: .round, lineJoin: .round))
                 .foregroundColor(grade.color)
                 .rotationEffect(Angle(degrees: 270.0))

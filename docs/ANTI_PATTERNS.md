@@ -274,17 +274,39 @@ one. Where the container already has horizontal padding, move 4pt of it inside t
 boundary (`.padding(.horizontal, 22 - inset)`) rather than adding to it — the visual margin
 stays identical.
 
-> **Stale reference (2026-07-30):** `AuthGateView` no longer exists on `main` — neither it nor
-> `LegalGateView` appears anywhere in the Swift sources, and `focusRingInset` is undefined. The
-> replacement constant arrives with the unmerged `acceptancesheet` branch. The 4pt rule still
-> holds; repoint the symbol when that branch lands.
+> **Resolved (2026-08-04):** `acceptancesheet` has landed. `LegalGateView.focusRingInset` is
+> defined at `Catalyst/LegalConsent.swift:292` and applied at 366–367, so the symbol this rule
+> names now exists. `AuthGateView` remains retired.
 
 ---
 
-## Rule 14 — *reserved*
+## Rule 14 — Never present a sheet from a zero-size layer, or before the window is key (2026-07-25)
 
-Claimed by the unmerged `acceptancesheet` branch (2026-07-25 session, legal-consent gate). Left
-empty on `main` so the two don't collide on merge. Do not reuse this number.
+**Symptom:** a fully built, correctly wired consent sheet that had **never once appeared** for a
+new user. No error, no warning, no log line — issue #20.
+
+**Cause:** two faults compounding.
+
+1. The sheet was hosted on a `Color.clear` inside `.background(...)`. That's a layout-only layer
+   with no size, and an unreliable presentation anchor.
+2. The requirement resolved at t≈0, before the `NSWindow` was key. SwiftUI **silently drops** a
+   sheet presentation requested that early — no error, and it never retries.
+
+The neighbouring `AppInfoSheet` worked fine and masked the problem, because it's user-triggered:
+a click guarantees the window is already key.
+
+**Avoid:** `.background(Color.clear.sheet(item:))`, and any presentation driven by state that
+settles during `init` or first layout.
+
+**Fix:** for anything that must gate the *whole* app, don't present at all — **swap the root
+view**. `LegalGateView` replaces `ContentView` entirely until accepted, decided synchronously in
+`AppViewModel.init` so the main UI never paints first. Network top-ups run detached and can only
+*add* a requirement, never miss a first-launch one.
+
+> **Why this stayed invisible:** every developer's Mac had already accepted, so the requirement
+> evaluated to `nil` and there was nothing to present. The `#if DEBUG` reset in
+> `LegalConsentViewModel.init` now makes the virgin-install state the default in development.
+> See also CODING_STANDARDS §6.5.
 
 ---
 
