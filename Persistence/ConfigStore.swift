@@ -28,7 +28,7 @@ final class ConfigStore {
         // MARK: Legal consent (Privacy Policy / Terms & Conditions)
         /// All optional so decoding a pre-existing config.json (which lacks these keys) leaves them
         /// nil — that's exactly the "existing user hasn't accepted anything yet" state the blocking
-        /// consent sheet backfills. See `LegalConsent.swift`.
+        /// consent gate backfills. See `LegalConsent.swift`.
         ///
         /// **Gotchas:** Adding mandatory non-optional fields to this struct will hard-crash the app for all existing users when `JSONDecoder` fails to parse their v1 config file.
         /// Privacy Policy version the user has accepted on this Mac (nil = never accepted).
@@ -177,4 +177,25 @@ final class ConfigStore {
         cache.lastLegalCheckISO = ISO8601DateFormatter().string(from: Date())
         save()
     }
+
+#if DEBUG
+    /// DEBUG-ONLY smoke-test hook: wipes every legal-consent field so the next `evaluate()` sees a
+    /// virgin install and re-presents ``LegalGateView``.
+    ///
+    /// Clears the *cached remote* versions and `lastLegalCheckISO` too, not just the accepted ones —
+    /// otherwise the 14-day cooldown stays satisfied and the run silently skips `fetchRemote()`,
+    /// so you'd be smoke-testing the bundled-fallback path every time and never the live JSON.
+    ///
+    /// **Gotchas:** Compiled out of Release entirely. If this ever ships, every user is re-prompted on every launch.
+    func resetLegalConsentForDebug() {
+        cache.acceptedPrivacyVersion = nil
+        cache.acceptedTermsVersion = nil
+        cache.legalAcceptedAtISO = nil
+        cache.cachedPrivacyVersion = nil
+        cache.cachedTermsVersion = nil
+        cache.lastLegalCheckISO = nil
+        save()
+        logger.log("🧪 DEBUG: legal consent reset — gate will re-present this launch")
+    }
+#endif
 }

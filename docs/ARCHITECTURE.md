@@ -641,11 +641,12 @@ change (install/uninstall) should funnel through here.
 **There is no launch splash anymore.** The old `LaunchScreenView` overlay (held 1.5 s on an
 `isAppReady` spring) was removed — it covered the titlebar and spawned the window-chrome
 hacks (see CODING_STANDARDS §6.7). The window now appears already framed and fills content in
-place. `isAppReady` is no longer used to gate any UI. The only launch "wait" a user sees is
-the neutral `.checking` spinner ("Checking your access…") while the saved token is verified,
-shown in the plain sign-in window (no sidebar). `LaunchScreenView.swift` still exists but is
-**unused** (deleting it would break the pbxproj reference; strip from the Xcode target to
-fully remove). Detection still runs in a background `Task` — every result is `@Published`, so
+place. **`LaunchScreenView.swift` and the `isAppReady` flag were fully deleted on 2026-07-25**
+(file removed, its 4 `project.pbxproj` entries stripped, and the 1.5 s `Task.sleep` floor in
+`startupChecks()` removed with them) — the view had been dead since 2026-07-14 and was never
+instantiated outside its own `#Preview`, so the delay held nothing back. The only gate that
+can now stand in front of the app is `LegalGateView` (§49.10).
+Detection still runs in a background `Task` — every result is `@Published`, so
 the dashboard fills in as each check finishes; it must **never** block rendering (§46).
 
 ## 30. File map
@@ -656,7 +657,6 @@ The navigation backbone — every folder and the role of each file.
 
 **`Views/`** — the app shell + 24 screens: `ContentView` (sidebar + detail switch,
 override indicator, shared `AppInfoSheet`, `.symbolRenderingMode(.monochrome)`, root
-`LaunchScreenView` (**unused since 2026-07-14 — splash removed**),
 `MenuBarContentView`, `StatusIndicatorView`, and one view per
 feature (§3–§S, incl. `SnapshotView`). `Views/Components/` holds reusable composites:
 `DashboardCards`, `LiveMetricsGrid`, `DrCatalystCards`, `IssueGroup`,
@@ -1099,7 +1099,7 @@ also the ones a contributor is least able to verify by clicking around.
 | Change persisted config | `Persistence/ConfigStore` (or `ProjectStore` / `UserDefaults` for install mode) |
 | Restyle a card / banner / button | `Helpers/CardStyleExtensionView`, `BannerView`, `MatchedLabelStyle` |
 | Change streamed console output | `Helpers/ConsoleOutput` + `OutputConsoleView` |
-| Change launch / menu-bar behavior | `Catalyst/CatalystApp`, `Views/LaunchScreenView`, `Views/MenuBarContentView` |
+| Change launch / menu-bar behavior | `Catalyst/CatalystApp`, `Views/MenuBarContentView` |
 | Add explainer/help copy | `Helpers/AppInfoCenter` (add an `InfoTopic`) |
 | Add global refresh on an action | `AppViewModel.fullRefresh()` + `onGlobalRefresh` |
 
@@ -1341,17 +1341,25 @@ surface, and single-seat device binding). They described a paid product that no 
 **Distribution — see RELEASING.md.** The `.zip` is a GitHub Release asset on **`theappfoundryco/Catalyst`**; the appcast and each version's `notes.html` + `meta.env` live in **`theappfoundryco/updates`** under `catalyst/`, served from `updates.theappfoundry.co`. **Version-only:** bump `MARKETING_VERSION` only — `CURRENT_PROJECT_VERSION = $(MARKETING_VERSION)` makes `CFBundleVersion` track it, and `sparkle:version` = the marketing version (Sparkle's comparator orders 1.1 > 1.0). Signing note: the target must NOT pin `CODE_SIGN_IDENTITY[sdk=macosx*] = "-"` (ad-hoc) — it made the app ad-hoc while Sparkle.framework was team-signed and Hardened Runtime aborted with "different Team IDs". Use Apple Development + the team.
 
 ## 49.10 Legal consent — versioned Privacy/Terms re-consent (2026-07-17)
-**What/why.** Legal docs change; when they do, every user must re-accept. A **blocking, non-dismissable** sheet gates the app until accepted; acceptance is stored **per-Mac** and survives force-quit/relaunch; a **14-day** check catches new versions.
+**What/why.** Legal docs change; when they do, every user must re-accept. A **blocking, non-dismissable full-window gate** stands in front of the app until accepted; acceptance is stored **per-Mac** and survives force-quit/relaunch; a **14-day** check catches new versions.
 
-**Files.** `Catalyst/LegalConsent.swift` (in the synchronized `Catalyst/` group → auto-registers, no pbxproj entry) holds `LegalConfig`, `LegalVersions`, `LegalConsentRequirement`, `LegalConsentViewModel` (`@MainActor`), and `LegalConsentSheet`. Storage fields live in `ConfigStore` (`acceptedPrivacyVersion`, `acceptedTermsVersion`, `cachedPrivacyVersion`, `cachedTermsVersion`, `lastLegalCheckISO`, `legalAcceptedAtISO`) + `recordLegalAcceptance` / `recordLegalRemote` accessors. `AppViewModel` owns `legalViewModel` and mirrors `$requirement → legalRequirement`. `ContentView` presents the sheet.
+**Files.** `Catalyst/LegalConsent.swift` (in the synchronized `Catalyst/` group → auto-registers, no pbxproj entry) holds `LegalConfig`, `LegalVersions`, `LegalConsentRequirement`, `LegalConsentViewModel` (`@MainActor`), and `LegalGateView`. Storage fields live in `ConfigStore` (`acceptedPrivacyVersion`, `acceptedTermsVersion`, `cachedPrivacyVersion`, `cachedTermsVersion`, `lastLegalCheckISO`, `legalAcceptedAtISO`) + `recordLegalAcceptance` / `recordLegalRemote` accessors. `AppViewModel` owns `legalViewModel` and mirrors `$requirement → legalRequirement`. `ContentView` branches on `legalRequirement` and swaps the gate in for the whole `NavigationSplitView`.
+
+**Gate, not sheet (2026-07-25, issue #20).** This was originally a `.sheet(item:)` hosted on a zero-size `Color.clear` inside `.background(...)`. It never presented for brand-new users: `.background` content is a layout-only layer and an unreliable presentation anchor, and the requirement resolves at t≈0 — before the `NSWindow` is key — which SwiftUI silently drops. (The neighbouring `AppInfoSheet` worked only because it is user-triggered, i.e. always after the window is key.) Replaced with an in-place view swap modelled on the retired `AuthGateView` sign-in gate: flexible `windowBackgroundColor` base drives the window minimum, the fixed 540×600 card sits in an `.overlay` (as a `ZStack` sibling it would push the window min-height past the screen and disable native full-screen), an empty principal `ToolbarItem` reserves the same taller unified titlebar so nothing jumps on accept, and no `.ignoresSafeArea()` so the native traffic lights stay live. A swap has no presentation machinery to race, so it cannot fail this way.
+
+**Testing first-launch.** `rm ~/Library/Application\ Support/com.shivanggulati.catalyst/config.json` and relaunch — all consent fields are optional, so a missing/legacy config decodes with `acceptedPrivacyVersion == nil` and the gate appears.
+
+**How "current version" is resolved (fixed 2026-07-25).** `current = max(bundled, cached)` via `LegalConsentViewModel.newer(_:_:)`, using `.numeric` string comparison. It was `cached ?? bundled`, which meant the first successful remote check pinned `cached` forever and the bundled constant was **never read again** — so shipping a build with a bumped `bundledTermsVersion` did nothing, and the user wasn't re-prompted until the 14-day remote check happened to fire. Since we publish new docs *with* the release, the build has to be able to win. `max` also makes the value monotonic, so a rolled-back or bad remote payload can't walk a user backwards. `.numeric` matters at "1.10" vs "1.9" — lexicographic `>` picks "1.9" and would skip the tenth revision. `fetchRemote()` additionally rejects blank version strings: caching `""` would make `accepted != current` permanently true and lock every user behind a gate they can never clear.
+
+**Publishing a new doc version — do both, in the same release:** (1) bump `version` in `public/legal/catalyst.json` in the `theappfoundryco` repo, (2) bump `LegalConfig.bundledPrivacyVersion` / `bundledTermsVersion` to match. The bundled bump re-prompts on update immediately; the JSON catches users who don't update.
 
 **Version source (Vercel, static — NOT Worker/Pages).** `refreshIfDue()` (every 14 days) GETs `https://theappfoundry.co/legal/catalyst.json` (`public/legal/catalyst.json` in the `theappfoundryco` repo). It is **deliberately not under `/catalyst/*`**, so the Vercel Edge Middleware never runs for it → **1 Edge Request, 0 Edge-Config reads**. Hobby caps: **1,000,000 Edge Requests/mo, 100,000 Edge-Config reads/mo**. (The middleware-backed bug/feature/support redirect links read Edge Config on every hit, so they burn *both* budgets — Edge-Config reads (100k) is the tighter ceiling for those, not the legal check.)
 
-**Truth model.** `current = cached ?? bundled` per doc. The remote manifest (cached) is the source of truth; `LegalConfig.bundled*Version` is only the offline/first-run fallback. Re-consent when `accepted != current` (exact match, per doc). **Override lever:** bumping `bundled*Version` alone only re-prompts devices that have never fetched the manifest — for everyone else the cached value wins. Both docs currently **v1.1** (manifest + bundled kept in sync).
+**Truth model.** `current = max(bundled, cached)` per doc, `.numeric` compare. Neither source is subordinate: the remote manifest catches users who don't update, and `LegalConfig.bundled*Version` catches users who do — whichever is newer wins. Re-consent when `accepted != current` (exact match, per doc). **Override lever:** bumping `bundled*Version` alone re-prompts **everyone on that build**, immediately, regardless of what they have cached. (Until 2026-07-25 this read `cached ?? bundled` and the opposite was true — a bundled bump reached only devices that had never fetched the manifest. See the version-resolution note above.) Both docs currently **v1.1** (manifest + bundled kept in sync).
 
-**Flow.** With no sign-in there is no consent checkbox, so the blocking sheet is the ONLY path and catches everyone: fresh installs, existing installs with nothing stored, and later version bumps alike. Copy adapts: "We've updated…" vs "Please review…", and only the doc(s) that changed. Force-quit mid-sheet → recomputed from persisted state on next launch, so it re-appears.
+**Flow.** With no sign-in there is no consent checkbox, so the gate is the ONLY path and catches everyone: fresh installs, existing installs with nothing stored, and later version bumps alike. Copy adapts: "We've updated…" vs "Please review…", and only the doc(s) that changed. Force-quit mid-gate → recomputed from persisted state on next launch, so it re-appears.
 
-**Gotchas (both bit us).** ① `@Published`/`ObservableObject` need an explicit `import Combine` — SwiftUI didn't re-export it. ② Two `.sheet` modifiers on one view is unsupported ("Publishing changes from within view updates" + thrash); the legal sheet is hosted on its **own node** via `.background(Color.clear.sheet(item: $appVM.legalRequirement))`, separate from the `infoCenter` sheet on the `NavigationSplitView`. `LegalConsentRequirement` is `Identifiable` with a **stable** id (not `UUID()`) so the item-sheet doesn't churn.
+**Gotchas (all three bit us).** ① `@Published`/`ObservableObject` need an explicit `import Combine` — SwiftUI didn't re-export it. ② Two `.sheet` modifiers on one view is unsupported ("Publishing changes from within view updates" + thrash). The old workaround — hosting the legal sheet on its own node via `.background(Color.clear.sheet(item:))` — is what broke it for every new user; there is no sheet here any more, so the constraint no longer applies to this feature (`LegalConsentRequirement` dropped `Identifiable` with it). See ANTI_PATTERNS Rule 14. ③ **The gate decision must be made in `AppViewModel.init`, not `startupChecks()`.** `startupChecks()` runs from `ContentView`'s `.task`, which fires *after* the first render — so deciding there lets the whole app paint before the gate swaps in, and awaiting the 10s `fetchRemote()` there means a new user can browse the ungated app for ten seconds first. `evaluate()` needs no network (ConfigStore loads `config.json` synchronously in its own init), so it runs in `init`; `start()` stays detached as a network top-up that can only ever *add* a requirement.
 
 ## 49.11 Default Python Version card — surgical `~/.zshrc_catalyst` editing (2026-07-17)
 **What.** A dashboard card (`DefaultPythonCard` in `DashboardCards.swift`, driven by `Catalyst/PythonDefaultManager.swift`, owned by `DashboardViewModel`) that sets the default `python`/`python3`/`pip` for **new shells**.

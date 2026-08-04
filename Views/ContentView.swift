@@ -12,9 +12,18 @@ struct ContentView: View {
     var body: some View {
         Group {
             /// Catalyst is free and unauthenticated: there is no sign-in gate and no entitlement
-            /// branch. The full app renders immediately on launch.
+            /// branch. The only thing that can stand in front of the app is unaccepted legal
+            /// consent, which swaps the ENTIRE window content (sidebar + toolbar included) for
+            /// ``LegalGateView`` — the same in-place swap the old sign-in gate used.
+            ///
+            /// Deliberately a view swap, NOT a sheet: the requirement resolves before the window is
+            /// key, and SwiftUI silently drops sheet presentations requested that early, so new
+            /// users were never prompted (issue #20). A swap has no presentation race to lose.
             ///
             /// **Gotchas:** Attempting to introduce async authorization checks here will cause a white-screen flash before the primary window renders.
+            if let req = appVM.legalRequirement {
+                LegalGateView(vm: appVM.legalViewModel, requirement: req)
+            } else {
             NavigationSplitView {
                 /// Sidebar
                 ///
@@ -276,21 +285,8 @@ struct ContentView: View {
             .sheet(item: $infoCenter.topic) { topic in
                 AppInfoSheet(initialTopic: topic)
             }
-            /// Blocking Privacy/Terms consent sheet — window-modal over the whole app.
-            /// Hosted on its OWN view node (a clear background) rather than stacked as a second
-            /// `.sheet` on this NavigationSplitView: two sheet modifiers on one view is unsupported
-            /// and thrashes SwiftUI's presentation state. A macOS sheet is window-modal regardless
-            /// of which view hosts it, so it still blocks the whole app. Non-dismissable (the sheet
-            /// itself sets `interactiveDismissDisabled`); acceptance clears the requirement, which
-            /// nils the item and dismisses. Recomputed from persisted state on launch, so it
-            /// survives force-quit/relaunch and re-appears on a version bump.
-            ///
-            /// **Gotchas:** Attaching this second `.sheet` directly to the `NavigationSplitView` crashes SwiftUI silently on macOS 14 when the app launches.
-            .background(
-                Color.clear.sheet(item: $appVM.legalRequirement) { req in
-                    LegalConsentSheet(vm: appVM.legalViewModel, requirement: req)
-                }
-            )
+            }   // end `else` — main app. The NavigationSplitView above is deliberately left at its
+                // original indentation so this stays a small, reviewable diff (issue #20).
         }
         .onChange(of: scenePhase) { phase in
             if phase == .active {

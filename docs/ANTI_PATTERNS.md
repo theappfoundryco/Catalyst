@@ -103,7 +103,7 @@ Keep card edges defined with a border, not a shadow. **Use `cardStyle()` for eve
 
 **Look-preserving fix:** use a solid `Color(NSColor.controlBackgroundColor)` (or `windowBackgroundColor`) fill, which reads almost identically against the app's background, with no per-frame compositing. Reserve materials/blur for **static, non-scrolling** chrome (launch screen, sheet backdrops, popovers).
 
-**Audit hits to review:** `Components/CruftSweeperCards.swift:402` (`Material.thinMaterial`), `Components/DrCatalystCards.swift:157` (`Material.thickMaterial`). Fine if on a fixed header/overlay; replace if inside scrolling list content. (`LaunchScreen`/`gearlaunch`/`flameLaunch` blurs are fine — they never scroll. Note: `LaunchScreenView` is **unused** as of 2026-07-14, splash removed.)
+**Audit hits to review:** `Components/CruftSweeperCards.swift:402` (`Material.thinMaterial`), `Components/DrCatalystCards.swift:157` (`Material.thickMaterial`). Fine if on a fixed header/overlay; replace if inside scrolling list content. (`LaunchScreen`/`gearlaunch`/`flameLaunch` blurs are fine — they never scroll. Note: `LaunchScreenView` was deleted on 2026-07-25.)
 
 ---
 
@@ -267,7 +267,8 @@ owns vertical scrolling.
 **Cause:** AppKit draws the focus ring *outside* the control's frame, and `ScrollView` clips to
 its bounds. A field flush against the scroll edge loses part of its ring.
 
-**Fix:** inset the scroll *content* by `AuthGateView.focusRingInset` (4pt) and subtract
+**Fix:** inset the scroll *content* by `LegalGateView.focusRingInset` (4pt — the constant moved
+here when `AuthGateView` was retired with the sign-in gate) and subtract
 `inset * 2` from any `minHeight` so the padding doesn't turn a fitting layout into a scrolling
 one. Where the container already has horizontal padding, move 4pt of it inside the clip
 boundary (`.padding(.horizontal, 22 - inset)`) rather than adding to it — the visual margin
