@@ -2,8 +2,22 @@
   "app_name": "Catalyst",
   "developer": "The App Foundry",
   "copyright": "The App Foundry",
-  "latest": "1.3",
+  "latest": "1.4",
   "versions": {
+    "1.4": {
+      "release_date": "2026-08-04",
+      "tagline": "Steadier, and truer.",
+      "highlights": [
+        "The Cruft Sweeper handles \"Expand All\" without freezing, even after a deep scan turns up thousands of items.",
+        "Battery health now matches what macOS itself reports, instead of a figure that drifted with temperature and charge.",
+        "A broken Node or npm setup is reported as broken, rather than quietly passing as healthy.",
+        "Restoring a snapshot is safer: your shell profile is checked before anything is overwritten, and rolled back automatically if the write doesn't look right.",
+        "Health scores read the same everywhere — one colour scale across Dr. Catalyst, Battery and SSD, so a score no longer looks fine on one screen and poor on another.",
+        "Refresh buttons hold their place while they spin, and a scan you navigate away from no longer leaves the dashboard stuck until you reopen the app.",
+        "Upgrading pip on a Homebrew-managed setup now works instead of hanging, and upgrades that could never succeed are no longer offered."
+      ],
+      "requirements": "macOS 14.6 or later"
+    },
     "1.3": {
       "release_date": "2026-07-22",
       "tagline": "Make it yours.",
