@@ -101,6 +101,20 @@ cp Telemetry/GoogleService-Info.plist \
   "$(ls -d ~/Library/Developer/Xcode/DerivedData/Catalyst-*/Build/Products/Debug/Catalyst.app)/Contents/Resources/"
 ```
 
+### The guard against `git add -f`
+
+`.gitignore` is a default, not a guarantee — `git add -f` overrides it silently, and this repo has
+already had one Firebase config reach a public tag that way. Install the pre-commit hook once per
+clone:
+
+```sh
+./Scripts/install_git_hooks.sh
+```
+
+It refuses any commit staging `GoogleService-Info.plist`, `.p8`/`.p12`/`.pem`,
+`.mobileprovision`, `sparkle_private.key` or `.env*`, and separately scans staged *content* for
+live-looking API and private keys. Hooks aren't tracked by git, so the installer is tracked instead.
+
 Before your first commit in this directory:
 
 ```sh
