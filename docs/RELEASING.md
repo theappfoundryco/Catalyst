@@ -206,6 +206,38 @@ custom `SPUUserDriver` — the standard Sparkle window works fine for v1.)
 
 ---
 
+### F. Firebase — the analytics config (v1.4+)
+
+`Telemetry/GoogleService-Info.plist` is **gitignored and must never be committed** — this repo is
+public. Keep the file at that path on the release machine; it is CODEOWNERS-held and distributed out
+of band.
+
+It is deliberately **not** a Copy Bundle Resources entry. `project.pbxproj` is tracked, so a resource
+reference would ship a pointer to a file no contributor has and every fresh clone would fail with
+`Build input file cannot be found`. A Run Script phase can't do it either: `ENABLE_USER_SCRIPT_SANDBOXING`
+denies undeclared reads, and declaring the plist restores the missing-file error.
+
+So `cut_release.sh` injects it **after `xcodebuild -exportArchive`, before the DMG is built**:
+
+```
+export → cp plist into Catalyst.app/Contents/Resources/ → codesign --force → verify → DMG → notarize → staple
+```
+
+- Re-signing is `--force`, **never `--deep`** — nested code (Sparkle, the three Firebase frameworks)
+  is already correctly signed by the export, and `--deep` re-signs it with the wrong flags.
+- Hardened runtime and entitlements are reasserted on the re-sign, or notarization rejects the bundle.
+- The identity is resolved by SHA-1 from `security find-identity`, not by certificate name — the CN
+  embeds the account holder's name and differs between machines.
+- `codesign --verify --strict` runs immediately after and **aborts the release** if it fails.
+- If the plist is missing the script warns and asks for confirmation; the default is to abort.
+
+**Consequence:** analytics exist only in official signed releases. Dev builds and builds from a public
+checkout have no config and send nothing. That is intended, not a gap.
+
+**Bundle impact:** Firebase adds three frameworks (`FirebaseAnalytics`, `GoogleAppMeasurement`,
+`GoogleAppMeasurementIdentitySupport`). They are small, but they are new nested code that Apple will
+scan — expect the first notarization with them present to take longer than previous runs.
+
 ## Cutting a release
 
 Two options — a local script (simplest) or GitHub Actions on tag push.

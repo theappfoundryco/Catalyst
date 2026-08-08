@@ -607,6 +607,8 @@ private struct SnapshotRestorePlanView: View {
     @ObservedObject var vm: SnapshotViewModel
     @ObservedObject private var installPrefs = InstallPreferences.shared
     @State private var expanded: Set<SnapshotSectionKind> = []
+    /// Gates ``previewBar``'s Restore button behind a confirmation naming what will be written.
+    @State private var showRestoreConfirmation = false
 
     private var isStatus: Bool { vm.isShowingStatus }
     private var hasPipActions: Bool { vm.actions.contains { $0.kind == .pip } }
@@ -976,7 +978,7 @@ private struct SnapshotRestorePlanView: View {
             title: "\(vm.actionableCount) items selected",
             subtitle: "Idempotent & resumable · already-set and blocked items are skipped"
         ) {
-            Button { Task { await vm.runRestore() } } label: {
+            Button { showRestoreConfirmation = true } label: {
                 Text("Restore \(vm.actionableCount)")
                     .fontWeight(.semibold)
                     .frame(minWidth: 140)
@@ -986,6 +988,56 @@ private struct SnapshotRestorePlanView: View {
             .controlSize(.large)
             .disabled(vm.isWorking)
         }
+        /// Restore is the highest-blast-radius action in the app and was the ONLY destructive
+        /// flow without a prompt — Cruft Sweeper, uninstalls, venv deletion and login items all
+        /// ask first, and every one of them can do less damage than this.
+        ///
+        /// The four guards added for issue #13 (refuse a smaller profile, refuse to drop
+        /// `brew shellenv`, verify the backup's byte count, roll back on a failed write or a
+        /// `zsh -n` failure) are all invisible. This is where the user learns they exist, which is
+        /// the difference between "this app rewrote my shell profile" and "this app told me it was
+        /// going to, and said it had my back if it went wrong".
+        .confirmationDialog(
+            restoreConfirmTitle,
+            isPresented: $showRestoreConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Restore \(vm.actionableCount) Items", role: vm.pendingTouchesShell ? .destructive : nil) {
+                Task { await vm.runRestore() }
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text(restoreConfirmMessage)
+        }
+    }
+
+    /// Title escalates only when the shell profile is in the pending set — an additive restore
+    /// (formulae, pip packages) doesn't deserve the same alarm as one that rewrites `~/.zshrc`.
+    private var restoreConfirmTitle: String {
+        vm.pendingTouchesShell
+            ? "Restore will rewrite your shell configuration"
+            : "Restore \(vm.actionableCount) items?"
+    }
+
+    /// Names the sections that will be written, in restore order, and — when the shell profile is
+    /// among them — spells out the four guards from issue #13 that would otherwise be invisible.
+    ///
+    /// The non-shell branch says "nothing is removed" rather than staying silent, because a restore
+    /// that only installs formulae and pip packages is genuinely additive and shouldn't inherit the
+    /// tone of one that rewrites `~/.zshrc`.
+    private var restoreConfirmMessage: String {
+        let sections = SnapshotSectionKind.restoreOrder
+            .filter { vm.pendingKinds.contains($0) }
+            .map(\.title)
+            .joined(separator: ", ")
+        if vm.pendingTouchesShell {
+            return "This writes to \(sections).\n\n"
+                 + "Your ~/.zshrc is backed up first and restored automatically if the new one "
+                 + "fails to write or doesn't parse. Catalyst also refuses to replace it with a "
+                 + "smaller file, or with one that drops your Homebrew setup line."
+        }
+        return "This writes to \(sections). Nothing is removed — items already present on this "
+             + "Mac are skipped, and the run can be stopped partway."
     }
 
     /// Status phase: Cancel while running, else Back to Preview / Done.

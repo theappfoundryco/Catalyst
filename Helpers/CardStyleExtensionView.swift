@@ -138,6 +138,56 @@ struct StatusBanner: View {
     }
 }
 
+/// The analytics reassurance panel: what is *not* collected, stated before what is.
+///
+/// Shown in exactly two places — the consent gate (``LegalGateView``) and the About screen's
+/// Privacy card — and deliberately **word-for-word identical** in both. Someone who unticks at the
+/// gate and later goes looking for the switch should meet the same sentences, not a reworded
+/// version that invites them to wonder which one is the real promise.
+///
+/// Green rather than the blue used elsewhere: the other banners in the app mean "here is some
+/// information", and this one is the app volunteering good news about itself.
+///
+/// Composes its own body instead of using ``StatusBanner`` because it needs a headline plus three
+/// weighted lines, which the one-string API can't express — the case that helper's own
+/// documentation calls out as the reason to apply ``statusBannerChrome(tint:cornerRadius:)``
+/// directly (CODING_STANDARDS 12.9).
+///
+/// ```swift
+/// PrivacyReassuranceBanner()
+/// ```
+struct PrivacyReassuranceBanner: View {
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "hand.raised.fill")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(.green)
+            VStack(alignment: .leading, spacing: 5) {
+                Text("Nothing about you. Nothing about your Mac.")
+                    .font(.callout.weight(.semibold))
+                    .foregroundStyle(.primary)
+                Text("No name, no email, no account — there isn't one. No serial number, no "
+                     + "hardware ID, no host name. None of your files, packages, keys or code.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text("Only which screens you open, so we know what to make better.")
+                    .font(.caption)
+                    .foregroundStyle(.primary)
+                /// Deliberately concrete rather than "won't affect battery at all". The numbers are
+                /// checkable and the absolute isn't — and overclaiming in the one panel where a
+                /// user decides whether to trust the app takes the rest of the copy down with it.
+                Text("Light as a feather: a few hundred bytes a session, no background process, "
+                     + "and nothing running at all once Catalyst is closed.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .statusBannerChrome(tint: .green)
+    }
+}
+
 /// A page-level scroll container backed by `List` (`NSScrollView`) for smooth,
 /// native macOS scrolling.
 ///

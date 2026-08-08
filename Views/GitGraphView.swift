@@ -41,20 +41,48 @@ struct GitGraphView: View {
             .toolbar {
                 /// View controls — what you're looking at and which repo.
                 ///
-                /// **Rationale:** Grouped together because all three change the *subject* of the
-                /// view (filter it, reconfigure it, swap the repo). Refresh doesn't: it re-reads
-                /// what's already on screen. Putting it in the same capsule invited a misclick
-                /// on the one control that discards nothing but costs a full re-read.
-                ToolbarItemGroup(placement: .primaryAction) {
-                    if case .loading = vm.state {
-                        ProgressView().controlSize(.small)
-                    } else if case .loaded = vm.state {
+                /// **Rationale:** One capsule, because all three change the *subject* of the view
+                /// (filter it, reconfigure it, swap the repo). Refresh doesn't: it re-reads what's
+                /// already on screen. Sharing a capsule with it invited a misclick on the one
+                /// control that discards nothing but costs a full re-read.
+                ///
+                /// **One `ToolbarItem` wrapping an `HStack`, NOT a `ToolbarItemGroup`.** A group's
+                /// children are separate toolbar items, so on macOS 26 Liquid Glass decides their
+                /// capsule boundaries itself — and it split them three ways, leaving "Open Another"
+                /// sharing a capsule with Refresh. One item is one capsule, by construction, with
+                /// no dependence on how the glass container chooses to group siblings.
+                ToolbarItem(placement: .primaryAction) {
+                    /// The `HStack` is the item's root and never changes, so the capsule is
+                    /// measured once. Branching *here* — `if case .loaded` at the item root — is
+                    /// what CODING_STANDARDS 12.55 forbids: it swaps the item's identity, SwiftUI
+                    /// tears the item down, and the glass container re-groups around whatever
+                    /// remains.
+                    ///
+                    /// **The controls stay in the layout while loading, at zero opacity, rather
+                    /// than being replaced by the spinner.** Swapping them for a bare
+                    /// `ProgressView` let the capsule shrink to the spinner's ~20pt intrinsic
+                    /// width and then snap back out — the visible "cramped glass" on opening a
+                    /// repository. Holding their footprint means the glass is measured once, from
+                    /// the widest state, and the spinner is centred over it. Same technique as
+                    /// ``RefreshToolbarContent`` and `NetworkDiagnosticsView`.
+                    HStack(spacing: 2) {
                         filtersButton
                         optionsMenu
                         Button { vm.chooseRepository() } label: {
                             Label("Open Another", systemImage: "folder.badge.plus")
                         }
                         .help("Open a different repository")
+                    }
+                    .opacity(isGraphReady ? 1 : 0)
+                    /// Not `.hidden()` and not an `if` — both remove the footprint and
+                    /// reintroduce the collapse.
+                    .disabled(!isGraphReady)
+                    .overlay {
+                        if case .loading = vm.state {
+                            ProgressView()
+                                .progressViewStyle(.circular)
+                                .controlSize(.small)
+                        }
                     }
                 }
 
@@ -107,6 +135,15 @@ struct GitGraphView: View {
             .sheet(item: $vm.selectedCommit) { _ in
                 CommitDetailSheet(vm: vm)
             }
+    }
+
+    /// True once a repository is on screen and its controls are meaningful.
+    ///
+    /// Drives opacity and `disabled` rather than an `if`, so the toolbar capsule keeps a constant
+    /// width across `.empty → .loading → .loaded` instead of resizing at each transition.
+    private var isGraphReady: Bool {
+        if case .loaded = vm.state { return true }
+        return false
     }
 
     /// Graph controls: scope + ordering + limit (re-fetch), density + columns (display).

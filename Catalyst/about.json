@@ -5,21 +5,23 @@
   "latest": "1.4",
   "versions": {
     "1.4": {
-      "release_date": "2026-08-04",
+      "release_date": "8 August 2026",
       "tagline": "Steadier, and truer.",
       "highlights": [
-        "The Cruft Sweeper handles \"Expand All\" without freezing, even after a deep scan turns up thousands of items.",
-        "Battery health now matches what macOS itself reports, instead of a figure that drifted with temperature and charge.",
-        "A broken Node or npm setup is reported as broken, rather than quietly passing as healthy.",
-        "Restoring a snapshot is safer: your shell profile is checked before anything is overwritten, and rolled back automatically if the write doesn't look right.",
-        "Health scores read the same everywhere — one colour scale across Dr. Catalyst, Battery and SSD, so a score no longer looks fine on one screen and poor on another.",
-        "Refresh buttons hold their place while they spin, and a scan you navigate away from no longer leaves the dashboard stuck until you reopen the app.",
-        "Upgrading pip on a Homebrew-managed setup now works instead of hanging, and upgrades that could never succeed are no longer offered."
+        "Cruft Sweeper stays fluid at any size — expand everything a deep scan turns up and it opens instantly, thousands of items and all.",
+        "Battery health reads exactly what macOS reports, holding steady across temperature and charge.",
+        "Dr. Catalyst spots a Node or npm install that's quietly broken, not just a missing one.",
+        "Snapshot restore tells you what it's about to write, backs up your shell profile first, and rolls itself back if anything looks off.",
+        "One health scale across Dr. Catalyst, Battery and SSD, so a score means the same thing wherever you read it.",
+        "Steadier launches: a rare stall that could leave the dashboard waiting is fixed at its source, in how Catalyst reads command output.",
+        "pip upgrades succeed on Homebrew-managed Pythons, and Catalyst only offers the ones that can actually work.",
+        "Toolbars hold their shape while they work, so buttons stay exactly where you left them.",
+        "New: anonymous usage analytics — only which screens you open, never anything about you or your Mac. On by default, off in one click from About."
       ],
       "requirements": "macOS 14.6 or later"
     },
     "1.3": {
-      "release_date": "2026-07-22",
+      "release_date": "22 July 2026",
       "tagline": "Make it yours.",
       "highlights": [
         "A personal touch: pick a name and an avatar from a gallery of 100, right from the new profile row at the bottom of the sidebar.",
@@ -31,7 +33,7 @@
       "requirements": "macOS 14.6 or later"
     },
     "1.2": {
-      "release_date": "2026-07-22",
+      "release_date": "22 July 2026",
       "tagline": "Faster, and steadier.",
       "highlights": [
         "Noticeably faster — screens open quicker and long package lists scroll smoothly, even while the machine is busy.",
@@ -42,7 +44,7 @@
       "requirements": "macOS 14.6 or later"
     },
     "1.1": {
-      "release_date": "2026-07-21",
+      "release_date": "21 July 2026",
       "tagline": "Smoother updates.",
       "highlights": [
         "Automatic updates are now verified end to end, so future versions arrive in the background and install with a single click.",
@@ -52,7 +54,7 @@
       "requirements": "macOS 14.6 or later"
     },
     "1.0": {
-      "release_date": "2026-07-21",
+      "release_date": "21 July 2026",
       "tagline": "Free, open source, and yours to keep.",
       "highlights": [
         "Catalyst is now free. Every feature, with no licence to buy, no trial to run out, and nothing held back behind an upgrade screen.",

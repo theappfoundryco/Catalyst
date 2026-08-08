@@ -216,8 +216,24 @@ actor AsyncProcessRunner {
                     stdoutPipe.fileHandleForReading.readabilityHandler = nil
                     stderrPipe.fileHandleForReading.readabilityHandler = nil
 
-                    let trailingOut = try? stdoutPipe.fileHandleForReading.readToEnd()
-                    let trailingErr = try? stderrPipe.fileHandleForReading.readToEnd()
+                    /// NON-BLOCKING trailing drain. This used to be `readToEnd()`, which is a
+                    /// **permanent hang** and not a theoretical one (12.54).
+                    ///
+                    /// `readToEnd` returns at EOF, and EOF on a pipe means *every* write end is
+                    /// closed — not just the child's. A command that forks a helper which
+                    /// inherits the descriptor (brew, node/python shims, anything that
+                    /// daemonises) leaves that write end open after the child itself exits, so
+                    /// the read blocks forever. Worse, `timeoutTask` is cancelled four lines
+                    /// above, so by the time the read blocks the one mechanism that could
+                    /// rescue it is already disarmed: the continuation is never resumed and
+                    /// every caller awaiting this process hangs for the life of the app.
+                    ///
+                    /// Draining a non-blocking descriptor takes whatever is buffered and stops
+                    /// at `EAGAIN` instead of waiting on a descriptor someone else is holding.
+                    /// A fast-exiting process whose output lands after this still loses nothing
+                    /// it hasn't already delivered through `readabilityHandler`.
+                    let trailingOut = Self.drainAvailable(stdoutPipe.fileHandleForReading)
+                    let trailingErr = Self.drainAvailable(stderrPipe.fileHandleForReading)
 
                     dataLock.lock()
                     if let trailingOut { stdoutData.append(trailingOut) }
@@ -349,6 +365,42 @@ actor AsyncProcessRunner {
 
     /// Milliseconds since `from` (debug timing helper).
     nonisolated static func msSince(_ from: Date) -> Int { Int(Date().timeIntervalSince(from) * 1000) }
+
+    /// Reads everything currently buffered on `handle` without ever waiting for EOF.
+    ///
+    /// The replacement for `readToEnd()` in `terminationHandler`. EOF on a pipe requires every
+    /// write end to be closed, including ones inherited by grandchildren the command forked, so
+    /// waiting for it can block indefinitely on a process that has already exited (12.54).
+    /// Flipping the descriptor to `O_NONBLOCK` turns that unbounded wait into an `EAGAIN` and a
+    /// clean return.
+    ///
+    /// - Parameter handle: The pipe's read handle. Its flags are modified in place; the handle is
+    ///   discarded immediately afterwards, so nothing else observes the change.
+    /// - Returns: Whatever was readable now, or `nil` if nothing was.
+    ///
+    /// **Gotchas:** `EINTR` is retried rather than treated as end-of-data — a signal arriving
+    /// mid-read would otherwise silently truncate output. `EAGAIN`/`EWOULDBLOCK` mean "nothing
+    /// more right now", which is the normal exit path here, not an error.
+    nonisolated static func drainAvailable(_ handle: FileHandle) -> Data? {
+        let fd = handle.fileDescriptor
+        guard fd >= 0 else { return nil }
+        let flags = fcntl(fd, F_GETFL)
+        if flags != -1 { _ = fcntl(fd, F_SETFL, flags | O_NONBLOCK) }
+
+        var out = Data()
+        var buf = [UInt8](repeating: 0, count: 64 * 1024)
+        while true {
+            let n = buf.withUnsafeMutableBytes { read(fd, $0.baseAddress, $0.count) }
+            if n > 0 {
+                out.append(contentsOf: buf[0..<n])
+            } else if n == -1 && errno == EINTR {
+                continue
+            } else {
+                break
+            }
+        }
+        return out.isEmpty ? nil : out
+    }
 
     /// Reads a file handle to EOF on a detached background thread. `readToEnd()`
     /// blocks until the writer closes its end (the child process exiting), so

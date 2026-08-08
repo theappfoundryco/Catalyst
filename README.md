@@ -123,8 +123,8 @@ A complete, screen-by-screen reference lives in [`docs/ARCHITECTURE.md`](docs/AR
   read-only static JSON catalogs and the update feed — both plain files you can open in a browser.
 - **Recoverable by default.** Deletions prefer the Trash over permanent removal, and every
   destructive path is allowlist-gated (see [How it works](#how-it-works)).
-- **Auditable telemetry.** Opt-in, off by default, and two events wide: that the app opened, and
-  which screen you opened. It lives in exactly one file, so the answer to "what does this report
+- **Auditable telemetry.** Two events wide — that the app opened, and which screen you opened.
+  On by default, off in one click, and nothing collected before you're shown the choice. It lives in exactly one file, so the answer to "what does this report
   about me?" is one place, in public — and a build from this source reports nothing at all.
 
 ## Screenshots
@@ -185,7 +185,28 @@ open Catalyst.xcodeproj
 ```
 
 Build and run. There is no backend to stand up, no API key to obtain, and no configuration step.
-Sparkle is the only dependency, resolved automatically over Swift Package Manager.
+Dependencies resolve automatically over Swift Package Manager: **Sparkle** for updates and
+**Firebase Analytics** for the opt-out usage counts described under
+[Privacy & security](#privacy--security).
+
+**A build from this repository sends nothing**, whatever the analytics switch says. The provider's
+config file is not in the repo and never will be; the app resolves it at runtime and treats its
+absence as "analytics unavailable" rather than as an error. You do not need it, and its absence
+cannot break your build — that is deliberate and tested.
+
+Two things worth doing once per clone:
+
+```sh
+./Scripts/install_git_hooks.sh
+```
+
+Installs a pre-commit hook that refuses to commit provider configs, key material, or staged lines
+that look like live API keys. `.gitignore` alone doesn't stop `git add -f`, and this is a public
+repo.
+
+Debug builds **wipe their own config on every launch** — consent state, analytics choice and all
+caches — so each run exercises a genuine first launch. Pass `-KeepLegalConsent` in the scheme's
+launch arguments (Product → Scheme → Edit Scheme → Run → Arguments) to keep state between runs.
 
 A privileged helper tool handles the few operations that genuinely require elevation. It is installed
 on first use with your explicit approval, communicates over XPC, and its source is in
@@ -225,8 +246,8 @@ The deeper design — layers, the composition root, the safety invariants — is
 ## Privacy & security
 
 **Catalyst has no account, no crash reporter, and no identifier derived from your machine.** Usage
-analytics exist as of v1.4, are **off unless you turn them on**, and are two events wide: that the
-app opened, and which screen you opened. Nothing else — no file paths, no package names, no host
+analytics exist as of v1.4, are **on by default and off in one click**, and are two events wide:
+that the app opened, and which screen you opened. Nothing else — no file paths, no package names, no host
 name, and nothing about what you did inside a screen. Crashlytics was removed at v1.0 and has not
 returned.
 
@@ -263,9 +284,10 @@ files, deliberately: "what does Catalyst report about me?" should be checkable, 
 The screen name is a fixed list of 25 titles compiled into the binary, not a free-text field, so
 there's no code path that could put a path or a package name into an event.
 
-**Turning it on and off.** The app asks once, unticked, on the same screen where you accept the
-privacy policy; accepting the policy doesn't tick it. The About screen has a switch that takes effect
-immediately, not at next launch. Every feature works identically either way.
+**Turning it off.** The choice is shown once, pre-ticked, on the same screen where you accept the
+privacy policy — one click unticks it, and Continue is never blocked on it. The About screen has a
+switch that takes effect immediately, not at next launch. Every feature works identically either
+way, and nothing is collected before that screen is shown.
 
 `.gitignore` excludes `GoogleService-Info.plist` because this repository is public and that's the
 fixed filename Firebase's tooling emits — committing one would publish the project's configuration

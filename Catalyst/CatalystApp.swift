@@ -166,9 +166,30 @@ final class UpdaterController: NSObject, ObservableObject,
 struct CatalystApp: App {
     @StateObject private var appVM = AppViewModel()
 
-    /// The one place the telemetry provider is initialised. No-ops unless the user has opted in
-    /// AND a config plist is in the bundle — neither is true for a build from the public repo.
-    init() { Telemetry.start() }
+    init() {
+        /// DEBUG-ONLY virgin-install reset, and it must run FIRST — before `Telemetry.start()`
+        /// reads the analytics choice and before `AppViewModel.init` evaluates the consent gate.
+        /// Resetting after either would leave this launch exercising a half-cleared state that no
+        /// real user is ever in, which is the opposite of what a first-run test is for.
+        ///
+        /// Opt out for a run with `-KeepLegalConsent` in the scheme's launch arguments
+        /// (Product → Scheme → Edit Scheme → Run → Arguments). Default is ON: the failures this
+        /// catches — a gate that never appears, an analytics box in the wrong state — are
+        /// invisible on any Mac that has already been through the flow, which is every
+        /// developer's Mac.
+        ///
+        /// **Gotchas:** Wrapped in `#if DEBUG`, so a Release build can never wipe a real user's
+        /// settings. `cut_release.sh` fails fast if `DEBUG` leaks into the Release config (12.19).
+        #if DEBUG
+        if !ProcessInfo.processInfo.arguments.contains("-KeepLegalConsent") {
+            ConfigStore.shared.resetAllForDebug()
+        }
+        #endif
+
+        /// The one place the telemetry provider is initialised. No-ops unless the user has opted in
+        /// AND a config plist is in the bundle — neither is true for a build from the public repo.
+        Telemetry.start()
+    }
 
     var body: some Scene {
         WindowGroup {

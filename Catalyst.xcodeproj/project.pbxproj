@@ -111,6 +111,7 @@
 		8F901E932FDBA90E00DF8906 /* InstalledPackagesService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F901E922FDBA90E00DF8906 /* InstalledPackagesService.swift */; };
 		8F9DECA12F2D634C0003130E /* OutdatedBrewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F9DECA02F2D634C0003130E /* OutdatedBrewView.swift */; };
 		8F9E04A22F40D3D500E7E49E /* OutdatedPackageRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F9E04A12F40D3D400E7E49E /* OutdatedPackageRow.swift */; };
+		8FA1333130276089007981F4 /* GoogleService-Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 8FA1333030276089007981F4 /* GoogleService-Info.plist */; };
 		8FA4A19A2F28E7C80023A374 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FA4A1992F28E7C80023A374 /* DashboardView.swift */; };
 		8FA4A19C2F28E7D90023A374 /* DashboardViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8FA4A19B2F28E7D90023A374 /* DashboardViewModel.swift */; };
 		8FB40DB52FF9B6FB00AA06EC /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 8FB40DB42FF9B6FB00AA06EC /* Sparkle */; };
@@ -301,6 +302,7 @@
 		8F901E922FDBA90E00DF8906 /* InstalledPackagesService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InstalledPackagesService.swift; sourceTree = "<group>"; };
 		8F9DECA02F2D634C0003130E /* OutdatedBrewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutdatedBrewView.swift; sourceTree = "<group>"; };
 		8F9E04A12F40D3D400E7E49E /* OutdatedPackageRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OutdatedPackageRow.swift; sourceTree = "<group>"; };
+		8FA1333030276089007981F4 /* GoogleService-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "GoogleService-Info.plist"; sourceTree = "<group>"; };
 		8FA4A1982F28E1840023A374 /* Catalyst.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Catalyst.entitlements; sourceTree = "<group>"; };
 		8FA4A1992F28E7C80023A374 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
 		8FA4A19B2F28E7D90023A374 /* DashboardViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardViewModel.swift; sourceTree = "<group>"; };
@@ -621,6 +623,7 @@
 				8FC105563003C87900596B13 /* AppUserProperty.swift */,
 				8FC105573003C87900596B13 /* Telemetry.swift */,
 				8FC105583003C87900596B13 /* TelemetryProfile.swift */,
+				8FA1333030276089007981F4 /* GoogleService-Info.plist */,
 			);
 			path = Telemetry;
 			sourceTree = "<group>";
@@ -740,6 +743,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				8F5AF8552F2C8DFB0073AC43 /* Catalyst_AppIcon.icon in Resources */,
+				8FA1333130276089007981F4 /* GoogleService-Info.plist in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

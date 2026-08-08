@@ -285,9 +285,13 @@ struct AboutView: View {
                 Telemetry.setCollectionEnabled(newValue)
             }
 
-            Text("When on, Catalyst reports that it opened and which screen you opened — nothing "
-                 + "else. No file paths, no package names, no device identifier, and no account, "
-                 + "because there isn't one. Off by default; turning it off stops it immediately.")
+            /// The same panel, word-for-word, that the consent gate showed. Someone who came here
+            /// looking for the switch should meet the sentences they already agreed to, not a
+            /// paraphrase that makes them wonder which version is the real promise.
+            PrivacyReassuranceBanner()
+
+            Text("On by default. Turning it off stops collection immediately, not at the next "
+                 + "launch. Everything in the app works the same either way.")
                 .font(.caption)
                 .foregroundColor(.secondary)
                 .fixedSize(horizontal: false, vertical: true)

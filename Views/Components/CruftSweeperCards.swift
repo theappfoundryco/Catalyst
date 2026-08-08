@@ -594,17 +594,24 @@ struct ResultsDashboard: View {
                 }
             }
         }
+        /// Title says "Move to Trash", NOT "Permanently Delete".
+        ///
+        /// `CruftScanner` uses `trashItem`, so nothing here is permanent — the previous title
+        /// claimed otherwise while the body said the opposite. A dialog whose headline contradicts
+        /// its own message teaches people that the words in it are decoration, which is precisely
+        /// the habit you don't want in the one prompt standing between a user and their files.
         .confirmationDialog(
-            "Permanently Delete \(vm.selectedIDs.count) Items?",
+            "Move \(vm.selectedIDs.count) Items to Trash?",
             isPresented: $showDeleteConfirmation,
             titleVisibility: .visible
         ) {
-            Button("Delete \(vm.totalSelectedSize)", role: .destructive) {
+            Button("Move \(vm.totalSelectedSize) to Trash", role: .destructive) {
                 Task { await vm.deleteSelected() }
             }
             Button("Cancel", role: .cancel) { }
         } message: {
-            Text("These files will be moved to Trash. This action cannot be easily undone via the app.")
+            Text("These files go to the Trash, so you can put them back from Finder. "
+                 + "Catalyst can't undo the move itself.")
         }
         .alert("Reset Scan?", isPresented: $showResetConfirmation) {
             Button("Reset", role: .destructive) {

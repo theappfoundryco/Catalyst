@@ -56,9 +56,11 @@ final class ConfigStore {
         /// Absent ⇒ disabled. `Telemetry` treats anything but an explicit `true` as off, so a
         /// decode failure, a rolled-back config, or a hand-edited file all fail closed.
         var analyticsOptIn: Bool?
-        /// ISO timestamp of the opt-in decision, and the policy version it was made against — so a
-        /// later policy revision can tell a stale consent from a current one.
+        /// ISO timestamp of the analytics decision (audit/debug only).
         var analyticsDecidedAtISO: String?
+        /// The privacy-policy version the decision was made against, so a later revision can tell a
+        /// stale consent from a current one — e.g. someone who agreed under 1.4's default-on terms
+        /// before a future version widens what is collected.
         var analyticsDecidedForPrivacyVersion: String?
     }
 
@@ -224,6 +226,27 @@ final class ConfigStore {
     }
 
 #if DEBUG
+    /// DEBUG-ONLY: wipes the ENTIRE config — legal consent, analytics choice, and every cached
+    /// preference — so the next launch is byte-for-byte a first run.
+    ///
+    /// Broader than ``resetLegalConsentForDebug()`` on purpose. Testing the first-run experience
+    /// against a machine that still has `installedPython`, `defaultPython` and `pipPackages`
+    /// populated tests a *returning* user with a cleared gate, which is a different path and hides
+    /// exactly the bugs first-run testing is for.
+    ///
+    /// **Costs a full re-detection on every debug launch** — the Python and brew caches go with
+    /// everything else, so expect the dashboard to repopulate from scratch. That is the point; opt
+    /// out for a given run with `-KeepLegalConsent` in the scheme's launch arguments.
+    ///
+    /// **Gotchas:** `Config()` rather than field-by-field nilling. A new field added to `Config`
+    /// later is then wiped automatically instead of being silently missed by a reset that only
+    /// knows about the fields that existed when it was written.
+    func resetAllForDebug() {
+        cache = Config()
+        save()
+        logger.log("🧪 DEBUG: full config reset — gate, analytics choice and all caches cleared")
+    }
+
     /// DEBUG-ONLY smoke-test hook: wipes every legal-consent field so the next `evaluate()` sees a
     /// virgin install and re-presents ``LegalGateView``.
     ///

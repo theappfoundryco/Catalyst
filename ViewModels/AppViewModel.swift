@@ -282,8 +282,19 @@ final class AppViewModel: ObservableObject {
             .removeDuplicates()
             .sink { [weak self] req in
                 guard let self else { return }
+                /// Replay only on a genuine gate *transition*, never on the initial value.
+                ///
+                /// `@Published` delivers its current value synchronously at subscription time, so
+                /// this closure runs once during `init` with `req == nil` — before
+                /// `legalViewModel.evaluate()` on the line below has decided whether a gate is
+                /// even needed. Calling `logSessionStart()` there set `didLogSessionStart` while
+                /// consent was still unresolved, which both reported a session ahead of the
+                /// consent check and consumed the one-shot guard, so the real replay after the
+                /// user accepts never fired. Requiring a non-nil→nil edge is what makes this the
+                /// gate clearing rather than the app starting.
+                let wasGated = self.legalRequirement != nil
                 self.legalRequirement = req
-                if req == nil { self.logSessionStart() }
+                if wasGated && req == nil { self.logSessionStart() }
             }
             .store(in: &cancellables)
 

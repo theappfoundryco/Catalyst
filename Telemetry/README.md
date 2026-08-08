@@ -1,6 +1,6 @@
 # Telemetry
 
-**Catalyst sends two events, and only for users who switched them on.** No crash reporter, no
+**Catalyst sends two events, on by default, and off in one click.** No crash reporter, no
 identifier derived from your machine, and nothing at all from a build made from this repository. If
 you are auditing what Catalyst reports about you, this directory is the complete answer.
 
@@ -28,12 +28,15 @@ detail.
 | `TelemetryProfile.swift` | Derives the above from live app state. |
 | `GoogleService-Info.plist` | **Gitignored. Not in this repo.** See below. |
 
-## Opt-in, and what that actually means here
+## On by default — and what that does NOT mean
 
-`Telemetry.isEnabled` reads an explicit opt-in from `ConfigStore` that defaults to **absent**, and
-absent means off. The stored value is a tri-state `Bool?` on purpose: `nil` is "never asked",
-`false` is "asked and declined". Collapsing those to a plain `Bool` would make a decline
-indistinguishable from a fresh install and re-prompt every user who said no, on every launch.
+It does **not** mean `nil` counts as consent. `Telemetry.isEnabled` reads `ConfigStore` and requires
+an explicit `true`; the tri-state `Bool?` still means `nil` = never asked = **off**. "On by default"
+is the consent gate's checkbox being pre-ticked, not the absence of an answer being read as yes.
+
+That distinction is load-bearing: it is why nothing is collected between launch and the moment the
+user sees the choice, and it is what keeps a decode failure or a hand-edited config failing closed.
+Do not "simplify" `isAnalyticsAllowed` to `optIn ?? true`.
 
 Nothing is buffered while disabled and nothing is replayed if you later opt in. A session that ran
 without consent leaves no trace, because there was nowhere for it to be kept.

@@ -4,8 +4,10 @@
 /// screen title from a fixed list of 25 — and one user property, `brew_installed`. That is the
 /// entire payload. It exists to answer one question: which screens are worth continuing to build.
 ///
-/// **It is off until you turn it on.** ``isEnabled`` reads an explicit opt-in from `ConfigStore`
-/// that defaults to absent, and absent means off. Nothing is buffered while disabled and nothing
+/// **On by default, off in one click — and absent still means off.** ``isEnabled`` requires an
+/// explicit `true` from `ConfigStore`; the default-on behaviour is the consent gate presenting a
+/// pre-ticked box, not the absence of an answer being read as consent. Nothing is collected
+/// between launch and the moment that screen is shown. Nothing is buffered while disabled and nothing
 /// is replayed if you later opt in — a session that ran without consent leaves no trace, because
 /// there was nowhere for it to be kept.
 ///

@@ -152,7 +152,13 @@ final class LegalConsentViewModel: ObservableObject {
         return false
     }
 
-    /// The DEBUG smoke-test reset lives HERE, not in ``start()``.
+    /// The DEBUG reset moved to ``CatalystApp/init()`` (2026-08-08).
+    ///
+    /// It now wipes the whole config — caches included — rather than just the legal fields, and it
+    /// has to run before `Telemetry.start()` reads the analytics choice, which happens earlier than
+    /// this initialiser. The reasoning below still holds and is why it did not move any *later*:
+    ///
+    /// The DEBUG smoke-test reset must not live in ``start()``.
     ///
     /// `start()` runs from `ContentView`'s `.task`, i.e. after the first render. Resetting there
     /// would let the main app paint, *then* wipe consent and swap the gate in — so a debug build
@@ -166,13 +172,7 @@ final class LegalConsentViewModel: ObservableObject {
     /// already accepted, which is every developer's Mac.
     ///
     /// **Gotchas:** Wrapped in `#if DEBUG`, so a Release build can never reset a real user's consent.
-    init() {
-        #if DEBUG
-        if !ProcessInfo.processInfo.arguments.contains("-KeepLegalConsent") {
-            config.resetLegalConsentForDebug()
-        }
-        #endif
-    }
+    init() {}
 
     /// Network top-up at launch: refresh remote versions if the 14-day window has elapsed, then
     /// re-evaluate.
@@ -289,11 +289,18 @@ struct LegalGateView: View {
     let requirement: LegalConsentRequirement
     @State private var checked = false
 
-    /// **Starts false, and the button below is never gated on it.** The privacy policy (§6.3)
-    /// promised any future telemetry would be opt-in, so a pre-ticked box or a disabled Continue
-    /// would break a commitment users have already accepted. Declining costs the user nothing and
-    /// takes no extra click.
-    @State private var analyticsOptIn = false
+    /// **Starts checked, and the button below is never gated on it.**
+    ///
+    /// On by default, but never hidden: the box sits directly above Continue with a banner
+    /// stating exactly what is and isn't collected, so a user who doesn't want it unticks once and
+    /// is done. Continue is deliberately NOT disabled on this — the legal acceptance is mandatory,
+    /// this is not, and coupling them would make the analytics choice a toll gate.
+    ///
+    /// Policy 1.3 §6.3 said any future telemetry "would be opt-in". 1.4 retracts that in writing
+    /// and every existing user must accept 1.4 through this gate before the app opens, which is
+    /// the mechanism that makes the change legitimate rather than silent. If you ever flip this
+    /// back, the policy has to move with it — the two are a pair.
+    @State private var analyticsOptIn = true
 
     /// One fixed card size regardless of how many documents need accepting, so the window doesn't
     /// resize between the one-doc and two-doc cases.
@@ -393,12 +400,18 @@ struct LegalGateView: View {
     /// The optional half of the card, visually separated from the mandatory consent above it so
     /// nobody reads it as another box they have to tick to get in.
     ///
-    /// The copy states the whole payload — two events, screen names, no identifier — because the
-    /// claim is small enough to make in full, and a consent prompt that gestures vaguely at
-    /// "improving your experience" is how you end up with a policy nobody believes.
+    /// The copy states the whole payload in full — two events, screen names, no identifier —
+    /// because the claim is small enough to make completely. A consent prompt that gestures
+    /// vaguely at "improving your experience" is how you end up with a policy nobody believes.
+    ///
+    /// **Green, not blue.** The blue banners elsewhere in the app mean "here is some information";
+    /// this one is a reassurance, and it should read as the app volunteering good news rather than
+    /// disclosing something it would rather you skimmed.
     private var analyticsOptInRow: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 10) {
             Divider().padding(.vertical, 2)
+
+            PrivacyReassuranceBanner()
 
             Toggle(isOn: $analyticsOptIn) {
                 Text("Share anonymous usage analytics")
@@ -407,15 +420,15 @@ struct LegalGateView: View {
             }
             .toggleStyle(.checkbox)
 
-            Text("Optional, and off unless you turn it on. Catalyst would report that it opened and "
-                 + "which screen you opened — nothing else. No file paths, no package names, no "
-                 + "device identifier. You can change this any time on the About screen.")
+            Text("On by default. Untick to turn it off — Catalyst opens either way, and you can "
+                 + "change it any time on the About screen.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.leading, 20)
         }
     }
+
 
     /// Shared card shell, mirroring the old auth gate so the two gates are visually identical.
     static var cardChrome: some View {
