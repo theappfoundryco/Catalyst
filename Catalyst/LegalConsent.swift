@@ -36,7 +36,11 @@ enum LegalConfig {
     ///   3. `theappfoundryco/src/consts.ts` → `LEGAL_VERSIONS.catalyst*` (what the page prints).
     /// A page that prints a version the JSON doesn't serve is the silent failure: the document
     /// reads as updated while nobody is ever re-prompted for it.
-    static let bundledPrivacyVersion = "1.3"
+    /// 1.4 discloses the opt-in usage analytics added in app v1.4 (privacy §6). The Terms did not
+    /// change, and are deliberately NOT bumped with it: `LegalConsentRequirement` tracks the two
+    /// axes independently, so a privacy-only bump re-prompts for the privacy document alone rather
+    /// than making everyone re-accept a Terms document whose text didn't move.
+    static let bundledPrivacyVersion = "1.4"
     static let bundledTermsVersion   = "1.3"
 
     /// Canonical, stable URLs for the full documents (Catalyst-specific legal pages).
@@ -215,8 +219,17 @@ final class LegalConsentViewModel: ObservableObject {
 
     /// User accepted from the blocking gate — record BOTH current versions (harmless to re-write
     /// an already-current one) and clear the requirement.
-    func acceptCurrent() {
+    ///
+    /// - Parameter analyticsOptIn: The separate, genuinely optional analytics choice made on the
+    ///   same card. Recorded whichever way it went, because "declined" and "never asked" have to
+    ///   stay distinguishable — see `ConfigStore.Config.analyticsOptIn`.
+    func acceptCurrent(analyticsOptIn: Bool) {
         config.recordLegalAcceptance(privacy: currentPrivacyVersion, terms: currentTermsVersion)
+        config.recordAnalyticsDecision(allowed: analyticsOptIn, privacyVersion: currentPrivacyVersion)
+        /// Applies within this launch rather than the next one. `Telemetry.start()` already ran and
+        /// returned early during `CatalystApp.init` — there was no consent to act on yet — so
+        /// opting in here has to be what configures the provider.
+        Telemetry.setCollectionEnabled(analyticsOptIn)
         evaluate()
     }
 
@@ -275,6 +288,12 @@ struct LegalGateView: View {
     @ObservedObject var vm: LegalConsentViewModel
     let requirement: LegalConsentRequirement
     @State private var checked = false
+
+    /// **Starts false, and the button below is never gated on it.** The privacy policy (§6.3)
+    /// promised any future telemetry would be opt-in, so a pre-ticked box or a disabled Continue
+    /// would break a commitment users have already accepted. Declining costs the user nothing and
+    /// takes no extra click.
+    @State private var analyticsOptIn = false
 
     /// One fixed card size regardless of how many documents need accepting, so the window doesn't
     /// resize between the one-doc and two-doc cases.
@@ -343,7 +362,9 @@ struct LegalGateView: View {
                     }
                     .toggleStyle(.checkbox)
 
-                    Button { vm.acceptCurrent() } label: {
+                    analyticsOptInRow
+
+                    Button { vm.acceptCurrent(analyticsOptIn: analyticsOptIn) } label: {
                         Text("Agree & Continue").frame(maxWidth: .infinity)
                     }
                     .appButton(.primary)
@@ -365,6 +386,35 @@ struct LegalGateView: View {
         .frame(maxWidth: 460)
         .padding(30)
         .background(Self.cardChrome)
+    }
+
+    // MARK: Analytics opt-in
+
+    /// The optional half of the card, visually separated from the mandatory consent above it so
+    /// nobody reads it as another box they have to tick to get in.
+    ///
+    /// The copy states the whole payload — two events, screen names, no identifier — because the
+    /// claim is small enough to make in full, and a consent prompt that gestures vaguely at
+    /// "improving your experience" is how you end up with a policy nobody believes.
+    private var analyticsOptInRow: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Divider().padding(.vertical, 2)
+
+            Toggle(isOn: $analyticsOptIn) {
+                Text("Share anonymous usage analytics")
+                    .font(.callout)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .toggleStyle(.checkbox)
+
+            Text("Optional, and off unless you turn it on. Catalyst would report that it opened and "
+                 + "which screen you opened — nothing else. No file paths, no package names, no "
+                 + "device identifier. You can change this any time on the About screen.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.leading, 20)
+        }
     }
 
     /// Shared card shell, mirroring the old auth gate so the two gates are visually identical.

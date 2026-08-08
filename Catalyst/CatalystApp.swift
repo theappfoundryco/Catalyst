@@ -166,7 +166,9 @@ final class UpdaterController: NSObject, ObservableObject,
 struct CatalystApp: App {
     @StateObject private var appVM = AppViewModel()
 
-    init() { Telemetry.start() }   // one place a telemetry provider would initialise (currently a no-op)
+    /// The one place the telemetry provider is initialised. No-ops unless the user has opted in
+    /// AND a config plist is in the bundle — neither is true for a build from the public repo.
+    init() { Telemetry.start() }
 
     var body: some Scene {
         WindowGroup {
@@ -180,7 +182,10 @@ struct CatalystApp: App {
                     ///
                     /// **Rationale:** Immediate launch checking ensures users who force-quit to grab an update don't wait an hour for the scheduler to wake up.
                     UpdaterController.shared.checkOnLaunch()
-                    Telemetry.log(.appOpen)
+                    /// Not `Telemetry.log(.appOpen)` directly: the launch screen needs reporting too,
+                    /// and both events have to be replayable from the consent gate for a user who
+                    /// opts in mid-launch. `AppViewModel` owns that once-per-launch guard.
+                    appVM.logSessionStart()
                     TelemetryProfile.refresh()
                     await appVM.startupChecks()
                 }

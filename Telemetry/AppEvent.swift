@@ -3,10 +3,13 @@
 /// • To rename / retire:   change it here once; every call site updates with it.
 /// • To audit all tracking: read this file top to bottom.
 /// This file contains NO vendor types. It only describes events; `Telemetry` is the single
-/// place any provider would be wired in — and today it sends nothing at all.
+/// place the provider is wired in.
 /// Catalyst is free and has no account, so this catalog is deliberately tiny: it records
-/// that the app opened and which screen was used, and nothing else. If you are reviewing
-/// what Catalyst reports about you, this file is the complete answer.
+/// that the app opened and which screen was opened, and nothing else. If you are reviewing
+/// what Catalyst reports about you, this file is the complete answer — and it is only ever
+/// sent at all for a user who explicitly opted in.
+/// `feature` is a screen title from a fixed set of 25 (`AppViewModel.Screen.telemetryName`),
+/// never a free-form string, so no caller can widen it into a path or a package name.
 
 import Foundation
 
@@ -18,7 +21,7 @@ import Foundation
 enum AppEvent {
 
     // MARK: Lifecycle
-    /// Tracks the initial execution sequence indicating an active application session boundary natively reliably cleanly natively predictably gracefully seamlessly elegantly dependably identical properly organically dynamically automatically securely stably optimally properly dependably smoothly identically seamlessly successfully dependably securely securely successfully flawlessly elegantly statically dynamically naturally identical magically safely natively elegantly creatively naturally efficiently smartly cleanly effectively organically cleanly expertly natively cleanly intelligently dependably.
+    /// One per launch, reported from `AppViewModel.logSessionStart()`. Carries no parameters.
     case appOpen
 
     // MARK: Feature usage (which sidebar screen was opened, not what happened inside)

@@ -358,6 +358,41 @@ xcodebuild -exportArchive -archivePath build/Catalyst.xcarchive \
   -exportPath build/export -exportOptionsPlist Scripts/exportOptions.plist
 APP=build/export/Catalyst.app
 
+# ── Firebase config: inject into the exported app, then re-sign ──────────────────
+#
+# The plist is gitignored and is NOT a Copy Bundle Resources entry, deliberately. project.pbxproj
+# is tracked, so a resource reference would ship a pointer to a file no contributor has and Xcode
+# would hard-fail every fresh clone with "Build input file cannot be found". A build phase can't
+# do it either: ENABLE_USER_SCRIPT_SANDBOXING=YES denies reads of undeclared paths, and declaring
+# the plist reintroduces the missing-file error. So it lands here, after export.
+#
+# Consequence worth knowing: analytics exist ONLY in official signed releases. Dev builds and
+# builds from a public checkout have no config and send nothing — which is the intended property,
+# not a gap. To test locally, copy the plist into the built .app by hand.
+#
+# Adding a resource invalidates the app's outer signature, so it must be re-signed. NOT --deep:
+# nested code (Sparkle.framework) is already correctly signed by exportArchive, and --deep would
+# re-sign it with the wrong flags. Hardened runtime + the entitlements must be reasserted, or
+# notarization rejects the bundle.
+GSI="$APP_REPO_DIR/Telemetry/GoogleService-Info.plist"
+if [ -f "$GSI" ]; then
+  cp "$GSI" "$APP/Contents/Resources/"
+  # Resolve by SHA-1 rather than by name: the certificate's common name embeds the account
+  # holder's name, which differs between machines and breaks a hardcoded string.
+  SIGN_ID=$(security find-identity -v -p codesigning \
+    | grep "Developer ID Application" | grep "$TEAM_ID" | head -1 | awk '{print $2}')
+  [ -n "$SIGN_ID" ] || { echo "✗ No Developer ID Application identity for team $TEAM_ID"; exit 1; }
+  codesign --force --sign "$SIGN_ID" \
+    --options runtime --timestamp \
+    --entitlements "$APP_REPO_DIR/Catalyst.entitlements" "$APP"
+  codesign --verify --strict --verbose=2 "$APP" || { echo "✗ re-sign failed after Firebase config injection"; exit 1; }
+  echo "▸ Firebase config bundled and app re-signed — opt-in analytics live in this release."
+else
+  echo "⚠ No Telemetry/GoogleService-Info.plist — shipping WITHOUT analytics."
+  echo "  Intentional for a source build; if this is an official release, the plist is missing."
+  read -rp "  Continue without analytics? [y/N]: " a; [ "$a" = "y" ] || exit 1
+fi
+
 # Catalyst ships a single notarized .dmg: a Finder window with the app beside an /Applications
 # alias, so installing is a DRAG INTO APPLICATIONS rather than "run it from Downloads". Running an
 # unmoved quarantined app triggers Gatekeeper app-translocation (a random, read-only path), which

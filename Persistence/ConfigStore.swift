@@ -43,6 +43,23 @@ final class ConfigStore {
         var cachedTermsVersion: String?
         /// ISO timestamp of the last successful remote version check (drives the 14-day cadence).
         var lastLegalCheckISO: String?
+
+        // MARK: Analytics opt-in
+        /// Whether the user has allowed anonymous usage analytics.
+        ///
+        /// **Tri-state, and the `nil` case is the whole point.** `nil` means "never asked" and is
+        /// what every existing install decodes to; `false` means asked and declined. Collapsing
+        /// them to a plain `Bool` would make a decline indistinguishable from a fresh install, so
+        /// the consent prompt would reappear on every launch for everyone who said no — which is
+        /// both obnoxious and the classic dark pattern this feature must not have.
+        ///
+        /// Absent ⇒ disabled. `Telemetry` treats anything but an explicit `true` as off, so a
+        /// decode failure, a rolled-back config, or a hand-edited file all fail closed.
+        var analyticsOptIn: Bool?
+        /// ISO timestamp of the opt-in decision, and the policy version it was made against — so a
+        /// later policy revision can tell a stale consent from a current one.
+        var analyticsDecidedAtISO: String?
+        var analyticsDecidedForPrivacyVersion: String?
     }
 
     /// Initializes a disk-backed configuration layout organically organically identical identical accurately predictably efficiently smoothly effectively smartly smartly flawlessly brilliantly intelligently dependably smartly actively smartly organically cleanly actively correctly gracefully optimally smoothly securely safely securely correctly explicitly.
@@ -166,6 +183,34 @@ final class ConfigStore {
         save()
     }
 
+    // MARK: - Analytics opt-in accessors
+
+    /// The user's analytics decision: `nil` = never asked, `false` = declined, `true` = allowed.
+    var analyticsOptIn: Bool? { cache.analyticsOptIn }
+
+    /// True only when the user has explicitly allowed analytics. Every read path goes through this
+    /// rather than unwrapping ``analyticsOptIn`` at the call site, so "unasked" can never be
+    /// mistaken for consent by an `?? true`.
+    var isAnalyticsAllowed: Bool { cache.analyticsOptIn == true }
+
+    /// True when nobody has answered yet and the consent prompt still owes the user a question.
+    var analyticsNeedsDecision: Bool { cache.analyticsOptIn == nil }
+
+    /// The privacy-policy version the analytics decision was made against, for auditing a consent
+    /// that predates a policy revision.
+    var analyticsDecidedForPrivacyVersion: String? { cache.analyticsDecidedForPrivacyVersion }
+
+    /// Record the user's analytics choice.
+    /// - Parameters:
+    ///   - allowed: What the user actually chose. Written verbatim — never defaulted.
+    ///   - privacyVersion: The policy version presented alongside the choice.
+    func recordAnalyticsDecision(allowed: Bool, privacyVersion: String) {
+        cache.analyticsOptIn = allowed
+        cache.analyticsDecidedAtISO = ISO8601DateFormatter().string(from: Date())
+        cache.analyticsDecidedForPrivacyVersion = privacyVersion
+        save()
+    }
+
     /// Persist the latest remote versions + stamp the check time (only call on a SUCCESSFUL fetch,
     /// so a failed/offline check leaves `lastLegalCheck` stale and we retry next launch).
     /// - Parameters:
@@ -194,8 +239,14 @@ final class ConfigStore {
         cache.cachedPrivacyVersion = nil
         cache.cachedTermsVersion = nil
         cache.lastLegalCheckISO = nil
+        /// Cleared with the rest: the analytics prompt is part of the gate now, so leaving a
+        /// previous decision behind would smoke-test a returning user rather than a virgin
+        /// install — exactly the substitution this reset exists to avoid.
+        cache.analyticsOptIn = nil
+        cache.analyticsDecidedAtISO = nil
+        cache.analyticsDecidedForPrivacyVersion = nil
         save()
-        logger.log("🧪 DEBUG: legal consent reset — gate will re-present this launch")
+        logger.log("🧪 DEBUG: legal consent + analytics opt-in reset — gate will re-present this launch")
     }
 #endif
 }

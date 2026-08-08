@@ -65,6 +65,8 @@ struct AboutView: View {
     @ObservedObject var vm: AboutViewModel
     @State private var isHovering = false
     @State private var showAllHighlights = false
+    /// Mirrors the persisted analytics opt-in; seeded in `privacyCard`'s `.onAppear`.
+    @State private var analyticsEnabled = false
     private let highlightLimit = 6
     
     private var currentYear: String {
@@ -223,7 +225,9 @@ struct AboutView: View {
                     }
                 }
                 .cardStyle()
-                
+
+                privacyCard
+
                 // Copyright
                 Text("© \(currentYear) \(vm.appInfo?.copyright ?? "The App Foundry"). All rights reserved.")
                     .font(.caption)
@@ -246,6 +250,51 @@ struct AboutView: View {
     // The action links point at fixed `/catalyst/<slug>` redirect URLs (repointed via Edge
     // Config, not the app), so they're always available — no longer gated on a fetched about.json.
     private var hasAnyLinks: Bool { true }
+
+    // MARK: - Privacy
+
+    /// The analytics opt-out, on the one screen a user already visits to read the legal documents.
+    ///
+    /// There is no Settings window in Catalyst, and adding one for a single switch would be worse
+    /// than putting the switch where its context already is. The consent gate points here by name.
+    ///
+    /// **Gotchas:** `ConfigStore` is not observable, so this mirrors it into `@State` seeded once in
+    /// `.onAppear`. Reading it into a `@State` initialiser instead would capture the value when the
+    /// *view struct* is created, which SwiftUI may do long before the row is shown and repeatedly
+    /// afterwards — so the toggle could render stale.
+    private var privacyCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Privacy")
+                .font(.headline)
+
+            SectionDivider()
+
+            Toggle(isOn: $analyticsEnabled) {
+                Text("Share anonymous usage analytics")
+                    .font(.subheadline)
+            }
+            .toggleStyle(.switch)
+            .onChange(of: analyticsEnabled) { _, newValue in
+                ConfigStore.shared.recordAnalyticsDecision(
+                    allowed: newValue,
+                    privacyVersion: LegalConfig.bundledPrivacyVersion
+                )
+                /// Takes effect now, not on next launch. Someone who turns this off and watches
+                /// events keep flowing until they quit has been ignored regardless of what the
+                /// config file says.
+                Telemetry.setCollectionEnabled(newValue)
+            }
+
+            Text("When on, Catalyst reports that it opened and which screen you opened — nothing "
+                 + "else. No file paths, no package names, no device identifier, and no account, "
+                 + "because there isn't one. Off by default; turning it off stops it immediately.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .cardStyle()
+        .onAppear { analyticsEnabled = ConfigStore.shared.isAnalyticsAllowed }
+    }
 }
 /// A simple row displaying an icon, a label, and a corresponding value for the About screen.
 ///

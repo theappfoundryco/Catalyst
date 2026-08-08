@@ -76,8 +76,20 @@ final class AppViewModel: ObservableObject {
     }
 
     /// The active screen driving the main `ContentView` detail area.
+    ///
+    /// The `didSet` deliberately does NOT carry the launch screen. `didSet` never fires for the
+    /// value assigned in a property's own declaration, so `.dashboard` — the screen every session
+    /// starts on, and so almost certainly the most-opened — was counted only when a user navigated
+    /// *back* to it. ``logSessionStart()`` reports it explicitly instead.
+    ///
+    /// The equality guard matters because `ContentView` binds this to `List(selection:)`, which
+    /// writes the binding on every row activation including a tap on the already-selected row.
+    /// Without it, whichever screen a user idles on inflates by however often they click it.
     @Published var currentScreen: Screen = .dashboard {
-        didSet { Telemetry.log(.featureOpened(feature: currentScreen.telemetryName)) }
+        didSet {
+            guard oldValue != currentScreen else { return }
+            Telemetry.log(.featureOpened(feature: currentScreen.telemetryName))
+        }
     }
     /// True when a global refresh is spinning across all view models.
     @Published var isPerformingFullRefresh = false
@@ -92,6 +104,10 @@ final class AppViewModel: ObservableObject {
     /// of the entitlement gate: `startupChecks()` is the only caller today, but the guard is what
     /// makes a second call harmless rather than a duplicate shell-probe burst.
     private var didRunInitialDetection = false
+
+    /// Guards the once-per-launch session events. Same reasoning as `didRunInitialDetection`:
+    /// two call sites, and the second must be harmless.
+    private var didLogSessionStart = false
     private var cancellables = Set<AnyCancellable>()
 
     // ProcessRunner removed (replaced by AsyncProcessRunner)
@@ -257,9 +273,19 @@ final class AppViewModel: ObservableObject {
         }
 
         // Mirror the legal-consent requirement so ContentView can swap in the blocking gate.
+        //
+        // A `sink` rather than `assign(to:)` because the gate clearing is also the moment a
+        // first-launch opt-in becomes effective: until the user answered, `Telemetry` was disabled
+        // and `logSessionStart()` returned without recording anything. Replaying it here is what
+        // stops every new user's first session from being the one session that never counts.
         self.legalViewModel.$requirement
             .removeDuplicates()
-            .assign(to: &$legalRequirement)
+            .sink { [weak self] req in
+                guard let self else { return }
+                self.legalRequirement = req
+                if req == nil { self.logSessionStart() }
+            }
+            .store(in: &cancellables)
 
         // Decide the gate SYNCHRONOUSLY, here in init, before ContentView's body is ever evaluated.
         //
@@ -331,7 +357,7 @@ final class AppViewModel: ObservableObject {
         fullRefreshActionLabel = nil
     }
 
-    /// Initiates the app's initial detection sequences and clears the splash screen.
+    /// Initiates the app's initial detection sequences.
     ///
     /// **Flow:**
     /// 1. Immediately triggers ``LogsViewModel/startup()`` to capture startup logs.
@@ -340,9 +366,10 @@ final class AppViewModel: ObservableObject {
     ///
     /// **Gotchas:**
     /// - Only triggers the detection sweep once, guarded by `didRunInitialDetection`.
-    /// - There is no launch screen and no reveal delay. `LaunchScreenView` and the `isAppReady`
-    ///   flag it observed were removed (2026-07-25) — the view was never instantiated outside its
-    ///   own `#Preview`, so the 1.5s floor held nothing back and only delayed a no-op.
+    /// - There is no launch screen, no splash, and no reveal delay to wait on. `LaunchScreenView`
+    ///   and the `isAppReady` flag it observed were removed (2026-07-25) — the view was never
+    ///   instantiated outside its own `#Preview`, so its artificial minimum-display window held
+    ///   nothing back and only delayed a no-op. Don't reintroduce a timed reveal here.
     func startupChecks() async {
         logger.log("Catalyst launched - running initial detection")
 
@@ -351,9 +378,10 @@ final class AppViewModel: ObservableObject {
 
         // Kick off the first full detection exactly once. This used to be triggered by entitlement
         // resolving to `.entitled`; with no sign-in gate there is nothing to wait for, so it starts
-        // here. It stays a detached Task rather than an `await` so the launch-screen floor below
-        // runs concurrently — every detection result is `@Published`, so the dashboard fills in as
-        // each check finishes rather than blocking the reveal.
+        // here. It stays a detached Task rather than an `await` so the rest of this method — most
+        // importantly the legal-consent top-up — isn't held behind a full shell-probe sweep. Every
+        // detection result is `@Published`, so the dashboard fills in as each check finishes.
+        // (The "launch-screen floor" this once ran concurrently with no longer exists; see above.)
         if !didRunInitialDetection {
             didRunInitialDetection = true
             Task { await self.fullRefresh() }
@@ -368,5 +396,23 @@ final class AppViewModel: ObservableObject {
         // one. Awaiting here bought nothing: `.task` already runs after first paint, so it could
         // not have made the gate appear any earlier.
         Task { await legalViewModel.start() }
+    }
+
+    /// Reports `app_open` and the screen the session started on. At most once per launch.
+    ///
+    /// **Two call sites, both required.** `CatalystApp`'s root `.task` covers the ordinary launch of
+    /// someone who opted in on a previous run. `LegalConsentViewModel` calls it again the instant
+    /// somebody opts in at the consent gate, because until that moment ``Telemetry/isEnabled`` is
+    /// false and both events are dropped on the floor — which would silently discard the entire
+    /// first session of every new user, the one session most worth having.
+    ///
+    /// **Gotchas:** the `isEnabled` check is what makes the first call harmless rather than a lost
+    /// event. Declining at the gate leaves `didLogSessionStart` false forever, which is correct:
+    /// nothing is pending, because nothing may be sent.
+    func logSessionStart() {
+        guard !didLogSessionStart, Telemetry.isEnabled else { return }
+        didLogSessionStart = true
+        Telemetry.log(.appOpen)
+        Telemetry.log(.featureOpened(feature: currentScreen.telemetryName))
     }
 }

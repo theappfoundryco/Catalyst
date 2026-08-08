@@ -57,8 +57,13 @@ theappfoundryco/
 
 # Telemetry provider config — NEVER commit.
 #
-# Catalyst links no analytics SDK today (Telemetry/Telemetry.swift is a no-op facade). This is
-# a standing guard: it's the filename Firebase tooling emits by convention, and on a PUBLIC repo
-# a single `git add -A` would publish it permanently. The real file is CODEOWNERS-held and
+# Since v1.5 Catalyst DOES link Firebase Analytics (opt-in, off by default). This file is its
+# configuration: not a cryptographic secret — a copy ships inside every client binary — but it
+# identifies the project and its quotas, and on a PUBLIC repo a single `git add -A` would publish
+# it permanently, which git history does not let you quietly walk back.
+#
+# Its absence is the SUPPORTED state, not a broken one: `Telemetry.start()` resolves it by path and
+# returns quietly when it isn't there, so a build from this repo compiles, launches, and sends
+# nothing. Never "fix" a missing plist by committing one. The real file is CODEOWNERS-held and
 # distributed out of band. See Telemetry/README.md.
 Telemetry/GoogleService-Info.plist
