@@ -137,8 +137,14 @@ final class PopularPackagesViewModel: ObservableObject {
     /// 3. Replaces the local arrays and writes them to `UserDefaults` (via ``savePopularCache()``).
     func loadPopularPackages() async {
         guard !hasLoadedOnce else { return }
-        
+
         isLoading = true
+        /// `defer`, not a trailing assignment (12.56). This runs as a child of `fullRefresh()`'s
+        /// task group, so a cancelled launch — or any of the three `fetchPopular` calls hanging —
+        /// skipped the clear and left the screen spinning for the life of the app. The guard above
+        /// is on `hasLoadedOnce`, so this was a stuck spinner rather than a hard deadlock, but the
+        /// shape is the same one that made `runDetection` unrecoverable.
+        defer { isLoading = false }
         logger.log("📥 Loading popular packages...")
         
         async let pip = fetchPopular(type: "pip")
@@ -154,8 +160,6 @@ final class PopularPackagesViewModel: ObservableObject {
         logger.log("✅ Loaded popular packages: \(popularPip.count) pip, \(popularFormulae.count) formulae, \(popularCasks.count) casks")
         hasLoadedOnce = true
         savePopularCache()  // Save to cache
-        
-        isLoading = false
     }
     
     /// Forces a bypass of `hasLoadedOnce`, wiping all caches and re-checking prerequisites.

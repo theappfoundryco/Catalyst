@@ -13,7 +13,7 @@ destructive without your explicit say-so.
 [![Platform](https://img.shields.io/badge/platform-macOS%2014.6%2B-lightgrey.svg)](#requirements)
 [![Universal](https://img.shields.io/badge/binary-universal%20(Apple%20silicon%20%2B%20Intel)-lightgrey.svg)](#requirements)
 [![Latest release](https://img.shields.io/github/v/release/theappfoundryco/Catalyst?label=release)](https://github.com/theappfoundryco/Catalyst/releases/latest)
-[![No tracking](https://img.shields.io/badge/analytics-none-brightgreen.svg)](#privacy--security)
+[![Analytics](https://img.shields.io/badge/analytics-opt--in-brightgreen.svg)](#privacy--security)
 
 [Download](https://github.com/theappfoundryco/Catalyst/releases/latest) ·
 [Report a bug](https://github.com/theappfoundryco/Catalyst/issues/new?template=bug_report.yml) ·
@@ -123,8 +123,9 @@ A complete, screen-by-screen reference lives in [`docs/ARCHITECTURE.md`](docs/AR
   read-only static JSON catalogs and the update feed — both plain files you can open in a browser.
 - **Recoverable by default.** Deletions prefer the Trash over permanent removal, and every
   destructive path is allowlist-gated (see [How it works](#how-it-works)).
-- **Auditable telemetry.** There isn't any — and there's exactly one file where it *would* live, so
-  the answer to "what does this report about me?" is one place, in public.
+- **Auditable telemetry.** Two events wide — that the app opened, and which screen you opened.
+  On by default, off in one click, and nothing collected before you're shown the choice. It lives in exactly one file, so the answer to "what does this report
+  about me?" is one place, in public — and a build from this source reports nothing at all.
 
 ## Screenshots
 
@@ -184,7 +185,28 @@ open Catalyst.xcodeproj
 ```
 
 Build and run. There is no backend to stand up, no API key to obtain, and no configuration step.
-Sparkle is the only dependency, resolved automatically over Swift Package Manager.
+Dependencies resolve automatically over Swift Package Manager: **Sparkle** for updates and
+**Firebase Analytics** for the opt-out usage counts described under
+[Privacy & security](#privacy--security).
+
+**A build from this repository sends nothing**, whatever the analytics switch says. The provider's
+config file is not in the repo and never will be; the app resolves it at runtime and treats its
+absence as "analytics unavailable" rather than as an error. You do not need it, and its absence
+cannot break your build — that is deliberate and tested.
+
+Two things worth doing once per clone:
+
+```sh
+./Scripts/install_git_hooks.sh
+```
+
+Installs a pre-commit hook that refuses to commit provider configs, key material, or staged lines
+that look like live API keys. `.gitignore` alone doesn't stop `git add -f`, and this is a public
+repo.
+
+Debug builds **wipe their own config on every launch** — consent state, analytics choice and all
+caches — so each run exercises a genuine first launch. Pass `-KeepLegalConsent` in the scheme's
+launch arguments (Product → Scheme → Edit Scheme → Run → Arguments) to keep state between runs.
 
 A privileged helper tool handles the few operations that genuinely require elevation. It is installed
 on first use with your explicit approval, communicates over XPC, and its source is in
@@ -223,12 +245,18 @@ The deeper design — layers, the composition root, the safety invariants — is
 
 ## Privacy & security
 
-**Catalyst sends nothing about you.** No analytics SDK, no crash reporter, no account, no identifier.
-Firebase Analytics and Crashlytics were removed at v1.0.
+**Catalyst has no account, no crash reporter, and no identifier derived from your machine.** Usage
+analytics exist as of v1.4, are **on by default and off in one click**, and are two events wide:
+that the app opened, and which screen you opened. Nothing else — no file paths, no package names, no host
+name, and nothing about what you did inside a screen. Crashlytics was removed at v1.0 and has not
+returned.
 
-The app makes exactly four kinds of network request, all `GET`s for static files you can open in a
-browser yourself. None carries a request body, a cookie, an identifier, or a parameter derived from
-your machine:
+**A build from this repository sends nothing regardless of the switch**, because the provider's
+config file isn't in it and the app treats its absence as "analytics unavailable".
+
+The app makes four kinds of network request in its default state, all `GET`s for static files you
+can open in a browser yourself. None carries a request body, a cookie, an identifier, or a parameter
+derived from your machine:
 
 | Request | Purpose |
 |---|---|
@@ -236,6 +264,10 @@ your machine:
 | `updates.theappfoundry.co/catalyst/appcast.xml` | The Sparkle update feed |
 | `pypi.org/pypi/pip/json` | PyPI's own metadata, to tell whether your pip is current |
 | `theappfoundry.co/legal/catalyst.json` | Published privacy/terms version numbers, checked at most once every 14 days |
+
+A fifth exists only while analytics are switched on — `app-measurement.com`, carrying the two events
+above. It's the one request that sends rather than fetches, and with the switch off the SDK behind
+it is never initialised.
 
 Plus the ones you trigger yourself and can see coming: Network Diagnostics pings `1.1.1.1` and
 resolves a hostname, the Homebrew installer fetches Homebrew's script, and `brew`/`pip` contact
@@ -245,21 +277,26 @@ The full accounting, including what's stored on your Mac and how the `sudo` pass
 the [Catalyst privacy policy](https://theappfoundry.co/catalyst/privacy). It is written to be
 checkable against this source tree, not instead of it.
 
-[`Telemetry/Telemetry.swift`](Telemetry/Telemetry.swift) remains as a single choke point where a
-provider *could* be wired in; every method is a no-op outside debug builds. It's kept deliberately —
-one file that answers "what does Catalyst report about me?" is easier to audit than provider calls
-scattered across 167 source files. If that ever changes, it changes there, in public, in a commit you
-can read.
+[`Telemetry/Telemetry.swift`](Telemetry/Telemetry.swift) is the single choke point where the provider
+is wired in — the only file that links the SDK. [`Telemetry/AppEvent.swift`](Telemetry/AppEvent.swift)
+is the complete catalog of what may ever be sent, and it's short enough to read in a minute. Two
+files, deliberately: "what does Catalyst report about me?" should be checkable, not taken on trust.
+The screen name is a fixed list of 25 titles compiled into the binary, not a free-text field, so
+there's no code path that could put a path or a package name into an event.
 
-You may notice `.gitignore` excludes `GoogleService-Info.plist`. That is a **standing guard, not a
-hidden provider** — nothing in the app reads it and no SDK is linked to read it with.
-`GoogleService-Info` is the fixed filename Firebase's tooling emits, and this repository is public;
-the rule is there so that if anyone ever does wire a provider up, its configuration can't be
-published permanently by an absent-minded `git add -A`. Should such a file exist, it is held by the
-repository's code owners and distributed out of band — `/Telemetry/` is a CODEOWNERS-protected path,
-so nothing lands there without code-owner review. [`Telemetry/README.md`](Telemetry/README.md) has
-the full explanation, including the rule that enabling telemetry must change this section of this
-README in the same commit.
+**Turning it off.** The choice is shown once, pre-ticked, on the same screen where you accept the
+privacy policy — one click unticks it, and Continue is never blocked on it. The About screen has a
+switch that takes effect immediately, not at next launch. Every feature works identically either
+way, and nothing is collected before that screen is shown.
+
+`.gitignore` excludes `GoogleService-Info.plist` because this repository is public and that's the
+fixed filename Firebase's tooling emits — committing one would publish the project's configuration
+permanently. It's held by the repository's code owners and distributed out of band;
+`/Telemetry/` is a CODEOWNERS-protected path, so nothing lands there without code-owner review. The
+app resolves it at runtime and treats its absence as "analytics unavailable" rather than as an error,
+which is both why a source build sends nothing and why deleting the file can't break launch.
+[`Telemetry/README.md`](Telemetry/README.md) has the full explanation, including the rule that
+changing what's collected must change this section of this README in the same commit.
 
 Found a security issue? Please report it privately — see [`SECURITY.md`](SECURITY.md).
 

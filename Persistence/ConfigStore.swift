@@ -43,6 +43,25 @@ final class ConfigStore {
         var cachedTermsVersion: String?
         /// ISO timestamp of the last successful remote version check (drives the 14-day cadence).
         var lastLegalCheckISO: String?
+
+        // MARK: Analytics opt-in
+        /// Whether the user has allowed anonymous usage analytics.
+        ///
+        /// **Tri-state, and the `nil` case is the whole point.** `nil` means "never asked" and is
+        /// what every existing install decodes to; `false` means asked and declined. Collapsing
+        /// them to a plain `Bool` would make a decline indistinguishable from a fresh install, so
+        /// the consent prompt would reappear on every launch for everyone who said no — which is
+        /// both obnoxious and the classic dark pattern this feature must not have.
+        ///
+        /// Absent ⇒ disabled. `Telemetry` treats anything but an explicit `true` as off, so a
+        /// decode failure, a rolled-back config, or a hand-edited file all fail closed.
+        var analyticsOptIn: Bool?
+        /// ISO timestamp of the analytics decision (audit/debug only).
+        var analyticsDecidedAtISO: String?
+        /// The privacy-policy version the decision was made against, so a later revision can tell a
+        /// stale consent from a current one — e.g. someone who agreed under 1.4's default-on terms
+        /// before a future version widens what is collected.
+        var analyticsDecidedForPrivacyVersion: String?
     }
 
     /// Initializes a disk-backed configuration layout organically organically identical identical accurately predictably efficiently smoothly effectively smartly smartly flawlessly brilliantly intelligently dependably smartly actively smartly organically cleanly actively correctly gracefully optimally smoothly securely safely securely correctly explicitly.
@@ -166,6 +185,34 @@ final class ConfigStore {
         save()
     }
 
+    // MARK: - Analytics opt-in accessors
+
+    /// The user's analytics decision: `nil` = never asked, `false` = declined, `true` = allowed.
+    var analyticsOptIn: Bool? { cache.analyticsOptIn }
+
+    /// True only when the user has explicitly allowed analytics. Every read path goes through this
+    /// rather than unwrapping ``analyticsOptIn`` at the call site, so "unasked" can never be
+    /// mistaken for consent by an `?? true`.
+    var isAnalyticsAllowed: Bool { cache.analyticsOptIn == true }
+
+    /// True when nobody has answered yet and the consent prompt still owes the user a question.
+    var analyticsNeedsDecision: Bool { cache.analyticsOptIn == nil }
+
+    /// The privacy-policy version the analytics decision was made against, for auditing a consent
+    /// that predates a policy revision.
+    var analyticsDecidedForPrivacyVersion: String? { cache.analyticsDecidedForPrivacyVersion }
+
+    /// Record the user's analytics choice.
+    /// - Parameters:
+    ///   - allowed: What the user actually chose. Written verbatim — never defaulted.
+    ///   - privacyVersion: The policy version presented alongside the choice.
+    func recordAnalyticsDecision(allowed: Bool, privacyVersion: String) {
+        cache.analyticsOptIn = allowed
+        cache.analyticsDecidedAtISO = ISO8601DateFormatter().string(from: Date())
+        cache.analyticsDecidedForPrivacyVersion = privacyVersion
+        save()
+    }
+
     /// Persist the latest remote versions + stamp the check time (only call on a SUCCESSFUL fetch,
     /// so a failed/offline check leaves `lastLegalCheck` stale and we retry next launch).
     /// - Parameters:
@@ -179,6 +226,27 @@ final class ConfigStore {
     }
 
 #if DEBUG
+    /// DEBUG-ONLY: wipes the ENTIRE config — legal consent, analytics choice, and every cached
+    /// preference — so the next launch is byte-for-byte a first run.
+    ///
+    /// Broader than ``resetLegalConsentForDebug()`` on purpose. Testing the first-run experience
+    /// against a machine that still has `installedPython`, `defaultPython` and `pipPackages`
+    /// populated tests a *returning* user with a cleared gate, which is a different path and hides
+    /// exactly the bugs first-run testing is for.
+    ///
+    /// **Costs a full re-detection on every debug launch** — the Python and brew caches go with
+    /// everything else, so expect the dashboard to repopulate from scratch. That is the point; opt
+    /// out for a given run with `-KeepLegalConsent` in the scheme's launch arguments.
+    ///
+    /// **Gotchas:** `Config()` rather than field-by-field nilling. A new field added to `Config`
+    /// later is then wiped automatically instead of being silently missed by a reset that only
+    /// knows about the fields that existed when it was written.
+    func resetAllForDebug() {
+        cache = Config()
+        save()
+        logger.log("🧪 DEBUG: full config reset — gate, analytics choice and all caches cleared")
+    }
+
     /// DEBUG-ONLY smoke-test hook: wipes every legal-consent field so the next `evaluate()` sees a
     /// virgin install and re-presents ``LegalGateView``.
     ///
@@ -194,8 +262,14 @@ final class ConfigStore {
         cache.cachedPrivacyVersion = nil
         cache.cachedTermsVersion = nil
         cache.lastLegalCheckISO = nil
+        /// Cleared with the rest: the analytics prompt is part of the gate now, so leaving a
+        /// previous decision behind would smoke-test a returning user rather than a virgin
+        /// install — exactly the substitution this reset exists to avoid.
+        cache.analyticsOptIn = nil
+        cache.analyticsDecidedAtISO = nil
+        cache.analyticsDecidedForPrivacyVersion = nil
         save()
-        logger.log("🧪 DEBUG: legal consent reset — gate will re-present this launch")
+        logger.log("🧪 DEBUG: legal consent + analytics opt-in reset — gate will re-present this launch")
     }
 #endif
 }

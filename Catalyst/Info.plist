@@ -52,6 +52,12 @@
 		</dict>
 	</array>
 
+	<!-- Firebase must NOT begin collecting at `FirebaseApp.configure()`. Without this key the
+	     SDK starts gathering the moment it is configured — i.e. before the user has answered the
+	     consent prompt — and an opt-in that begins by collecting is not one. `Telemetry.start()`
+	     is the ONLY thing that ever turns collection on. See CODING_STANDARDS 12.1c. -->
+	<key>FIREBASE_ANALYTICS_COLLECTION_ENABLED</key>
+	<false/>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>

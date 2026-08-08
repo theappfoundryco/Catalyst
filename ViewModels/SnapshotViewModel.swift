@@ -235,6 +235,25 @@ final class SnapshotViewModel: ObservableObject {
         return actionIndex[id]
     }
 
+    /// The section kinds that will actually be written if Restore runs now.
+    ///
+    /// Drives the confirmation dialog, which names the real targets instead of asking a generic
+    /// "are you sure?". A prompt that can't say *what* it is about to overwrite trains people to
+    /// dismiss it, which is worse than no prompt at all.
+    var pendingKinds: Set<SnapshotSectionKind> {
+        Set(actions.filter { $0.isActionable && $0.selected }.map(\.kind))
+    }
+
+    /// True when the pending set rewrites the user's shell profile.
+    ///
+    /// Called out separately because it is the only part of a restore with real blast radius:
+    /// `~/.zshrc` is what a bad restore destroyed during v1.13 development (issue #13), taking npm
+    /// and the CA bundle with it. Everything else a restore does is additive — installing a
+    /// formula or a pip package doesn't remove anything the user had.
+    var pendingTouchesShell: Bool {
+        pendingKinds.contains(.shell) || pendingKinds.contains(.shortcuts)
+    }
+
     /// Lazily re-calculates subset counts to prevent O(n) SwiftUI stutter.
     private func rebuildActionIndex() {
         if actionIndex.count != actions.count { actionIndex.removeAll(keepingCapacity: true) }
