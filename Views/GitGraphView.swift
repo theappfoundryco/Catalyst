@@ -332,15 +332,20 @@ struct GitGraphView: View {
                         .padding(.bottom, 20)
 
                     if vm.isGraphLoading && vm.graph.isEmpty {
-                        LoadingStateView("Building graph…")
+                        LoadingStateView(
+                            "Building graph…",
+                            prominence: .standalone,
+                            cardPadded: false
+                        )
                     } else if vm.graph.isEmpty {
                         EmptyStateView(
                             icon: "clock",
                             message: "No commits yet",
                             detail: "This repository has no commit history to graph.",
-                            verticalPadding: 28
+                            verticalPadding: 28,
+                            prominence: .standalone,
+                            cardPadded: false
                         )
-                        .cardStyle(.standard, padded: false)
                     } else {
                         Section {
                             graphRows(availWidth: availWidth)
@@ -998,7 +1003,7 @@ private struct CommitDetailSheet: View {
             SectionDivider()
 
             if vm.isDetailLoading && vm.selectedDetail == nil {
-                LoadingStateView("Loading commit…")
+                LoadingStateView("Loading commit…", prominence: .standalone)
                     .frame(maxWidth: .infinity, minHeight: 220)
             } else if let d = vm.selectedDetail {
                 ScrollView {
@@ -1049,9 +1054,13 @@ private struct CommitDetailSheet: View {
                     .padding()
                 }
             } else {
-                EmptyStateView(icon: "exclamationmark.triangle",
-                               message: "Couldn't load commit details")
-                    .frame(maxWidth: .infinity, minHeight: 220)
+                EmptyStateView(
+                    icon: "exclamationmark.triangle",
+                    message: "Couldn't load commit details",
+                    iconColor: .orange,
+                    prominence: .standalone
+                )
+                .frame(maxWidth: .infinity, minHeight: 220)
             }
         }
         .frame(minWidth: 520, idealWidth: 560, minHeight: 440, idealHeight: 520)

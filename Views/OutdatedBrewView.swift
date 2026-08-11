@@ -97,45 +97,28 @@ struct OutdatedBrewView: View {
                 
                 // Scanning Progress
                 if vm.isLoading {
-                    LoadingStateView("Scanning for updates...", verticalPadding: 60)
-                        .cardStyle()
+                    LoadingStateView("Scanning for updates...", verticalPadding: 60, prominence: .standalone)
                 }
                 
                 // Results: No updates for filter
                 if vm.hasScannedOnce && !vm.isLoading && filteredPackages.isEmpty && !brewPackages.isEmpty {
-                    VStack(spacing: 12) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 48))
-                            .foregroundColor(.green)
-                        
-                        Text("No \(selectedFilter.rawValue) updates!")
-                            .font(.headline)
-                        
-                        Text("All \(selectedFilter.rawValue.lowercased()) are up to date")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 40)
-                    .cardStyle()
+                    EmptyStateView(
+                        icon: "checkmark.circle.fill",
+                        message: "No \(selectedFilter.rawValue) updates!",
+                        detail: "All \(selectedFilter.rawValue.lowercased()) are up to date",
+                        iconColor: .green,
+                        prominence: .standalone
+                    )
                 }
                 
                 if vm.hasScannedOnce && !vm.isLoading && brewPackages.isEmpty {
-                    VStack(spacing: 12) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 48))
-                            .foregroundColor(.green)
-                        
-                        Text("All Homebrew packages are up to date!")
-                            .font(.headline)
-                        
-                        Text("No updates available at this time")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 40)
-                    .cardStyle()
+                    EmptyStateView(
+                        icon: "checkmark.circle.fill",
+                        message: "All Homebrew packages are up to date!",
+                        detail: "No updates available at this time",
+                        iconColor: .green,
+                        prominence: .standalone
+                    )
                 }
                 
                 // Results: Outdated packages list

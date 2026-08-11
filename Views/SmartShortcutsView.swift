@@ -91,27 +91,15 @@ struct SmartShortcutsView: View {
                 .cardStyle()
 
                 if vm.isLoading || !vm.hasLoadedOnce {
-                    LoadingStateView("Loading shortcuts...")
-                        .padding(.vertical, 60)
-                        .cardStyle()
+                    LoadingStateView("Loading shortcuts...", verticalPadding: 60, prominence: .standalone)
                 } else if vm.filteredShortcuts.isEmpty {
-                    VStack(spacing: 12) {
-                        Image(systemName: vm.searchQuery.isEmpty ? "tray" : "magnifyingglass")
-                            .font(.system(size: 48))
-                            .foregroundColor(.secondary)
-
-                        Text(vm.searchQuery.isEmpty ? "No shortcuts available" : "No matching shortcuts")
-                            .font(.headline)
-
-                        if !vm.searchQuery.isEmpty {
-                            Text("Try a different search term")
-                                .font(.subheadline)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 60)
-                    .cardStyle()
+                    EmptyStateView(
+                        icon: vm.searchQuery.isEmpty ? "tray" : "magnifyingglass",
+                        message: vm.searchQuery.isEmpty ? "No shortcuts available" : "No matching shortcuts",
+                        detail: vm.searchQuery.isEmpty ? nil : "Try a different search term",
+                        verticalPadding: 60,
+                        prominence: .standalone
+                    )
                 } else {
                     LazyVGrid(columns: [
                         GridItem(.flexible()),

@@ -62,3 +62,57 @@ struct StatColumnHeader: View {
         }
     }
 }
+
+// MARK: - Proportional Breakdown Bar
+
+/// One slice of a ``ProportionalBreakdownBar``.
+struct BreakdownSegment: Identifiable {
+    /// Stable identity for SwiftUI diffing.
+    let id: String
+    /// The slice's fill color — normally the owning category's accent.
+    let color: Color
+    /// The byte size this slice represents.
+    let size: Int64
+}
+
+/// A single capsule bar split proportionally by category size.
+///
+/// **Single source of truth** for the "where did the space go" bar. Cruft Sweeper
+/// and Orphanage both lead their results card with one, so it lives here rather
+/// than privately inside either feature — the two must stay pixel-identical
+/// (height 10, 1pt gaps, `Capsule` clip, 2pt minimum slice so a tiny category
+/// stays visible).
+///
+/// ```swift
+/// ProportionalBreakdownBar(
+///     segments: breakdown.map { BreakdownSegment(id: $0.id, color: $0.color, size: $0.size) },
+///     total: totalBytes
+/// )
+/// ```
+struct ProportionalBreakdownBar: View {
+    /// The slices, in display order (largest first by convention).
+    let segments: [BreakdownSegment]
+    /// Denominator for the proportions.
+    let total: Int64
+
+    var body: some View {
+        GeometryReader { geo in
+            HStack(spacing: 1) {
+                ForEach(segments) { seg in
+                    Rectangle()
+                        .fill(seg.color)
+                        .frame(width: max(2, geo.size.width * fraction(seg)))
+                }
+            }
+        }
+        .frame(height: 10)
+        .clipShape(Capsule())
+    }
+
+    /// This segment's share of the total.
+    /// - Parameter seg: The slice being measured.
+    /// - Returns: A 0…1 fraction, or 0 when the total is empty.
+    private func fraction(_ seg: BreakdownSegment) -> CGFloat {
+        total > 0 ? CGFloat(Double(seg.size) / Double(total)) : 0
+    }
+}

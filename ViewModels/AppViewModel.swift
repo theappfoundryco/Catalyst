@@ -34,6 +34,7 @@ final class AppViewModel: ObservableObject {
         case terminalTimeTravel
         case ssdHealth
         case cruftSweeper
+        case orphanage
         case networkDiagnostics
         case loginItems
         case batteryHealth
@@ -63,6 +64,7 @@ final class AppViewModel: ObservableObject {
             case .terminalTimeTravel: return "Terminal Time Travel"
             case .ssdHealth:          return "SSD Health"
             case .cruftSweeper:       return "Cruft Sweeper"
+            case .orphanage:          return "Orphanage"
             case .networkDiagnostics: return "Network Diagnostics"
             case .loginItems:         return "Login Items"
             case .batteryHealth:      return "Battery Health"
@@ -138,6 +140,7 @@ final class AppViewModel: ObservableObject {
     let terminalTimeTravelViewModel: TerminalTimeTravelViewModel
     let ssdHealthViewModel: SSDHealthViewModel
     let cruftSweeperViewModel: CruftSweeperViewModel
+    let orphanageViewModel: OrphanageViewModel
     let networkDiagnosticsViewModel: NetworkDiagnosticsViewModel
     let loginItemsViewModel: LoginItemsViewModel
     let batteryHealthViewModel: BatteryHealthViewModel
@@ -220,6 +223,7 @@ final class AppViewModel: ObservableObject {
         
         // Initialize CruftSweeperViewModel
         self.cruftSweeperViewModel = CruftSweeperViewModel()
+        self.orphanageViewModel = OrphanageViewModel()
 
         // Initialize NetworkDiagnosticsViewModel
         self.networkDiagnosticsViewModel = NetworkDiagnosticsViewModel()

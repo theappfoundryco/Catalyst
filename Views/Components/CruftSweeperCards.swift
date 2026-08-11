@@ -684,7 +684,12 @@ private struct CruftSummaryCard: View {
             ///
             /// **Rationale:** Visualizing the breakdown explains *why* the disk is full without requiring users to parse raw numbers.
             if !vm.typeBreakdown.isEmpty {
-                CruftBreakdownBar(segments: vm.typeBreakdown, total: vm.totalFoundSize)
+                ProportionalBreakdownBar(
+                    segments: vm.typeBreakdown.map {
+                        BreakdownSegment(id: $0.id, color: $0.type.color, size: $0.size)
+                    },
+                    total: vm.totalFoundSize
+                )
 
                 LazyVGrid(
                     columns: [
@@ -725,8 +730,13 @@ private struct CruftSummaryCard: View {
     }
 }
 
-/// Macro-selection controls for the Cruft summary — the single source of truth for
-/// the "Select All / Select Safe / Clear" action row.
+/// Macro-selection controls — the single source of truth for the
+/// "Select All / Select Safe / Clear" action row.
+///
+/// Shared by Cruft Sweeper and Orphanage. The labels and icons are overridable so
+/// each feature can name its own "safe subset", but the layout, fonts, colors and
+/// spacing are fixed here on purpose: the two results screens sit one click apart
+/// in the sidebar and must read as the same tool.
 ///
 /// Centralised so the row is defined once rather than hand-rolled inline, mirroring
 /// how ``MaintenanceOperationRow`` centralises the Homebrew action buttons — and it
@@ -745,26 +755,45 @@ private struct CruftSummaryCard: View {
 /// )
 /// ```
 struct SmartSelectionActions: View {
+    /// Title of the blue "everything" macro-select.
+    var selectAllLabel: String = "Select All"
+    /// SF Symbol for the blue macro-select.
+    var selectAllIcon: String = "checkmark.circle"
+    /// Title of the green "safe subset" macro-select. Orphanage passes
+    /// "Select High Confidence" — same semantic slot, same green.
+    var selectSafeLabel: String = "Select Safe"
+    /// SF Symbol for the green macro-select.
+    var selectSafeIcon: String = "leaf"
+    /// Optional tooltip for the green macro-select.
+    var selectSafeHelp: String? = nil
+
+    /// Whether anything is currently selected. Clear only appears when it is,
+    /// so the row does not offer a no-op.
     let hasSelection: Bool
+    /// Selects every actionable item.
     let onSelectAll: () -> Void
+    /// Selects the subset the feature considers safe — Cruft's safe types,
+    /// Orphanage's bundle-id matches.
     let onSelectSafe: () -> Void
+    /// Clears the selection.
     let onClear: () -> Void
 
     var body: some View {
         HStack(spacing: 12) {
             Button(action: onSelectAll) {
-                Label("Select All", systemImage: "checkmark.circle")
+                Label(selectAllLabel, systemImage: selectAllIcon)
                     .font(.subheadline)
             }
             .appButton(.primary)
             .tint(.blue)
 
             Button(action: onSelectSafe) {
-                Label("Select Safe", systemImage: "leaf")
+                Label(selectSafeLabel, systemImage: selectSafeIcon)
                     .font(.subheadline)
             }
             .appButton(.primary)
             .tint(.green)
+            .help(selectSafeHelp ?? "")
 
             if hasSelection {
                 Button(action: onClear) {
@@ -776,33 +805,6 @@ struct SmartSelectionActions: View {
 
             Spacer()
         }
-    }
-}
-
-/// A single proportional bar splitting reclaimable space by artifact type.
-private struct CruftBreakdownBar: View {
-    let segments: [CruftSweeperViewModel.TypeSummary]
-    let total: Int64
-
-    var body: some View {
-        GeometryReader { geo in
-            HStack(spacing: 1) {
-                ForEach(segments) { seg in
-                    Rectangle()
-                        .fill(seg.type.color)
-                        .frame(width: max(2, geo.size.width * fraction(seg)))
-                }
-            }
-        }
-        .frame(height: 10)
-        .clipShape(Capsule())
-    }
-
-    /// Calculates the percentage of total storage consumed by a specific cruft category.
-    /// - Parameter seg: The localized data model aggregating specific file types.
-    /// - Returns: The calculated percentage representing spatial share.
-    private func fraction(_ seg: CruftSweeperViewModel.TypeSummary) -> CGFloat {
-        total > 0 ? CGFloat(Double(seg.size) / Double(total)) : 0
     }
 }
 

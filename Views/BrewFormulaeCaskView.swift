@@ -44,7 +44,7 @@ struct BrewFormulaeCaskView: View {
                     ///
                     /// **Rationale:** Conditionally switches the data source beneath the common search/filter interface based on the active tab segment.
                     if viewModel.isLoading {
-                        LoadingStateView("Loading packages...")
+                        LoadingStateView("Loading packages...", verticalPadding: 60, prominence: .standalone)
                     } else {
                         if selectedTab == 0 {
                             formulaeCard

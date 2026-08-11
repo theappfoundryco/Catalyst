@@ -94,7 +94,8 @@ Twenty-five screens across nine sidebar sections. Highlights, grouped:
 | Feature | What it does |
 |---|---|
 | **Dr. Catalyst** | One sweep across the whole environment — 16 concurrent diagnostic checkers — with plain-language findings and one-click fixes |
-| **Cruft Sweeper** | Find and safely remove build artifacts, caches, and orphaned dependencies |
+| **Cruft Sweeper** | Find and safely remove build artifacts, caches, and unused dependencies |
+| **Orphanage** | Find caches, preferences and support files left behind by apps you've deleted, and remove them reversibly |
 | **Disk & battery vitals** | SSD health, battery condition, and cycle counts at a glance |
 | **Network diagnostics** | Connectivity, DNS, and reachability checks when something's off |
 | **Startup items** | See and manage what launches at login |

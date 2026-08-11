@@ -34,7 +34,8 @@
     §10 Install Formulae/Casks · §11 requirements.txt Installer · §12 Popular
     Packages · §13 SmartShortcuts · §14 Aliases · §15 Terminal Time Travel ·
     §16 PATH Editor · **§16b Git Graph** · §17 Dr. Catalyst · §18 Disk Vitals ·
-    §19 Battery Health · §20 Cruft Sweeper · §21 Network Diagnostics · §22 Startup
+    §19 Battery Health · §20 Cruft Sweeper · **§20b Orphanage** ·
+    §21 Network Diagnostics · §22 Startup
     Items · §23 SSH Keys · §24 Logs · §25 About · §26 Menu-bar mode ·
     **§S Snapshot & Migrate (Migration)**
   - §27 **The install-mode / break-system-packages consent system** (cross-cutting)
@@ -431,6 +432,80 @@ reclaimable-space hero number, a per-type breakdown bar, per-row **size bars** a
   an explicit confirmation dialog showing the count and total size. `.ssh`, `.Trash`,
   and `.git` are hard-skipped.
 
+### 20b. Orphanage
+**What it does.** Find the residue an app leaves behind after you delete it —
+Application Support, Caches, Preferences, Logs, Saved State, HTTPStorages, WebKit,
+Containers, Group Containers and launch agents — and remove it **reversibly**.
+
+Sibling to Cruft Sweeper, deliberately not part of it. Cruft Sweeper reclaims build
+artifacts you can regenerate; Orphanage reclaims residue you cannot regenerate and
+did not ask for. Different risk profile, so a separate screen and a separate safety
+model.
+
+**How it works.** `OrphanageView` (+ `OrphanageCards`) + `OrphanageViewModel` drive
+`OrphanScanner` — the same `Sendable`-struct-over-`AsyncStream` shape as
+`CruftScanner` (§35), running detached with progress coalesced to ~10 Hz.
+`InstalledAppScanner` builds the "still installed" reference set,
+`OrphanMatcher` renders the ownership verdict, and `OrphanCleanupService` (an
+`actor`) executes. Results group by app name, expand to individual paths, and drill
+one level down so the user can judge at the leaf.
+
+The UI is Cruft Sweeper's, shared not copied: `SmartSelectionActions`,
+`ProportionalBreakdownBar`, `InstantDisclosureGroup`, `EmptyStateView`.
+
+**Safety/consent — the reason this feature is mostly rules:**
+- **Bundle-identifier evidence first.** `MatchConfidence` is `.bundleID` /
+  `.vendorLineage` / `.nameOnly`; only `.bundleID` is bulk-selectable. Name-only
+  matching is opt-in and off by default. Versioned lineages (`iMazing2Mac` →
+  `iMazing3Mac`) resolve to one vendor — an upgrade is not an uninstall.
+- **Running apps count as installed.** `NSWorkspace.runningApplications` is folded
+  into the reference set, so an app launched from Downloads or an external volume is
+  never flagged.
+- **Apple is never a candidate**, including behind `group.` and Team-ID prefixes —
+  the naive `com.apple.` check misses `group.com.apple.…` and offers live system
+  data for deletion.
+- **Toolchain caches are suppressed.** `typescript`, `node-gyp`, `swiftpm`, `pip`
+  and friends cache under `~/Library` but ship no `.app`, so scanning
+  `/Applications` can never find their owner (CODING_STANDARDS 8.4).
+- **Its own allowlist.** `OrphanPathValidator`, *not*
+  `PrivilegesService.validateSafeToDeletePath` (§33) — that function blocklists
+  exactly where this feature works and is shared with Cruft Sweeper and Homebrew
+  cleanup, so widening it would silently widen those. The load-bearing rule: an item
+  must be a **direct child** of a known root. `~/Library/Caches` is never eligible;
+  `~/Library/Caches/com.vendor.app` is. Symlinks are rejected outright.
+  **The duplication is the safety property — see CODING_STANDARDS 8.7 before
+  merging them.**
+- **Quarantine, not delete.** Items move to
+  `~/Library/Application Support/Catalyst/Quarantine` on the same volume (atomic
+  rename) with a manifest, restorable for 30 days. Preferred over the Trash, which
+  loses provenance and empties on the user's schedule rather than ours. An item
+  whose app reappears during the grace period is held back from purge.
+- **Nothing is pre-selected**; type-to-confirm above 5 GB or 25 items; inline
+  warnings on data-looking paths (`backup`, `data`, `vault`, `documents`).
+- **Re-verified immediately before executing**, not just at scan time, plus an
+  `lsof` open-file check that fails closed.
+- **Launch agents are `launchctl bootout`-ed before their plist moves** — removing
+  the plist first leaves launchd still tracking the job.
+- **Full Disk Access gate.** Without FDA, `~/Library/Containers` reads return
+  *empty rather than erroring*, which presents as "nothing found". The scan probes
+  explicitly and reports degraded results.
+- **Audit log** of every action (path, size, timestamp, outcome), bounded at 2000
+  entries.
+
+**Phase 1 is user-scope only.** System-scope items (`/Library/LaunchDaemons`,
+`/Library/LaunchAgents`, `/Library/PrivilegedHelperTools`, `pkgutil` receipts) are
+detected and shown **read-only**. The blocker is that `project.pbxproj` has no
+`CatalystHelper` target, so `SMAppService.daemon(_:)` fails at runtime; that target
+must be created in the Xcode GUI (§42, and standard 12.47 on pbxproj target
+surgery). Never a `sudo` shell-out (§31). See `docs/UPCOMING.md` §6c and issue #31.
+
+**A note on the numbers.** An early build of the matcher reported ~3 GB of
+"orphans" on a real Mac; the three largest finds all belonged to apps that were
+installed *and running*. Correct suppression cut the same scan ~10× to a couple of
+hundred MB. **A small number here is the feature working.** Anything proudly
+surfacing multiple GB on a healthy machine is offering to delete things the user
+still needs.
+
 ### 21. Network Diagnostics
 **What it does.** Run outbound-connectivity / DNS / reachability diagnostics.
 
@@ -678,7 +753,8 @@ value type + the `GitGraphPrefs`/`GitGraphPrefsStore` per-repo persistence);
 `HealthHistoryStore`), system probes (`SSDHealthService`, `BatteryHealthService`,
 `NetworkDiagnosticsService`, `NetworkMonitor`, `LoginItemsService`,
 `DetectionService`, `PathEditorService`, `SSHKeyService`, `ShellConfigManager`,
-`ShortcutInstaller`), scanning (`CruftScanner`), and migration
+`ShortcutInstaller`), scanning (`CruftScanner`, `OrphanScanner` +
+`InstalledAppScanner`, `OrphanCleanupService` [actor: quarantine/restore/purge]), and migration
 (`SnapshotService.swift` — `SnapshotArchiver` [zip via `/usr/bin/ditto`],
 `SnapshotCaptureService`, `SnapshotDiffer`, `SnapshotRestoreService`,
 `SnapshotResumeStore`, `ShellSecretScrubber`, `GitConfigFile`), and Git Graph
@@ -688,7 +764,9 @@ value type + the `GitGraphPrefs`/`GitGraphPrefsStore` per-repo persistence);
 **`Checkers/`** — the 16 Doctors + `StorageDoctor` (§17).
 
 **`Models/`** — `Codable`/`Sendable`/`Identifiable` value types: `AliasModels`,
-`AppInfo`, `CruftModels`, `HealthCheckModels`, `InstalledPackage`, `PackageType`,
+`AppInfo`, `CruftModels`, `HealthCheckModels`, `InstalledPackage`, `OrphanModels`
+(`LeftoverItem`/`LeftoverCategory`/`MatchConfidence`/`QuarantineRecord` — Foundation-only,
+per 1.2), `PackageType`,
 `Project`, `PythonInstallation`, `AvailableVersion` (brew-discovered installable Python; in
 `PythonVersionsResponse.swift`), `SSDHealthModels`,
 `SmartShortcutsModels`, `SnapshotModels` (the `.catalystsnapshot` contracts —
@@ -1091,6 +1169,7 @@ also the ones a contributor is least able to verify by clicking around.
 | Change pip behavior on 3.12+ / break-system-packages | `Helpers/InstallPreferences` + `Utilities/VersionComparator` (§27) |
 | Add/adjust a health check | `Checkers/…Doctor`, `Services/HealthCheckService`, `Models/HealthCheckModels` |
 | Change disk-cruft scanning | `Services/CruftScanner`, `Models/CruftModels`, `ViewModels/CruftSweeperViewModel` |
+| Change what counts as an orphaned leftover, or where Orphanage may delete | `Utilities/OrphanMatcher` (matcher **and** `OrphanPathValidator` — read CODING_STANDARDS 8.7 first), `Services/OrphanScanner`, `Services/OrphanCleanupService`, `Models/OrphanModels`, `ViewModels/OrphanageViewModel` (§20b) |
 | Change snapshot capture/restore, or shell secret-scrub | `Services/SnapshotService` (`SnapshotCaptureService`/`SnapshotDiffer`/`SnapshotRestoreService`/`ShellSecretScrubber`), `Models/SnapshotModels`, `ViewModels/SnapshotViewModel` (§47) |
 | Change the git graph / lane layout / commit reads | `Views/GitGraphView`, `ViewModels/GitGraphViewModel` (+ `GraphOptions`/`GitGraphPrefs`), `Services/GitGraphService`, `Utilities/GitGraphLayout` (§48) |
 | Change the app-wide integrity/install-mode indicator or control | `Views/StatusIndicatorView` (shield + `StatusPopoverView` menu), `Helpers/InstallPreferences` (§27) |
@@ -1120,6 +1199,10 @@ also the ones a contributor is least able to verify by clicking around.
   `fixID`).
 - **`CruftScanner` / `CruftItem` / `CruftType`** — the streaming disk-scan engine +
   its data (marker-guarded detection, Safe/Rebuild safety tiers).
+- **`OrphanScanner` / `OrphanMatcher` / `OrphanPathValidator` / `LeftoverItem` /
+  `MatchConfidence` / `QuarantineRecord`** — leftover discovery, the ownership
+  verdict, Orphanage's own delete allowlist (direct-child rule), and the
+  30-day reversible staging manifest (§20b).
 - **`NetworkConfig` / `RemoteCache` / `CacheTTL`** — endpoints + cached fetch.
 - **`ConsoleOutput`** — isolated high-frequency streamed text.
 - **`ConfigStore` / `ProjectStore` / `HealthHistoryStore`** — JSON persistence.

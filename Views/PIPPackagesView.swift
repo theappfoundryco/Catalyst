@@ -40,7 +40,7 @@ struct PIPPackagesView: View {
                 ///
                 /// **Rationale:** Structurally groups the primary scrollable content area below the sticky header.
                 if viewModel.isLoading {
-                    LoadingStateView("Loading packages...")
+                    LoadingStateView("Loading packages...", verticalPadding: 60, prominence: .standalone)
                 } else {
                     pipPackagesCard
                 }

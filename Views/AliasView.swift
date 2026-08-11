@@ -53,8 +53,7 @@ struct AliasView: View {
                 ///
                 /// **Rationale:** Visually segregates read-only and managed aliases from the creation controls above.
                 if vm.isLoading {
-                    LoadingStateView("Loading aliases...")
-                        .cardStyle()
+                    LoadingStateView("Loading aliases...", prominence: .standalone)
                 } else if vm.aliases.isEmpty {
                     emptyStateCard
                 } else {
@@ -224,9 +223,8 @@ struct AliasView: View {
             icon: "tray",
             message: "No Aliases Found",
             detail: "Create your first alias above to get started!",
-            iconSize: 48
+            prominence: .standalone
         )
-        .cardStyle()
     }
     
     // MARK: - Aliases List Card

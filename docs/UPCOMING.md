@@ -104,6 +104,57 @@ Be explicit that existing windows can't be retroactively updated — don't imply
 
 ---
 
+## 6b. Dry-run preview for Snapshot restore — SCOPED 2026-08-08 (issue #27, milestone v1.5)
+
+v1.4 added a confirmation naming the sections a restore will write, and escalating its wording
+when the shell profile is among them. That says *what* will be touched; it still doesn't show
+*what will change*.
+
+Wanted: a **Dry run** action beside Restore that executes nothing and renders the plan — every
+action that would run, grouped by section in `restoreOrder`, each with its exact command, and for
+`~/.zshrc` a real **diff** of current vs incoming, since that is the only destructive write in
+the flow. Skipped items should show their reason.
+
+Smaller than it looks: `RestoreAction.commandPreview` is already populated and documented as
+"the exact command shown in dry-run"; `alreadySatisfied` / `blockedReason` already carry the skip
+reasons; `SnapshotViewModel.pendingKinds` already computes the affected sections. Even
+`SnapshotView.previewBar`'s own doc comment already says "choose items, then Dry run or Restore"
+— the affordance was designed and never built, and that comment is currently stale. The missing
+pieces are a shell-profile diff renderer and a preview sheet.
+
+## 6c. Orphanage Phase 2 — system-scope removal (blocked on the privileged helper)
+
+Phase 1 shipped user-scope only: everything under `~/Library` is scanned, matched and
+quarantined without any elevated rights. System-scope items are **detected and displayed
+read-only** (`LeftoverCategory.isUserRemovable == false`), which is as far as it can go today.
+
+**The blocker is not Orphanage.** `PrivilegedHelper/` has `main.swift`,
+`CatalystHelperTool.swift` and the launchd plist on disk, and `PrivilegedHelperManager` +
+`CatalystHelperProtocol` are already in the app target — but `project.pbxproj` has **no
+`CatalystHelper` target**, so `SMAppService.daemon(plistName:)` fails at runtime. Per
+`PrivilegedHelper/README.md` the target has to be created in the Xcode GUI, and 12.47 records
+that hand-editing `pbxproj` to add or remove a *target* corrupted the project twice. So step
+one is GUI work, not code.
+
+Once the helper exists, Phase 2 is:
+- `/Library/LaunchDaemons` + `/Library/LaunchAgents`: `launchctl bootout system/<label>` then
+  quarantine the plist through the helper. `OrphanCleanupService.unloadAgent` already does the
+  `gui/<uid>/<label>` half for user agents — mirror it for system scope.
+- `/Library/PrivilegedHelperTools`: **verify the code signature against the vendor it claims**
+  before offering removal; anything unsigned or mismatched goes to manual review, never into a
+  one-click sweep.
+- `pkgutil --forget <package-id>` after a quarantine commits (root-only), plus surfacing
+  receipts whose payload is gone. Note receipts are useless as a completeness check for
+  MAS-installed apps — those use Containers and never appear in `pkgutil`.
+- Route every one of these through the helper's XPC interface. **Never `sudo` shell-out** (2.1).
+
+**Also deferred:** the 30-day purge only runs when the user opens the screen and taps *Purge
+Expired*. A background sweep on launch would need `AppViewModel.fullRefresh()` wiring (1.4) and
+a decision about purging without the user present — which, for a feature whose entire premise is
+recoverability, deserves an explicit opt-in rather than a default.
+
+---
+
 ## 7. Prior deferrals (carried, unchanged)
 
 - Swift-6 `timeoutTask` concurrency warning.

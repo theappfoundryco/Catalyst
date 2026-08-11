@@ -72,8 +72,7 @@ struct ShortcutDetailView: View {
                 } else if let err = viewModel.detailError {
                     detailErrorCard(err)
                 } else {
-                    LoadingStateView("Loading…", verticalPadding: 60)
-                        .cardStyle()
+                    LoadingStateView("Loading…", verticalPadding: 60, prominence: .standalone)
                 }
 
                 Spacer()

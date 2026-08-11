@@ -74,26 +74,17 @@ struct OutdatedPIPView: View {
                 
                 // Scanning Progress
                 if vm.isLoading {
-                    LoadingStateView("Scanning for updates...", verticalPadding: 60)
-                        .cardStyle()
+                    LoadingStateView("Scanning for updates...", verticalPadding: 60, prominence: .standalone)
                 }
                 
                 if vm.hasScannedOnce && !vm.isLoading && pipPackages.isEmpty && !vm.availablePythonVersions.isEmpty {
-                    VStack(spacing: 12) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 48))
-                            .foregroundColor(.green)
-                        
-                        Text("All pip packages are up to date!")
-                            .font(.headline)
-                        
-                        Text("No updates available at this time")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 40)
-                    .cardStyle()
+                    EmptyStateView(
+                        icon: "checkmark.circle.fill",
+                        message: "All pip packages are up to date!",
+                        detail: "No updates available at this time",
+                        iconColor: .green,
+                        prominence: .standalone
+                    )
                 }
                 
                 // Results: Outdated packages list

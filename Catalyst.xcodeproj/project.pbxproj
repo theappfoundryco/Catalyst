@@ -158,6 +158,13 @@
 		CC0000000000000000000A11 /* BrewMaintenanceManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC0000000000000000000A12 /* BrewMaintenanceManager.swift */; };
 		CD0000000000000000000A11 /* CruftModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD0000000000000000000A12 /* CruftModels.swift */; };
 		CE0000000000000000000A11 /* CruftScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE0000000000000000000A12 /* CruftScanner.swift */; };
+		CO0000000000000000000A11 /* OrphanModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = CO0000000000000000000A12 /* OrphanModels.swift */; };
+		CO0000000000000000000B11 /* OrphanMatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = CO0000000000000000000B12 /* OrphanMatcher.swift */; };
+		CO0000000000000000000C11 /* OrphanScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = CO0000000000000000000C12 /* OrphanScanner.swift */; };
+		CO0000000000000000000D11 /* OrphanCleanupService.swift in Sources */ = {isa = PBXBuildFile; fileRef = CO0000000000000000000D12 /* OrphanCleanupService.swift */; };
+		CO0000000000000000000E11 /* OrphanageViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = CO0000000000000000000E12 /* OrphanageViewModel.swift */; };
+		CO0000000000000000000F11 /* OrphanageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CO0000000000000000000F12 /* OrphanageView.swift */; };
+		CO0000000000000000000G11 /* OrphanageCards.swift in Sources */ = {isa = PBXBuildFile; fileRef = CO0000000000000000000G12 /* OrphanageCards.swift */; };
 		CF0000000000000000000A11 /* RequirementsParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF0000000000000000000A12 /* RequirementsParser.swift */; };
 		CG0000000000000000000A11 /* VenvBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = CG0000000000000000000A12 /* VenvBuilder.swift */; };
 		CH0000000000000000000A11 /* ShortcutInstaller.swift in Sources */ = {isa = PBXBuildFile; fileRef = CH0000000000000000000A12 /* ShortcutInstaller.swift */; };
@@ -347,6 +354,13 @@
 		CC0000000000000000000A12 /* BrewMaintenanceManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrewMaintenanceManager.swift; sourceTree = "<group>"; };
 		CD0000000000000000000A12 /* CruftModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CruftModels.swift; sourceTree = "<group>"; };
 		CE0000000000000000000A12 /* CruftScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CruftScanner.swift; sourceTree = "<group>"; };
+		CO0000000000000000000A12 /* OrphanModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrphanModels.swift; sourceTree = "<group>"; };
+		CO0000000000000000000B12 /* OrphanMatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrphanMatcher.swift; sourceTree = "<group>"; };
+		CO0000000000000000000C12 /* OrphanScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrphanScanner.swift; sourceTree = "<group>"; };
+		CO0000000000000000000D12 /* OrphanCleanupService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrphanCleanupService.swift; sourceTree = "<group>"; };
+		CO0000000000000000000E12 /* OrphanageViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrphanageViewModel.swift; sourceTree = "<group>"; };
+		CO0000000000000000000F12 /* OrphanageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrphanageView.swift; sourceTree = "<group>"; };
+		CO0000000000000000000G12 /* OrphanageCards.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrphanageCards.swift; sourceTree = "<group>"; };
 		CF0000000000000000000A12 /* RequirementsParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RequirementsParser.swift; sourceTree = "<group>"; };
 		CG0000000000000000000A12 /* VenvBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VenvBuilder.swift; sourceTree = "<group>"; };
 		CH0000000000000000000A12 /* ShortcutInstaller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShortcutInstaller.swift; sourceTree = "<group>"; };
@@ -404,6 +418,7 @@
 				8F07057A2F3C7DC9009B2F6E /* ScannerUtils.swift */,
 				CF0000000000000000000A12 /* RequirementsParser.swift */,
 				CL0000000000000000000A12 /* GitGraphLayout.swift */,
+				CO0000000000000000000B12 /* OrphanMatcher.swift */,
 			);
 			path = Utilities;
 			sourceTree = "<group>";
@@ -450,6 +465,7 @@
 				8F0E0B052F5341F900BF438E /* DrCatalystCards.swift */,
 				CA7A3333000000000000CC01 /* SnapshotSecretsCards.swift */,
 				8F0E0B072F5343BB00BF438E /* CruftSweeperCards.swift */,
+				CO0000000000000000000G12 /* OrphanageCards.swift */,
 			);
 			path = Components;
 			sourceTree = "<group>";
@@ -513,6 +529,7 @@
 				8F6488312F326740004272D6 /* VirtualEnvironmentsView.swift */,
 				CK0000000000000000000D12 /* SnapshotView.swift */,
 				CL0000000000000000000D12 /* GitGraphView.swift */,
+				CO0000000000000000000F12 /* OrphanageView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -548,6 +565,7 @@
 				22429E73B6FB41D3146CD2E5 /* OutdatedBrewViewModel.swift */,
 				CK0000000000000000000C12 /* SnapshotViewModel.swift */,
 				CL0000000000000000000C12 /* GitGraphViewModel.swift */,
+				CO0000000000000000000E12 /* OrphanageViewModel.swift */,
 			);
 			path = ViewModels;
 			sourceTree = "<group>";
@@ -584,6 +602,8 @@
 				CK0000000000000000000B12 /* SnapshotService.swift */,
 				CA7A4444000000000000DD01 /* SnapshotSecretsService.swift */,
 				CL0000000000000000000B12 /* GitGraphService.swift */,
+				CO0000000000000000000C12 /* OrphanScanner.swift */,
+				CO0000000000000000000D12 /* OrphanCleanupService.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -612,6 +632,7 @@
 				8F10BBAC2F3D1A7800D77530 /* SSDHealthModels.swift */,
 				CD0000000000000000000A12 /* CruftModels.swift */,
 				CK0000000000000000000A12 /* SnapshotModels.swift */,
+				CO0000000000000000000A12 /* OrphanModels.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -882,6 +903,13 @@
 				CB0000000000000000000A11 /* PythonManager.swift in Sources */,
 				CC0000000000000000000A11 /* BrewMaintenanceManager.swift in Sources */,
 				CE0000000000000000000A11 /* CruftScanner.swift in Sources */,
+				CO0000000000000000000A11 /* OrphanModels.swift in Sources */,
+				CO0000000000000000000B11 /* OrphanMatcher.swift in Sources */,
+				CO0000000000000000000C11 /* OrphanScanner.swift in Sources */,
+				CO0000000000000000000D11 /* OrphanCleanupService.swift in Sources */,
+				CO0000000000000000000E11 /* OrphanageViewModel.swift in Sources */,
+				CO0000000000000000000F11 /* OrphanageView.swift in Sources */,
+				CO0000000000000000000G11 /* OrphanageCards.swift in Sources */,
 				CG0000000000000000000A11 /* VenvBuilder.swift in Sources */,
 				CH0000000000000000000A11 /* ShortcutInstaller.swift in Sources */,
 				CI0000000000000000000A11 /* PackageInstaller.swift in Sources */,
@@ -1078,7 +1106,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1.4;
+				CURRENT_PROJECT_VERSION = 1.5;
 				DEVELOPMENT_TEAM = 6957JGQD3R;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -1099,7 +1127,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.6;
-				MARKETING_VERSION = 1.4;
+				MARKETING_VERSION = 1.5;
 				PRODUCT_BUNDLE_IDENTIFIER = com.shivanggulati.catalyst;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -1129,7 +1157,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				COMBINE_HIDPI_IMAGES = YES;
-				CURRENT_PROJECT_VERSION = 1.4;
+				CURRENT_PROJECT_VERSION = 1.5;
 				DEVELOPMENT_TEAM = 6957JGQD3R;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
@@ -1150,7 +1178,7 @@
 					"@executable_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 14.6;
-				MARKETING_VERSION = 1.4;
+				MARKETING_VERSION = 1.5;
 				PRODUCT_BUNDLE_IDENTIFIER = com.shivanggulati.catalyst;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";

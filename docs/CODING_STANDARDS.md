@@ -248,6 +248,22 @@ bordered inline call-outs (tint fill @0.12 + hairline border @0.28, radius 12). 
 directly when the banner body needs a spinner or dismiss button. Don't hand-roll a tinted
 RoundedRectangle for a banner — every call-out in the app must match.
 
+4.1c **Empty and loading states use `EmptyStateView` / `LoadingStateView`, and pick a
+`prominence`.** Both take `.inline` (default — nested inside a card the caller already
+owns; quiet, secondary, no background) or `.standalone` (owns its slot on the page:
+emphasised `.headline` title, larger icon, and it draws its **own** `cardStyle()`).
+Rules:
+- **Never apply `.cardStyle()` to one of these by hand.** That was the old pattern and
+  it drifted — four screens ended up hand-rolling a 15-line copy of `EmptyStateView`
+  (`OutdatedPIPView`, `OutdatedBrewView` ×2, `SmartShortcutsView`) purely because the
+  emphasised-title shape wasn't expressible in the component. It is now.
+- **A loading state and the empty/loaded state that replaces it MUST share a
+  prominence.** Mismatch them and the card background materialises the instant loading
+  ends, which reads as a layout glitch. Four screens shipped with this bug — Git Graph
+  in two places, plus `PIPPackagesView` and `BrewFormulaeCaskView`, where a bare spinner
+  was swapped for a carded list.
+- Use `cardPadded: false` when the parent already supplies horizontal padding.
+
 4.2 **A button's SF Symbol must NEVER be a different color from its (white) title.**
 `ContentView` sets **`.symbolRenderingMode(.monochrome)`** once on the detail
 `NavigationStack`, which collapses multicolor/hierarchical palettes to one color and
@@ -591,6 +607,35 @@ instead. Heavy FS work runs on a detached task and streams events to the
 `@MainActor` VM; coalesce `@Published` progress writes to ~10 Hz so a burst of
 events doesn't re-render the whole view.
 
+8.7 **Orphanage keeps its own delete allowlist — do NOT merge it with
+`validateSafeToDeletePath`.** That function (2.3) *blocklists* `/Library`,
+`~/Library`, `~/Documents` and `~/Desktop`, which is exactly and entirely where
+Orphanage works. Widening it to admit Orphanage would silently widen Cruft Sweeper
+and the Homebrew cleanup paths that share it. `OrphanPathValidator.isEligible`
+therefore carries a **narrow allowlist** instead, and its load-bearing rule is that
+an item must be a **direct child** of a known leftover root: `~/Library/Caches` is
+never eligible, `~/Library/Caches/com.vendor.app` is. That single check is what
+stops an upstream bug escalating into wiping a whole Library subtree. The
+duplication between the two validators is the safety property — keep it.
+
+8.8 **An app leftover is orphaned only on bundle-id evidence.** A dry run of the
+matcher against a real Mac reported **2.98 GB across 195 items**; auditing it, the
+three largest finds (`Application Support/zoom.us`, `com.wondershare.Installer`,
+`UBF8T346G9.Office`) all belonged to apps that were **installed and running**. What
+the name-based pass actually surfaces is (a) macOS's own data — `GeoServices`,
+`Animoji`, `networkserviceproxy`, and `group.com.apple.*` group containers, which
+slip past a plain `com.apple.` prefix check — and (b) CLI tooling that ships no
+`.app` and so can never be matched against `/Applications`: `typescript`,
+`node-gyp`, `swiftpm`, `.wrangler`, `Jedi`. Rules that follow:
+- **Strip container prefixes before any Apple check.** `group.<id>` and a 10-char
+  Team ID (`UBF8T346G9.<name>`) both hide the real identifier.
+- **A Team ID names a vendor, not an app** — a shared suite container can't be
+  proven unowned without checking installed apps' code signatures, so it is
+  reported at reduced confidence and is never bulk-selectable.
+- **Name-only matches are opt-in and off by default**, and no heuristic match may
+  be swept up by a bulk "select" action. Correct suppression cut the same scan to
+  44 items / 258 MB, all genuine.
+
 ---
 
 ## Part 9 — Adding a file to the Xcode project (registration ritual)
@@ -599,7 +644,11 @@ Hand-editing `project.pbxproj` is the **highest-risk surface** in this repo. Eve
 new `.swift` file needs **4 entries** (PBXBuildFile, PBXFileReference, a
 `PBXGroup` children entry, and a `PBXSourcesBuildPhase` entry) with a synthetic
 ID. Used ID prefixes so far: feature files `DD/EE/FF/AB/AC/AD/BA–BE`, structural
-`CA–CN`. **Next free prefix: `CO`.** (`CM` and `CN` were the auth/entitlement and user-profile
+`CA–CO`. **Next free prefix: `CP`.** (`CO` is the Orphanage feature — seven files
+registered as `CO…A`–`CO…G`: `Models/OrphanModels.swift`,
+`Utilities/OrphanMatcher.swift`, `Services/OrphanScanner.swift`,
+`Services/OrphanCleanupService.swift`, `ViewModels/OrphanageViewModel.swift`,
+`Views/OrphanageView.swift`, `Views/Components/OrphanageCards.swift`.) (`CM` and `CN` were the auth/entitlement and user-profile
 files; both were deleted at v1.0, so those prefixes are retired rather than reused — reusing a
 prefix makes `git log -S` on an ID ambiguous across eras.) Asset-catalog images need **no**
 pbxproj entries.

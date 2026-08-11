@@ -120,6 +120,10 @@ struct ContentView: View {
                                 Label("Cruft Sweeper", systemImage: "trash.slash.fill")
                             }
 
+                            NavigationLink(value: AppViewModel.Screen.orphanage) {
+                                Label("Orphanage", systemImage: "shippingbox.and.arrow.backward.fill")
+                            }
+
                             NavigationLink(value: AppViewModel.Screen.networkDiagnostics) {
                                 Label("Network Diagnostics", systemImage: "network")
                             }
@@ -236,6 +240,9 @@ struct ContentView: View {
                             
                         case .cruftSweeper:
                             CruftSweeperView(vm: appVM.cruftSweeperViewModel)
+
+                        case .orphanage:
+                            OrphanageView(vm: appVM.orphanageViewModel)
 
                         case .networkDiagnostics:
                             NetworkDiagnosticsView(vm: appVM.networkDiagnosticsViewModel)
