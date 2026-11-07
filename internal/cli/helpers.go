@@ -237,6 +237,7 @@ func cmdSetup(a *App, _ []string) int {
 		}
 	}
 	a.Store.SaveConfig(c)
+	failed := false
 	for _, h := range a.helpers() {
 		if h.have(a) {
 			u.Ok(h.label + " is installed")
@@ -251,7 +252,9 @@ func cmdSetup(a *App, _ []string) int {
 			continue
 		}
 		u.Blank()
-		a.installHelper(h) // shows the command and asks once; a no is remembered
+		if a.installHelper(h) != ExitOK { // shows the command and asks once; a no is remembered
+			failed = true
+		}
 		u.Blank()
 	}
 	self, _ := os.Executable()
@@ -265,6 +268,12 @@ func cmdSetup(a *App, _ []string) int {
 	c = a.Store.LoadConfig()
 	c.SetupDone = true
 	a.Store.SaveConfig(c)
+	if a.inSession && !failed {
+		// The welcome is a doorway, not a place: once its questions are answered, the home screen is where to be. A failed
+		// install stays on screen so it can be read.
+		a.outcome.SkipWait = true
+		return ExitOK
+	}
 	u.Blank()
 	u.Say("  " + u.Dim("You're set. Helpers are under More whenever you want them. Doctor is a good first stop."))
 	u.Blank()
