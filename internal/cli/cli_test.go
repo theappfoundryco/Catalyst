@@ -413,3 +413,49 @@ func TestNoCommandDrawsKit(t *testing.T) {
 		t.Fatal(out.String())
 	}
 }
+
+func undoRow(a *App) session.Item {
+	for _, it := range a.homeItems() {
+		if it.Name == "Undo" {
+			return it
+		}
+	}
+	return session.Item{}
+}
+
+// Undo is dimmed and skipped with nothing to reverse, and otherwise says what it would reverse.
+func TestUndoRowSaysWhatItWouldReverse(t *testing.T) {
+	a, _ := testApp(t, "linux")
+	if r := undoRow(a); !r.Disabled || r.Detail != "" {
+		t.Fatal(r)
+	}
+	now := time.Date(2026, 11, 7, 14, 7, 0, 0, time.Local)
+	a.E.Now = func() time.Time { return now }
+	batch := journal.NewBatch(now)
+	for _, name := range []string{"one", "two"} {
+		dir := filepath.Join(a.E.Home, ".Trash", name)
+		os.MkdirAll(dir, 0o755)
+		a.Journal.Add(journal.Entry{Time: now, Batch: batch, Kind: journal.KindTrash, Title: name, From: "/x/" + name, To: dir})
+	}
+	r := undoRow(a)
+	if r.Disabled || r.Detail != "Moved 2 folders to the Trash, today 2:07 PM" {
+		t.Fatalf("%+v", r)
+	}
+	a.Journal.Add(journal.Entry{Time: now, Batch: batch, Kind: journal.KindUndo, Title: "Undone"})
+	if r := undoRow(a); !r.Disabled || r.Detail != "" {
+		t.Fatalf("still offered after it was undone: %+v", r)
+	}
+}
+
+func TestWhenSaid(t *testing.T) {
+	now := time.Date(2026, 11, 7, 9, 0, 0, 0, time.Local)
+	for in, want := range map[time.Time]string{
+		now.Add(-time.Hour):      "today 8:00 AM",
+		now.Add(-12 * time.Hour): "yesterday 9:00 PM",
+		now.Add(-72 * time.Hour): "Nov 4, 9:00 AM",
+	} {
+		if got := whenSaid(in, now); got != want {
+			t.Errorf("got %q, want %q", got, want)
+		}
+	}
+}

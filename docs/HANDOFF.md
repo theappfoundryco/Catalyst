@@ -35,7 +35,7 @@ Ideas that hold it together:
 - **One way to run anything.** `internal/run`. See the running-programs section of the anti-patterns.
 - **One way to draw anything.** `internal/ui`. No command prints on its own.
 - **Parsers are plain functions over text**, so both systems test anywhere.
-- **One list, no prompt.** Bare `catalyst` is arrows and Enter only. Anything with arguments belongs in the shell. Commands reach the home screen through `App.reaction`, and offer next steps through `session.Outcome`.
+- **One list, no prompt.** Bare `catalyst` is arrows and Enter only. Rows are rebuilt after every command, so Undo can say what it would reverse, or sit dimmed and skipped when there is nothing. Anything with arguments belongs in the shell. Commands reach the home screen through `App.reaction`, and offer next steps through `session.Outcome`.
 - **Two dependencies**, both from the Go project.
 
 Files on a person's machine: the program in `~/.local/bin`, `~/.local/state/catalyst` (health history, journal, last sweep), `~/.config/catalyst/config.json`, and at most one marked line in a shell startup file.

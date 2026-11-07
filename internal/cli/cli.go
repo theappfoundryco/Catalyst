@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/theappfoundryco/catalyst/internal/host"
 	"github.com/theappfoundryco/catalyst/internal/journal"
@@ -118,7 +119,7 @@ func (a *App) dispatch(args []string) int {
 func (a *App) session() int {
 	a.inSession = true
 	return session.Run(session.Config{
-		UI: a.U, Items: a.homeItems(), Header: a.header,
+		UI: a.U, Items: a.homeItems, Header: a.header,
 		Run: func(args []string) session.Outcome {
 			a.outcome, a.reaction = session.Outcome{}, reaction{}
 			a.dispatch(args)
@@ -140,12 +141,18 @@ func (a *App) homeItems() []session.Item {
 	if a.oldAppPresent() {
 		more = append(more, item("legacy", "Old app", false))
 	}
+	undo := item("undo", "Undo", false)
+	if last := a.Journal.LastUndoable(); len(last) == 0 {
+		undo.Help, undo.Disabled = "nothing to undo yet", true
+	} else {
+		undo.Detail = a.lastChange(last)
+	}
 	return []session.Item{
 		item("doctor", "Doctor", false),
 		item("sweep", "Sweep", false),
 		item("status", "Status", false),
-		item("undo", "Undo", false),
-		item("disk", "Disk", true),
+		undo,
+		item("disk", "Disk", false),
 		item("battery", "Battery", false),
 		item("net", "Network", false),
 		item("ports", "Ports", false),
@@ -154,6 +161,49 @@ func (a *App) homeItems() []session.Item {
 		item("path", "PATH", false),
 		{Name: "More", Help: "history, settings, update, uninstall", Gap: true, Sub: more},
 	}
+}
+
+// lastChange says in one line what Undo would reverse, and when. It reads the same record Undo does, so the two cannot disagree.
+func (a *App) lastChange(batch []journal.Entry) string {
+	moved, folders, chmods := 0, 0, 0
+	for _, e := range batch {
+		switch e.Kind {
+		case journal.KindTrash:
+			moved++
+			if st, err := os.Stat(e.To); err == nil && st.IsDir() {
+				folders++
+			}
+		case journal.KindChmod:
+			chmods++
+		}
+	}
+	what := ""
+	switch {
+	case moved == 1 && chmods == 0:
+		what = "Moved " + batch[0].Title + " to the Trash"
+	case moved > 0 && chmods == 0 && folders == moved:
+		what = "Moved " + ui.Count(moved, "folder", "folders") + " to the Trash"
+	case moved > 0 && chmods == 0:
+		what = "Moved " + ui.Count(moved, "item", "items") + " to the Trash"
+	case chmods == 1 && moved == 0:
+		what = "Changed permissions on " + a.E.Tilde(batch[0].From)
+	default:
+		what = ui.Count(len(batch), "change", "changes")
+	}
+	return what + ", " + whenSaid(batch[0].Time, a.E.Now())
+}
+
+// whenSaid is a time the way people say it: "today 2:07 PM", "yesterday 9:15 AM", or the date.
+func whenSaid(t, now time.Time) string {
+	t, now = t.Local(), now.Local()
+	day := func(x time.Time) time.Time { return time.Date(x.Year(), x.Month(), x.Day(), 0, 0, 0, 0, time.Local) }
+	switch day(now).Sub(day(t)) {
+	case 0:
+		return "today " + t.Format("3:04 PM")
+	case 24 * time.Hour:
+		return "yesterday " + t.Format("3:04 PM")
+	}
+	return ui.When(t)
 }
 
 // oldAppPresent looks for what the old Mac app leaves most often, so the cleanup only shows up for someone who needs it.

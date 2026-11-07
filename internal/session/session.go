@@ -22,7 +22,9 @@ import (
 type Item struct {
 	Name, Help string
 	Args       []string
-	Gap        bool // a blank row above it
+	Gap        bool   // a blank row above it
+	Detail     string // a line under it, such as what Undo would reverse
+	Disabled   bool   // shown dim, and the cursor passes over it
 	Sub        []Item
 }
 
@@ -49,7 +51,7 @@ type Outcome struct {
 // Config is everything a session needs.
 type Config struct {
 	UI     *ui.UI
-	Items  []Item
+	Items  func() []Item // read again after every command, since what just ran can change a row
 	Header func() Header
 	Run    func(args []string) Outcome
 }
@@ -69,19 +71,43 @@ const (
 	Quit  // Ctrl-C or Ctrl-D
 )
 
+// step moves the cursor by one in either direction, passing over disabled rows. If every row is disabled it stays.
+func (p *Picker) step(by int) {
+	n := len(p.Items)
+	for i := 1; i <= n; i++ {
+		next := ((p.Cur+by*i)%n + n) % n
+		if !p.Items[next].Disabled {
+			p.Cur = next
+			return
+		}
+	}
+}
+
+// Settle keeps the cursor off a disabled row, for when the rows change under it.
+func (p *Picker) Settle() {
+	if p.Cur >= len(p.Items) {
+		p.Cur = 0
+	}
+	if len(p.Items) > 0 && p.Items[p.Cur].Disabled {
+		p.step(1)
+	}
+}
+
 // Key applies one key.
 func (p *Picker) Key(k string) int {
-	n := len(p.Items)
 	switch k {
 	case "up", "k":
-		if n > 0 {
-			p.Cur = (p.Cur + n - 1) % n
+		if len(p.Items) > 0 {
+			p.step(-1)
 		}
 	case "down", "j":
-		if n > 0 {
-			p.Cur = (p.Cur + 1) % n
+		if len(p.Items) > 0 {
+			p.step(1)
 		}
 	case "enter":
+		if len(p.Items) == 0 || p.Items[p.Cur].Disabled {
+			return Keep
+		}
 		return Open
 	case "esc", "left":
 		return Back
@@ -140,11 +166,17 @@ func (p *Picker) rows(u *ui.UI, cols int) ([]string, int) {
 		if cols >= 40 {
 			help = ui.Fit(it.Help, cols-17)
 		}
-		if i == p.Cur {
+		switch {
+		case i == p.Cur:
 			at = len(out)
 			out = append(out, strings.TrimRight("  "+u.Cyan("›")+" "+u.Head(name)+"  "+help, " "))
-		} else {
+		case it.Disabled:
+			out = append(out, strings.TrimRight("    "+u.Dim(name+"  "+help), " "))
+		default:
 			out = append(out, strings.TrimRight("    "+name+"  "+u.Dim(help), " "))
+		}
+		if it.Detail != "" && cols >= 30 {
+			out = append(out, "      "+u.Dim("└ "+ui.Fit(it.Detail, cols-9)))
 		}
 	}
 	return out, at
@@ -277,6 +309,7 @@ func (s *runner) paint(lines []string) {
 func (s *runner) list(items []Item, title string) bool {
 	u := s.u
 	p := &Picker{Items: items}
+	p.Settle()
 	home := title == ""
 	keys := "↑ ↓ move   Enter open   Esc back"
 	if home {
@@ -344,6 +377,10 @@ func (s *runner) list(items []Item, title string) bool {
 					return false
 				}
 				s.header = s.c.Header() // what just ran may have changed the health, or given Kit something to react to
+				if home {
+					p.Items = s.c.Items()
+					p.Settle()
+				}
 				cols, rows = u.Width(), u.Height()
 				s.clear()
 				s.hideCursor()
@@ -413,7 +450,7 @@ func Run(c Config) int {
 	u.Out = ui.Squeeze(u.Out) // commands each open and close with a blank line; on one screen, one is enough
 	s := &runner{c: c, u: u, fd: int(u.In.Fd()), header: c.Header()}
 	defer s.showCursor()
-	s.list(c.Items, "")
+	s.list(c.Items(), "")
 	if s.final {
 		return 0
 	}

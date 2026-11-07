@@ -148,3 +148,40 @@ func TestShortWindowDropsKitBeforeTheList(t *testing.T) {
 		t.Fatal("dropped Kit with plenty of room")
 	}
 }
+
+func TestDisabledRowsArePassedOver(t *testing.T) {
+	p := &Picker{Items: []Item{{Name: "A"}, {Name: "Undo", Disabled: true}, {Name: "C"}}}
+	p.Key("down")
+	if p.Cur != 2 {
+		t.Fatal(p.Cur)
+	}
+	p.Key("up")
+	if p.Cur != 0 {
+		t.Fatal(p.Cur)
+	}
+	p.Cur = 1
+	if p.Key("enter") != Keep {
+		t.Fatal("opened a disabled row")
+	}
+	p.Settle()
+	if p.Cur != 2 {
+		t.Fatal(p.Cur)
+	}
+	all := &Picker{Items: []Item{{Name: "A", Disabled: true}}}
+	all.Key("down") // must not loop forever
+	all.Settle()
+}
+
+func TestDetailSitsUnderItsRowAndFits(t *testing.T) {
+	u := ui.Plain(&bytes.Buffer{}, 40)
+	p := &Picker{Items: []Item{{Name: "Undo", Help: "reverse", Detail: strings.Repeat("moved things ", 10)}, {Name: "Disk"}}}
+	rows, _ := p.rows(u, 40)
+	if len(rows) != 3 || !strings.Contains(rows[1], "└") {
+		t.Fatal(rows)
+	}
+	for _, r := range rows {
+		if ui.Visible(r) > 40 {
+			t.Fatalf("%d columns: %q", ui.Visible(r), r)
+		}
+	}
+}
