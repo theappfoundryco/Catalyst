@@ -10,7 +10,9 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"os/signal"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 )
@@ -94,4 +96,67 @@ func (f *Fake) Run(_ time.Duration, name string, args ...string) Result {
 		return r
 	}
 	return Result{NotFound: true, Code: 127}
+}
+
+// Foreground is true while a program has the terminal to itself through Attached. A Ctrl-C then belongs to that program,
+// so the session must not take it as its own signal to leave.
+var Foreground atomic.Bool
+
+// Attached runs a program on this terminal, in the foreground, so it can ask its own questions. It exists for the few
+// steps a person must answer themselves: sudo asking for a password (macOS reads it, Catalyst never sees it), or an
+// installer asking to go ahead. Nothing else uses it. stdout is captured when capture is true, and shown otherwise.
+// There is no time limit: the person is in charge, and Ctrl-C reaches the program, not Catalyst.
+func Attached(capture bool, name string, args ...string) (stdout string, code int) {
+	cmd := exec.Command(name, args...)
+	cmd.Stdin, cmd.Stderr = os.Stdin, os.Stderr
+	var out bytes.Buffer
+	if capture {
+		cmd.Stdout = &out
+	} else {
+		cmd.Stdout = os.Stdout
+	}
+	quiet := make(chan os.Signal, 1) // while anything listens, Go does not let a Ctrl-C end Catalyst
+	signal.Notify(quiet, os.Interrupt)
+	defer signal.Stop(quiet)
+	Foreground.Store(true)
+	defer Foreground.Store(false)
+	err := cmd.Run()
+	var ee *exec.ExitError
+	switch {
+	case err == nil:
+		return out.String(), 0
+	case errors.As(err, &ee):
+		return out.String(), ee.ExitCode()
+	case errors.Is(err, exec.ErrNotFound), errors.Is(err, os.ErrNotExist):
+		return "", 127
+	}
+	return out.String(), -1
+}
+
+// Input runs a program with text on its stdin, such as pbcopy with what to copy. Same rules as Run otherwise.
+func Input(timeout time.Duration, input, name string, args ...string) Result {
+	if timeout <= 0 {
+		timeout = Default
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Stdin = strings.NewReader(input)
+	var out, errb bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &out, &errb
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
+	cmd.WaitDelay = 2 * time.Second
+	err := cmd.Run()
+	r := Result{Stdout: out.String(), Stderr: errb.String()}
+	var ee *exec.ExitError
+	switch {
+	case err == nil:
+	case errors.Is(err, exec.ErrNotFound), errors.Is(err, os.ErrNotExist):
+		r.NotFound, r.Code = true, 127
+	case errors.As(err, &ee):
+		r.Code = ee.ExitCode()
+	default:
+		r.Code = -1
+	}
+	return r
 }

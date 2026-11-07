@@ -39,7 +39,6 @@ func TestNothingIsWiderThanTheWindow(t *testing.T) {
 		u.Say("  " + long)
 		u.Row("Label", long)
 		u.Hdr("Title")
-		u.Beside("doctor", []string{"Health", long})
 		for _, l := range strings.Split(b.String(), "\n") {
 			if Visible(l) > w && !strings.Contains(l, "Health") && !strings.HasPrefix(l, "  This is") {
 				t.Errorf("width %d: %d columns: %q", w, Visible(l), l)
@@ -126,8 +125,8 @@ func TestMenuKeys(t *testing.T) {
 		t.Fatal("q")
 	}
 	m.key("up")
-	if m.cur != 0 {
-		t.Fatal("up past the top")
+	if m.cur != len(m.Items)-1 {
+		t.Fatal("up from the top goes round to the bottom")
 	}
 }
 
@@ -156,11 +155,130 @@ func TestMenuFitsAndScrolls(t *testing.T) {
 	}
 }
 
+// The sizes used to sit at the far edge of a wide window, a long way from the names they belong to.
+func TestMenuKeepsSizesBesideTheNames(t *testing.T) {
+	m := &Menu{Noun: "folder", Nouns: "folders", Action: "sweep", Items: []Item{{Label: "pip cache", Right: "about 1 GB", About: "x"}}}
+	for _, l := range m.frame(Plain(&bytes.Buffer{}, 200), 200, 40) {
+		if strings.Contains(l, "about 1 GB") && strings.Index(l, "about 1 GB") > 25 {
+			t.Fatalf("too far away: %q", l)
+		}
+	}
+}
+
+func TestTitleTakesThePlaceOfTheFirstHeadingOnly(t *testing.T) {
+	var b bytes.Buffer
+	u := Plain(&b, 80)
+	u.Title("Disk")
+	u.Hdr("Disks")
+	u.Hdr("Drive health")
+	if s := b.String(); !strings.Contains(s, "Catalyst › Disk") || strings.Contains(s, "Disks") || !strings.Contains(s, "Drive health") {
+		t.Fatal(s)
+	}
+}
+
+func TestSqueezeKeepsOneBlankLine(t *testing.T) {
+	var b bytes.Buffer
+	w := Squeeze(&b)
+	w.Write([]byte("one\n\n\n\n"))
+	w.Write([]byte("\r\033[K\n\n"))
+	w.Write([]byte("two\n"))
+	if got := strings.ReplaceAll(strings.ReplaceAll(b.String(), "\r", ""), "\033[K", ""); got != "one\n\ntwo\n" {
+		t.Fatalf("%q", got)
+	}
+	b.Reset()
+	w = Squeeze(&b)
+	w.Write([]byte("\n\nfirst\n"))               // nothing above it, so no blank lines are owed
+	w.Write([]byte("\n\033[H\033[2J\nsecond\n")) // a fresh screen keeps the blank line at its top
+	if b.String() != "first\n\n\033[H\033[2J\nsecond\n" {
+		t.Fatalf("%q", b.String())
+	}
+}
+
+func TestKeysSplitsWhatArrivesTogether(t *testing.T) {
+	got := Keys([]byte("\x1b[B\x1b[B\r"))
+	if strings.Join(got, ",") != "down,down,enter" {
+		t.Fatal(got)
+	}
+	if got := Keys([]byte("\x1b")); len(got) != 1 || got[0] != "esc" {
+		t.Fatal(got)
+	}
+	if got := Keys([]byte("\x1b[1;2A")); len(got) != 0 {
+		t.Fatal(got)
+	}
+	if got := Keys([]byte("aé")); strings.Join(got, ",") != "a,é" {
+		t.Fatal(got)
+	}
+	if got := Keys(nil); len(got) != 0 {
+		t.Fatal(got)
+	}
+}
+
 func TestReadKey(t *testing.T) {
 	cases := map[string]string{"\x1b[A": "up", "\x1b[B": "down", "\x1bOA": "up", "\r": "enter", "\x03": "ctrl-c", "\t": "tab", "\x7f": "backspace", "\x1b": "esc", "a": "a"}
 	for in, want := range cases {
 		if got := ReadKey([]byte(in)); got != want {
 			t.Errorf("%q: got %q", in, got)
 		}
+	}
+}
+
+func TestMenuFramesNeverHoldTwoBlankLinesInARow(t *testing.T) {
+	for _, single := range []bool{false, true} {
+		m := testMenu()
+		m.Single = single
+		for _, rows := range []int{12, 24, 40} {
+			lines := m.frame(Plain(&bytes.Buffer{}, 80), 80, rows)
+			for i := 1; i < len(lines); i++ {
+				if lines[i] == "" && lines[i-1] == "" {
+					t.Fatalf("single=%v rows=%d: two blank lines at %d", single, rows, i)
+				}
+			}
+		}
+	}
+}
+
+func TestLockedRowsCannotBeTicked(t *testing.T) {
+	m := &Menu{Items: []Item{{Label: "a"}, {Label: "b", Locked: true}}}
+	m.key("a")
+	if !m.Items[0].Picked || m.Items[1].Picked {
+		t.Fatalf("%+v", m.Items)
+	}
+	m.key("down")
+	m.key(" ")
+	if m.Items[1].Picked {
+		t.Fatal("a locked row was ticked")
+	}
+}
+
+func TestMenuKeysActInPlace(t *testing.T) {
+	got := -1
+	m := &Menu{Items: []Item{{Label: "a"}, {Label: "b"}}, Keys: []MenuKey{{Key: "o", Label: "open", Do: func(i int) string { got = i; return "opened" }}}}
+	m.key("down")
+	if done := m.key("o"); done || got != 1 || m.flash != "opened" {
+		t.Fatal(done, got, m.flash)
+	}
+}
+
+func TestMarksOnlyInASession(t *testing.T) {
+	u := Plain(nil, 80)
+	if u.Mark(3) != "" {
+		t.Fatal("a mark outside a session")
+	}
+	u.Marks = true
+	if m := u.Mark(3); m != "\033[3;7770z" || Visible(m) != 0 {
+		t.Fatalf("%q", m)
+	}
+}
+
+func TestHealthDotColoursByScore(t *testing.T) {
+	u := &UI{Color: true, Colors256: true}
+	if u.HealthDot(95, 1) == u.HealthDot(30, 1) {
+		t.Fatal("a clean bill and trouble look the same")
+	}
+	if Breath(95) <= Breath(30) {
+		t.Fatal("trouble should breathe faster")
+	}
+	if !strings.Contains(u.HealthDot(-1, 1), "○") {
+		t.Fatal("no checkup should be a hollow dot")
 	}
 }

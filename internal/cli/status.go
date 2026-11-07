@@ -2,50 +2,73 @@ package cli
 
 import (
 	"fmt"
-	"os"
 	"strings"
+	"time"
 
+	"github.com/theappfoundryco/catalyst/internal/kit"
 	"github.com/theappfoundryco/catalyst/internal/session"
 	"github.com/theappfoundryco/catalyst/internal/state"
 	"github.com/theappfoundryco/catalyst/internal/ui"
 	"github.com/theappfoundryco/catalyst/internal/version"
 )
 
-func (a *App) welcome() session.Welcome {
+// header is the text beside Kit on the home screen, read fresh each time so it follows what just ran. The name comes first,
+// and the last line is the one that changes: what just happened, or else what is worth doing.
+func (a *App) header() session.Header {
 	u := a.U
-	w := session.Welcome{Lines: []string{u.Bold("Catalyst") + " " + u.Dim("v"+strings.TrimPrefix(version.Version, "v"))}}
 	shell := ""
 	if a.E.Shell != "" {
 		s := a.E.Shell
 		shell = ", " + s[strings.LastIndex(s, "/")+1:]
 	}
-	w.Lines = append(w.Lines, u.Dim(a.E.OSName()+", "+a.E.Arch+shell))
+	about := "v" + strings.TrimPrefix(version.Version, "v") + " · " + a.E.OSName() + ", " + a.E.Arch + shell
+	lines := []string{u.Bold("Catalyst") + " " + u.Dim("v"+strings.TrimPrefix(version.Version, "v")), u.Dim(a.E.OSName() + ", " + a.E.Arch + shell), ""}
+	if name := a.Store.LoadConfig().Nickname(); name != "" {
+		lines = []string{u.Bold(greeting(name, a.E.Now())), u.Dim("Catalyst " + about), ""}
+	}
+	mood := a.reaction.mood
+	if mood == "" {
+		mood = kit.Idle
+	}
 	h := a.Store.History()
 	if len(h) == 0 {
-		w.Lines = append(w.Lines, u.Dim("No checkup yet. Try doctor."))
-		return w
+		lines = append(lines, session.Dot+" "+u.Dim("No checkup yet. Doctor is a good start."))
+		if a.reaction.line != "" {
+			lines = append(lines, a.reaction.line)
+		}
+		return session.Header{Mood: mood, Lines: lines, Health: -1}
 	}
 	last := h[len(h)-1]
-	line := u.ScoreStyle(last.Score)(fmt.Sprintf("Health %d", last.Score))
+	fresh := a.E.Now().Sub(last.Date) < 24*time.Hour
+	health := session.Dot + " " + u.ScoreStyle(last.Score)(fmt.Sprintf("Health %d", last.Score))
 	if change, since, ok := state.Trend(h); ok {
-		line += " " + u.Dim(trendWords(change, since, a.E.Now()))
+		health += " " + u.Dim(trendWords(change, since, a.E.Now()))
 	} else {
-		line += " " + u.Dim("from "+ui.When(last.Date))
+		health += " " + u.Dim("from "+ui.When(last.Date))
 	}
-	w.Lines = append(w.Lines, line)
+	lines = append(lines, health)
+	hdr := session.Header{Mood: mood, Health: last.Score, Fresh: fresh}
+	if a.reaction.line != "" {
+		hdr.Lines = append(lines, a.reaction.line)
+		return hdr
+	}
 	var bits []string
 	if last.Critical > 0 {
 		bits = append(bits, u.Red(ui.Count(last.Critical, "thing needs", "things need")+" fixing"))
 	} else if last.Issues > 0 {
 		bits = append(bits, u.Yellow(ui.Count(last.Issues, "thing", "things")+" worth a look"))
 	}
+	if !fresh {
+		bits = append(bits, u.Dim("checked "+ui.Ago(last.Date, a.E.Now())))
+	}
 	if s, ok := a.Store.LastSweep(); ok && s.Bytes > 0 {
 		bits = append(bits, u.Cyan("about "+ui.Size(s.Bytes))+" "+u.Dim("to sweep"))
 	}
 	if len(bits) > 0 {
-		w.Lines = append(w.Lines, strings.Join(bits, u.Dim("  ·  ")))
+		lines = append(lines, strings.Join(bits, u.Dim("  ·  ")))
 	}
-	return w
+	hdr.Lines = lines
+	return hdr
 }
 
 type statusReport struct {
@@ -59,6 +82,35 @@ type statusReport struct {
 	Health  *int    `json:"health,omitempty"`
 }
 
+// heavySwap is where the doctor's memory check starts to warn, so the two never disagree.
+const heavySwap = 4 << 30
+
+// The percentages at which a bar turns yellow and red.
+const (
+	cpuWarn, cpuCrit   = 60, 85
+	memWarn, memCrit   = 75, 90
+	diskWarn, diskCrit = 75, 90
+)
+
+// statusVerdict decides how the card ends. It only reports what is red, because a Mac's memory sits in the yellow all day
+// and that is normal. allClear is true only when every bar is green, and only then may the card say something cheerful.
+func statusVerdict(cpu, mem, disk int, memOK, diskOK bool, swap int64) (problems []string, allClear bool) {
+	if cpu >= cpuCrit {
+		problems = append(problems, "The CPU is very busy right now.")
+	}
+	if memOK && mem >= memCrit {
+		problems = append(problems, "Memory is nearly full.")
+	}
+	if diskOK && disk >= diskCrit {
+		problems = append(problems, "The disk is nearly full.")
+	}
+	if swap > heavySwap {
+		problems = append(problems, "Heavy swapping: memory ran out for what is open. Quitting big apps or a restart gives back "+ui.RAM(swap)+" of disk.")
+	}
+	allClear = cpu < cpuWarn && (!memOK || mem < memWarn) && (!diskOK || disk < diskWarn) && swap <= heavySwap
+	return problems, allClear
+}
+
 func cmdStatus(a *App, args []string) int {
 	fs := a.flags("status", "[--json]")
 	asJSON := fs.Bool("json", false, "")
@@ -66,7 +118,7 @@ func cmdStatus(a *App, args []string) int {
 		return code
 	}
 	u := a.U
-	name, _ := os.Hostname()
+	name := a.E.Hostname()
 	load, threads := a.E.Load()
 	mem, memOK := a.E.Memory()
 	vol, volOK := a.E.HomeVolume()
@@ -86,38 +138,76 @@ func cmdStatus(a *App, args []string) int {
 	if u.Width() < 60 {
 		bar = 10
 	}
-	u.Blank()
-	head := []string{u.Bold(name) + " " + u.Dim(a.E.OSName())}
+	a.outcome.Refresh = true
+	a.outcome.Live = 2 * time.Second
+	u.Hdr("Status")
+	u.Row("Machine", name+"  "+u.Dim(a.E.OSName()))
 	if len(h) > 0 {
 		last := h[len(h)-1]
-		line := u.ScoreStyle(last.Score)(fmt.Sprintf("Health %d", last.Score))
-		line += " " + u.Dim("from "+ui.When(last.Date))
-		head = append(head, line)
+		u.Row("Health", u.ScoreStyle(last.Score)(fmt.Sprintf("%d", last.Score))+"  "+u.Dim("from "+ui.When(last.Date)))
+	} else if a.inSession {
+		u.Row("Health", u.Dim("No checkup yet"))
 	} else {
-		head = append(head, u.Dim("No checkup yet: catalyst doctor"))
+		u.Row("Health", u.Dim("No checkup yet: catalyst doctor"))
 	}
-	u.Beside("idle", head)
-	u.Say("  " + u.Rule(52))
 	loadPct := 0
 	if threads > 0 {
 		loadPct = int(load * 100 / float64(threads))
 	}
-	u.Row("CPU", u.Bar(loadPct, bar, 60, 85)+"  "+u.Dim(fmt.Sprintf("load %.2f of %d", load, threads)))
+	u.Row("CPU", u.Bar(loadPct, bar, cpuWarn, cpuCrit)+"  "+u.Dim(fmt.Sprintf("load %.2f of %d", load, threads)))
 	if memOK {
-		u.Row("Memory", u.Bar(mem.Percent(), bar, 75, 90)+"  "+u.Dim(ui.RAM(mem.Used)+" of "+ui.RAM(mem.Total)))
+		u.Row("Memory", u.Bar(mem.Percent(), bar, memWarn, memCrit)+"  "+u.Dim(ui.RAM(mem.Used)+" of "+ui.RAM(mem.Total)))
+		if mem.SwapUsed > 0 {
+			swap := ui.RAM(mem.SwapUsed) + " in use"
+			if mem.SwapUsed > heavySwap {
+				swap = u.Orange(swap)
+			}
+			u.Row("Swap", swap+"  "+u.Dim("disk standing in for memory"))
+		}
+		if p, ok := a.E.Pressure(); ok {
+			switch p {
+			case "normal":
+				u.Row("Pressure", u.Green("normal")+u.Dim("  memory is keeping up"))
+			case "warning":
+				u.Row("Pressure", u.Orange("high")+u.Dim("  apps are waiting for memory"))
+			default:
+				u.Row("Pressure", u.Red("critical")+u.Dim("  quit something big"))
+			}
+		}
 	}
 	if volOK {
-		u.Row("Disk", u.Bar(vol.UsedPercent, bar, 75, 90)+"  "+u.Dim(ui.Size(vol.Free)+" free"))
+		u.Row("Disk", u.Bar(vol.UsedPercent, bar, diskWarn, diskCrit)+"  "+u.Dim(ui.Size(vol.Free)+" free"))
 	}
 	if bat.Present {
 		note := bat.Source
 		if bat.Charging {
 			note = "charging"
 		}
+		if bat.TimeLeft != "" {
+			note += ", " + bat.TimeLeft + " left"
+		}
 		u.Row("Battery", u.Green(fmt.Sprintf("%d%%", bat.Percent))+"  "+u.Dim(note))
 	}
+	if t := a.E.Thermal(); t != "" {
+		if t == "normal" {
+			u.Row("Heat", u.Green("normal")+u.Dim("  running at full speed"))
+		} else {
+			u.Row("Heat", u.Orange(t))
+		}
+	}
+	if up, ok := a.E.Uptime(); ok {
+		note := ""
+		if up > 14*24*time.Hour {
+			note = u.Dim("  a restart now and then clears swap and stuck processes")
+		}
+		u.Row("Up for", upFor(up)+note)
+	}
 	if s, ok := a.Store.LastSweep(); ok && s.Bytes > 0 {
-		u.Row("To sweep", "about "+ui.Size(s.Bytes)+"  "+u.Dim("catalyst sweep"))
+		if a.inSession {
+			u.Row("To sweep", "about "+ui.Size(s.Bytes))
+		} else {
+			u.Row("To sweep", "about "+ui.Size(s.Bytes)+"  "+u.Dim("catalyst sweep"))
+		}
 	}
 	if _, err := a.E.Look("docker"); err == nil {
 		if out, ok := a.E.Out("docker", "ps", "-q"); ok {
@@ -128,6 +218,49 @@ func cmdStatus(a *App, args []string) int {
 			u.Row("Docker", ui.Count(n, "container", "containers")+" running")
 		}
 	}
-	u.Signoff()
+	if cpu := a.E.TopProcs(3, false); len(cpu) > 0 && !*asJSON {
+		u.Sect("Busiest right now")
+		for _, p := range cpu {
+			u.Say(fmt.Sprintf("  %6.0f%%  %s", p.CPU, ui.Fit(p.Name, u.Width()-12)))
+		}
+		u.Say("  " + u.Faint("BY MEMORY"))
+		for _, p := range a.E.TopProcs(3, true) {
+			u.Say(fmt.Sprintf("  %7s  %s", ui.RAM(p.RSS), ui.Fit(p.Name, u.Width()-12)))
+		}
+	}
+	problems, allClear := statusVerdict(loadPct, mem.Percent(), vol.UsedPercent, memOK, volOK, mem.SwapUsed)
+	if len(problems) > 0 {
+		u.Blank()
+		for _, p := range problems {
+			u.Warn(p)
+		}
+		u.Blank()
+	} else if allClear {
+		u.Signoff()
+	} else {
+		u.Blank()
+	}
+	if a.inSession && a.E.Mac() {
+		a.outcome.Actions = append(a.outcome.Actions, session.Action{Key: "a", Label: "Activity Monitor", Do: func() string {
+			if a.E.Run.Run(0, "open", "-a", "Activity Monitor").OK() {
+				return "Opened Activity Monitor."
+			}
+			return "Could not open Activity Monitor."
+		}})
+	}
 	return ExitOK
+}
+
+// upFor is how long the machine has been running, in the largest unit that reads naturally.
+func upFor(d time.Duration) string {
+	days := int(d.Hours()) / 24
+	switch {
+	case days >= 2:
+		return fmt.Sprintf("%d days", days)
+	case days == 1:
+		return fmt.Sprintf("1 day, %d hours", int(d.Hours())-24)
+	case d >= time.Hour:
+		return fmt.Sprintf("%d hours", int(d.Hours()))
+	}
+	return fmt.Sprintf("%d minutes", int(d.Minutes()))
 }

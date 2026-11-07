@@ -12,10 +12,10 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
-	"github.com/theappfoundryco/catalyst/internal/kit"
 	"golang.org/x/term"
 )
 
@@ -31,6 +31,18 @@ type UI struct {
 	Mascot    bool
 	Yes       bool // --yes: answer yes to every question
 	FixedW    int  // set by tests and demos
+	titled    bool // Title already named this screen, so the command's own first heading would only repeat it
+
+	// Echo, when set, is told what a person typed at a question. The terminal shows it already, but a screen that is
+	// redrawn later, such as the session's scrolling view of a result, only knows what was written.
+	Echo func(typed string)
+
+	// Margin is kept free at the right edge. The session keeps one column, since writing in the last one can make a
+	// terminal wrap a line it was told to end.
+	Margin int
+
+	// Marks is on while a session is reading, so commands can tag the lines a cursor may rest on. See Mark.
+	Marks bool
 }
 
 // New decides everything from the environment. NO_COLOR, a pipe or TERM=dumb all mean plain text.
@@ -74,17 +86,20 @@ func (u *UI) grey(s string) string {
 	return u.Dim(s)
 }
 
+// fder is anything that sits on a real terminal: a file, or Squeeze around one.
+type fder interface{ Fd() uintptr }
+
 // Width is the terminal's width, or 80 when it cannot be told.
 func (u *UI) Width() int {
 	if u.FixedW > 0 {
 		return u.FixedW
 	}
 	if c, err := strconv.Atoi(os.Getenv("COLUMNS")); err == nil && c >= 20 {
-		return c
+		return c - u.Margin
 	}
-	if f, ok := u.Out.(*os.File); ok {
+	if f, ok := u.Out.(fder); ok {
 		if w, _, err := term.GetSize(int(f.Fd())); err == nil && w >= 20 {
-			return w
+			return w - u.Margin
 		}
 	}
 	return 80
@@ -92,7 +107,7 @@ func (u *UI) Width() int {
 
 // Height is the terminal's height, or 0 when it cannot be told.
 func (u *UI) Height() int {
-	if f, ok := u.Out.(*os.File); ok {
+	if f, ok := u.Out.(fder); ok {
 		if _, h, err := term.GetSize(int(f.Fd())); err == nil {
 			return h
 		}
@@ -156,7 +171,7 @@ func (u *UI) Blank() { fmt.Fprintln(u.Out) }
 // Sect starts a section.
 func (u *UI) Sect(title string) {
 	u.Blank()
-	u.line(u.Head(title))
+	u.line("  " + u.Head(title))
 }
 
 func (u *UI) mark(symbol, word string, style func(string) string) string {
@@ -200,9 +215,27 @@ func (u *UI) Rule(width int) string {
 
 // Hdr is a coloured title with a rule under it.
 func (u *UI) Hdr(title string) {
+	if u.titled {
+		u.titled = false
+		return
+	}
 	u.Blank()
-	u.line(u.Bold(u.blue(title)))
-	u.line(u.Rule(44))
+	u.line("  " + u.Bold(u.blue(title)))
+	u.line("  " + u.Rule(52))
+	u.Blank()
+}
+
+// TitleLines names a screen in the session: a blank line, where you are, a rule and a blank line.
+func (u *UI) TitleLines(name string) []string {
+	return []string{"", "  " + u.Dim("Catalyst") + u.Faint(" › ") + u.Bold(name), "  " + u.Faint(strings.Repeat("─", u.Wide())), ""}
+}
+
+// Title prints TitleLines, and tells the next Hdr or Banner that this screen already has its heading.
+func (u *UI) Title(name string) {
+	for _, l := range u.TitleLines(name) {
+		u.line(l)
+	}
+	u.titled = true
 }
 
 func (u *UI) blue(s string) string {
@@ -270,38 +303,6 @@ func (u *UI) ScoreStyle(score int) func(string) string {
 	return u.Red
 }
 
-// Beside prints Kit next to text lines when there is room, and only the text otherwise. Kit stays out of pipes,
-// plain output and narrow windows, so it is never in the way.
-func (u *UI) Beside(mood string, text []string) {
-	if !u.Mascot || !u.Color || u.Width() < kit.Width(mood)+40 {
-		for _, l := range text {
-			u.line("  " + l)
-		}
-		return
-	}
-	art := kit.Render(mood, u.Truecolor)
-	w := kit.Width(mood)
-	n := len(art)
-	if len(text) > n {
-		n = len(text)
-	}
-	top := n - len(text) // text sits at the bottom, next to Kit's feet
-	if top > 1 {
-		top = 1
-	}
-	for i := 0; i < n; i++ {
-		left := strings.Repeat(" ", w)
-		if i < len(art) {
-			left = art[i]
-		}
-		right := ""
-		if j := i - top; j >= 0 && j < len(text) {
-			right = text[j]
-		}
-		u.line(strings.TrimRight("  "+left+"   "+Fit(right, u.Width()-w-5), " "))
-	}
-}
-
 const bannerArt = ` ██████╗ █████╗ ████████╗ █████╗ ██╗  ██╗   ██╗███████╗████████╗
 ██╔════╝██╔══██╗╚══██╔══╝██╔══██╗██║  ╚██╗ ██╔╝██╔════╝╚══██╔══╝
 ██║     ███████║   ██║   ███████║██║   ╚████╔╝ ███████╗   ██║
@@ -311,7 +312,7 @@ const bannerArt = ` ██████╗ █████╗ ██████�
 
 // Banner is the name in big letters, only for a person at a terminal wide enough to show it.
 func (u *UI) Banner(tagline string) {
-	if !u.Color || u.Width() < 70 {
+	if u.titled || !u.Color || u.Width() < 70 {
 		return
 	}
 	shades := []int{153, 117, 111, 75, 39, 33} // pale sky to Catalyst blue
@@ -398,4 +399,56 @@ func Count(n int, one, many string) string {
 		return "1 " + one
 	}
 	return fmt.Sprintf("%d %s", n, many)
+}
+
+// squeeze drops blank lines beyond the first in a row. Colour codes and carriage returns do not count as text.
+type squeeze struct {
+	mu       sync.Mutex
+	w        io.Writer
+	newlines int
+	inEsc    bool
+}
+
+// Squeeze wraps a terminal so a run of blank lines prints as one. Commands open and close with a blank line of their own,
+// which reads well alone in a shell and doubles up when one screen holds a title, a command and the keys below it.
+func Squeeze(w io.Writer) io.Writer { return &squeeze{w: w, newlines: 2} }
+
+func (s *squeeze) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]byte, 0, len(p))
+	for _, c := range p {
+		switch {
+		case s.inEsc:
+			if c >= 0x40 && c != '[' {
+				s.inEsc = false
+				if c == 'H' { // the cursor went to the top of a cleared screen: nothing is above it to double up with
+					s.newlines = 0
+				}
+			}
+		case c == 27:
+			s.inEsc = true
+		case c == '\r':
+		case c == '\n':
+			if s.newlines >= 2 {
+				continue
+			}
+			s.newlines++
+		default:
+			s.newlines = 0
+		}
+		out = append(out, c)
+	}
+	if _, err := s.w.Write(out); err != nil {
+		return 0, err
+	}
+	return len(p), nil
+}
+
+// Fd is the terminal underneath, so the window's size can still be read.
+func (s *squeeze) Fd() uintptr {
+	if f, ok := s.w.(fder); ok {
+		return f.Fd()
+	}
+	return ^uintptr(0)
 }

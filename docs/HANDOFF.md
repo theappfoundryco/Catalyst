@@ -13,12 +13,15 @@ cmd/catalyst/         entry point
 internal/cli/         the commands: doctor, sweep, undo, log, status, disk, battery, net, ports, startup, ssh, path, config, legacy, update, uninstall
 internal/ui/          everything about how output looks: colour, step, menu, banner, bars, plain mode
 internal/kit/         Kit's sprites and half-block drawing
-internal/session/     bare `catalyst`: the inline prompt
+internal/session/     bare `catalyst`: the home list on the terminal's separate screen, scrolling results, the only place Kit is drawn
 internal/run/         runs programs: argv only, own session, no stdin, time limit, fixed locale. Fake for tests
 internal/host/        the machine: env from a login shell, plus parsers for df, vm_stat, pmset, lsof, ss, smartctl and more
 internal/doctor/      engine: runs checks at once, four result states, score
 internal/doctor/checks/   one file per check
 internal/sweep/       rules table, walker, git safety, real sizes
+internal/clean/       app caches and logs outside projects, open-app detection, admin areas explained
+internal/space/       where the disk goes: home, apps, macOS's own volumes, named landmarks
+internal/sysdata/     System Data area by area, each with its supported way out, or locked
 internal/trash/       moves to the system Trash, by rename only (macOS and the freedesktop spec)
 internal/journal/     records every change, for undo and log
 internal/state/       settings and health history, under the XDG folders
@@ -35,6 +38,9 @@ Ideas that hold it together:
 - **One way to run anything.** `internal/run`. See the running-programs section of the anti-patterns.
 - **One way to draw anything.** `internal/ui`. No command prints on its own.
 - **Parsers are plain functions over text**, so both systems test anywhere.
+- **One list, no prompt.** Bare `catalyst` is arrows and Enter only. Rows are rebuilt after every command, so Undo can say what it would reverse, or sit dimmed and skipped when there is nothing. Anything with arguments belongs in the shell. Commands reach the home screen through `App.reaction`, and offer next steps through `session.Outcome`.
+- **Rows you can act on.** A command marks a line with `a.row(keys...)` (an invisible `ui.Mark`), and the session puts a cursor on it. Keys either open a screen (`goTo`, or `a.page` for one drawn from data already in hand) or act in place (`Do`, such as copy or show in Finder). The session keeps a stack, so Esc returns to the screen a key came from, and `Outcome.Changed` makes that screen measure again. `Refresh` and `Live` give `r` and `l`.
+- **Root through sudo's own prompt.** `run.Attached` gives a program the terminal, so sudo asks for the password itself. The session ignores Ctrl-C while it runs.
 - **Two dependencies**, both from the Go project.
 
 Files on a person's machine: the program in `~/.local/bin`, `~/.local/state/catalyst` (health history, journal, last sweep), `~/.config/catalyst/config.json`, and at most one marked line in a shell startup file.
@@ -66,15 +72,26 @@ As of 0.1.0, built and run on Apple silicon macOS 15 and ARM64 Linux containers:
 - The full test suite on macOS, and on Linux as both a normal user and root.
 - Every read-only command on a real Mac, and on Debian, Fedora, Alpine and Ubuntu containers with almost nothing installed. `doctor` found real problems on the Mac.
 - A real sweep, `log`, `undo` and `path add` and `remove` as a normal user in an Ubuntu container, against real git repositories: it took only the idle ignored folder and left a tracked `build/` and an active project alone. The freedesktop Trash layout was checked by eye.
-- The session, autocomplete, menu, Ctrl-C and questions, driven on a real pseudo-terminal, at 50, 88 and 100 columns. Keys reach a menu opened from inside the session.
+- The home list, `More`, the keys under each result, the sweep menu and questions, driven on a real pseudo-terminal at 30 by 10, 50 by 20, 88 by 24, 100 by 30 and 120 by 12. Keys reach a menu opened from the list.
+- `get.sh` piped into `sh` on a real pseudo-terminal: it asks about PATH, clears the window, opens the list, takes the keyboard, and returns to the shell with its last note.
+- A real sweep, undo from the key under its result, and sweep again as a normal user in an Ubuntu container, driven through the list.
+- A real clean in an Ubuntu container: moved to the Trash, emptied from it on request, space freed, and Undo stopped offering what was emptied.
+- Stopping a real port from the chooser in an Ubuntu container: asked first, stopped with TERM, the list shrank.
+- `space` and `clean --dry-run` read-only on a real Mac. The separate screen opening and closing, checked in the raw output, including a Ctrl-C while a question waits.
 - A rename into and out of `~/.Trash` on a Mac whose terminal has no Full Disk Access.
 - `get.sh` against a local server, including refusing a bad or missing checksum.
+- After the interactive rows: Ports, PATH, SSH, Startup, Doctor guides, Space, the macOS explainer, System Data, Status live, Battery, Disk, Network and an address test, all driven read-only on a real Mac through a pseudo-terminal.
+- In an Ubuntu container: stopping a port from its row, then Esc, lands on Ports measured again without it. System Data ran `sudo apt-get autoremove` after sudo itself asked for the password, as a normal user with a real terminal.
+- The health dot breathes: 31 distinct shades in 3.5 seconds of raw output for a score of 70.
 
 ## What has not been verified
 
 - **Intel Macs and x86 Linux.** The archives build, but the checks have run only on Apple silicon and ARM64 Linux containers.
 - **A real systemd machine, and a real laptop on Linux.** Containers have no systemd, so failed units, user services and Linux batteries are covered by recorded output only.
-- **`smartctl`.** Parsed from recorded output. Not installed on the development Mac.
+- **`smartctl`.** Parsed from recorded output. Not installed on the development Mac, and Helpers has not installed it for real there.
+- **System Data's Mac steps.** `tmutil deletelocalsnapshots`, `colima delete`, `docker system prune`, `xcrun simctl delete` and moving an installer to the Trash are tested as data and through the Linux sudo path, not run on a real Mac, on purpose.
+- **Homebrew's installer from Helpers.** Shown and wired, not run, since the development Mac already has Homebrew.
+- **Opening System Settings pages.** The URLs are Apple's, for macOS 13 and later. Not opened during testing, so as not to take over the maintainer's screen.
 - **The startup commands.** `startup disable` and `enable` have not been run for real, on purpose: they change a real machine.
 - **`catalyst legacy` on a Mac with the old app installed.** The zshrc edit is tested. The Keychain and app paths have not run against a real install.
 - **Other volumes.** Trash on an external disk (`.Trashes`, `.Trash-UID`) is written to the spec but has not run on a real second disk.
@@ -86,6 +103,8 @@ As of 0.1.0, built and run on Apple silicon macOS 15 and ARM64 Linux containers:
 - No Homebrew tap yet. Add `theappfoundryco/homebrew-tap` and a formula when there is a reason to.
 - Login items on macOS are not listed, because reading them either opens a permission prompt or needs root. `catalyst startup` points at System Settings.
 - WSL2 is refused politely by `get.sh`. Windows is out of scope.
+- The list takes no arguments, so `startup disable`, `path add` and `sweep --deep` are shell only.
+- `clean` on a real Mac has only run as `--dry-run`, by design: it would change the maintainer's machine. Its Mac rules are tested with recorded `lsappinfo` output.
 - `doctor --fix` applies one fix at a time on purpose. A "fix everything safe" mode could come later.
 - Snapshot and migrate from the Mac app is parked. Brewfile, chezmoi and mise cover it well.
 

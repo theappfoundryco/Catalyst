@@ -155,9 +155,20 @@ func (u *UI) AskYes(q string) bool {
 	return true
 }
 
+// Text asks for a line of text, such as an address to test. It is "" without a person.
+func (u *UI) Text(q string) string {
+	if !u.InTTY {
+		return ""
+	}
+	return u.prompt(q)
+}
+
 func (u *UI) prompt(q string) string {
 	fmt.Fprint(u.Out, "  "+q)
 	r := bufio.NewReader(u.In)
 	line, _ := r.ReadString('\n')
+	if u.Echo != nil {
+		u.Echo(strings.TrimRight(line, "\r\n") + "\n")
+	}
 	return strings.TrimSpace(line)
 }

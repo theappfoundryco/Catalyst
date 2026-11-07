@@ -67,24 +67,32 @@ var Rules = []Rule{
 type Global struct {
 	Path  string
 	Title string
+	About string // what it holds, and what it does not touch, in one line
 }
 
 // Globals lists the caches for this system. Only developer tools: Catalyst does not clean the system or other apps.
 func Globals(e *host.Env) []Global {
+	const (
+		brew = "Copies of past downloads. Your installed brew packages are not touched."
+		pip  = "Copies of past downloads. Installed Python packages are not touched."
+		yarn = "Copies of past downloads. Packages already in your projects are not touched."
+		goB  = "Your next Go build recreates it, and takes longer that one time."
+		npm  = "Copies of past downloads. Installed npm packages are not touched."
+	)
 	var out []Global
 	if e.Mac() {
-		out = append(out, Global{e.Path("Library", "Caches", "Homebrew"), "Homebrew downloads"})
-		out = append(out, Global{e.Path("Library", "Caches", "pip"), "pip cache"})
-		out = append(out, Global{e.Path("Library", "Caches", "Yarn"), "Yarn cache"})
-		out = append(out, Global{e.Path("Library", "Caches", "go-build"), "Go build cache"})
-		out = append(out, Global{e.Path("Library", "Developer", "Xcode", "DerivedData", "ModuleCache.noindex"), "Xcode shared module cache"})
+		out = append(out, Global{e.Path("Library", "Caches", "Homebrew"), "Homebrew download cache", brew})
+		out = append(out, Global{e.Path("Library", "Caches", "pip"), "pip cache", pip})
+		out = append(out, Global{e.Path("Library", "Caches", "Yarn"), "Yarn cache", yarn})
+		out = append(out, Global{e.Path("Library", "Caches", "go-build"), "Go build cache", goB})
+		out = append(out, Global{e.Path("Library", "Developer", "Xcode", "DerivedData", "ModuleCache.noindex"), "Xcode shared module cache", "Xcode recreates it on your next build."})
 	} else {
-		out = append(out, Global{e.Path(".cache", "Homebrew"), "Homebrew downloads"})
-		out = append(out, Global{e.Path(".cache", "pip"), "pip cache"})
-		out = append(out, Global{e.Path(".cache", "yarn"), "Yarn cache"})
-		out = append(out, Global{e.Path(".cache", "go-build"), "Go build cache"})
+		out = append(out, Global{e.Path(".cache", "Homebrew"), "Homebrew download cache", brew})
+		out = append(out, Global{e.Path(".cache", "pip"), "pip cache", pip})
+		out = append(out, Global{e.Path(".cache", "yarn"), "Yarn cache", yarn})
+		out = append(out, Global{e.Path(".cache", "go-build"), "Go build cache", goB})
 	}
-	out = append(out, Global{e.Path(".npm", "_cacache"), "npm cache"})
+	out = append(out, Global{e.Path(".npm", "_cacache"), "npm cache", npm})
 	return out
 }
 
@@ -92,6 +100,7 @@ func Globals(e *host.Env) []Global {
 type Item struct {
 	Path    string    `json:"path"`
 	Title   string    `json:"title"`
+	About   string    `json:"about,omitempty"`
 	Project string    `json:"project"`
 	Restore string    `json:"restore"`
 	Cost    Cost      `json:"cost"`
@@ -422,7 +431,7 @@ func scanGlobals(o Options, seen *Seen) []Item {
 		if size < o.MinSize {
 			continue
 		}
-		out = append(out, Item{Path: g.Path, Title: g.Title, Project: g.Title, Restore: "rebuilds itself", Cost: Safe, Size: size, Global: true})
+		out = append(out, Item{Path: g.Path, Title: g.Title, About: g.About, Project: g.Title, Restore: "rebuilds itself", Cost: Safe, Size: size, Global: true})
 	}
 	return out
 }

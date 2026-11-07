@@ -78,6 +78,18 @@ func TestInstallsAndChecks(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, "catalyst.new")); err == nil {
 		t.Fatal("left a temporary file behind")
 	}
+	if to, err := os.Readlink(filepath.Join(dir, "kit")); err != nil || to != "catalyst" {
+		t.Fatalf("no kit link: %q %v\n%s", to, err, out)
+	}
+	// Run again with someone else's kit in the folder: it must be left exactly as it was.
+	os.Remove(filepath.Join(dir, "kit"))
+	os.WriteFile(filepath.Join(dir, "kit"), []byte("#!/bin/sh\necho other\n"), 0o755)
+	if out, err := run(t, s.URL, dir); err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	if b, _ := os.ReadFile(filepath.Join(dir, "kit")); !strings.Contains(string(b), "other") {
+		t.Fatal("replaced another program called kit")
+	}
 }
 
 func TestRefusesABadChecksum(t *testing.T) {

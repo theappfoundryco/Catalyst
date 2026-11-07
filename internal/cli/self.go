@@ -145,6 +145,14 @@ func cmdUpdate(a *App, args []string) int {
 		return ExitFailed
 	}
 	u.Ok("Now on " + tag)
+	if a.linkKit(self) == kitAdded {
+		u.Ok("You can also type kit now.")
+	}
+	if a.inSession { // this running copy is still the old one
+		u.Say("  " + u.Dim("Run catalyst again to use it."))
+		a.outcome.Quit = true
+		a.outcome.Farewell = []string{"  Catalyst is now on " + tag + ". Run catalyst again to use it."}
+	}
 	u.Blank()
 	return ExitOK
 }
@@ -197,9 +205,11 @@ func cmdUninstall(a *App, args []string) int {
 	}
 	u.Sect("This removes")
 	u.Hint(a.E.Tilde(self))
-	u.Hint("Catalyst's line in your shell startup file, if it added one")
+	u.Hint("Catalyst's line in your shell startup file, if it added one, and the kit shortcut")
 	u.Hint(a.E.Tilde(a.Store.Dir) + " and " + a.E.Tilde(a.Store.ConfigDir))
 	u.Hint("What is in the Trash stays there. Anything it moved is yours to keep or empty.")
+	u.Sect("This stays")
+	u.Hint("Homebrew, and everything installed with it, such as smartmontools. Catalyst never removes them.")
 	if !u.Ask("Remove Catalyst?") {
 		return ExitOK
 	}
@@ -208,6 +218,9 @@ func cmdUninstall(a *App, args []string) int {
 			u.Ok("Took the line out of " + a.E.Tilde(rc))
 		}
 	}
+	if a.ownKit(filepath.Join(filepath.Dir(self), "kit")) {
+		os.Remove(filepath.Join(filepath.Dir(self), "kit"))
+	}
 	os.RemoveAll(a.Store.Dir)
 	os.RemoveAll(a.Store.ConfigDir)
 	if err := os.Remove(self); err != nil {
@@ -215,6 +228,8 @@ func cmdUninstall(a *App, args []string) int {
 		return ExitFailed
 	}
 	u.Ok("Catalyst is gone.")
+	a.outcome.Quit = true
+	a.outcome.Farewell = []string{"  Catalyst is gone. What it moved to the Trash is still there, and Homebrew is untouched."}
 	u.Blank()
 	return ExitOK
 }
@@ -330,4 +345,39 @@ func (a *App) removeSourceLine(rc, text string) error {
 		}
 	}
 	return nil
+}
+
+// The kit command is a link to catalyst, in the same folder, so either name runs the same program.
+const (
+	kitAdded = iota
+	kitThere
+	kitTaken // something else is called kit, and it is left alone
+	kitNo    // not here: Homebrew owns this copy, or the folder cannot be written
+)
+
+// ownKit says whether path is our kit link: a link to catalyst, and not someone else's program.
+func (a *App) ownKit(path string) bool {
+	to, err := os.Readlink(path)
+	return err == nil && filepath.Base(to) == "catalyst"
+}
+
+// linkKit puts the kit link beside the program. It never replaces anything, and never shadows another kit on the PATH.
+func (a *App) linkKit(self string) int {
+	if self == "" || strings.Contains(self, "/Cellar/") {
+		return kitNo
+	}
+	kit := filepath.Join(filepath.Dir(self), "kit")
+	if a.ownKit(kit) {
+		return kitThere
+	}
+	if _, err := os.Lstat(kit); err == nil {
+		return kitTaken
+	}
+	if p, err := a.E.Look("kit"); err == nil && !a.ownKit(p) {
+		return kitTaken
+	}
+	if os.Symlink("catalyst", kit) != nil {
+		return kitNo
+	}
+	return kitAdded
 }

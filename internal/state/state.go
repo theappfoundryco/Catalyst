@@ -32,11 +32,36 @@ func New(home string, getenv func(string) string) *Store {
 
 // Config is what `catalyst config` changes.
 type Config struct {
-	Mascot *bool `json:"mascot,omitempty"`
+	Mascot    *bool    `json:"mascot,omitempty"`
+	Motion    *bool    `json:"animations,omitempty"`
+	Name      *string  `json:"name,omitempty"`             // what to call the person; set but empty means they chose not to say
+	NoHelpers []string `json:"declined_helpers,omitempty"` // helper tools the person said no to, so setup stops offering them
+	SetupDone bool     `json:"setup_done,omitempty"`
 }
 
 // MascotOn says whether Kit may appear. On unless turned off.
 func (c Config) MascotOn() bool { return c.Mascot == nil || *c.Mascot }
+
+// MotionOn says whether things on screen may move: Kit's wag and the health dot's pulse. On unless turned off.
+func (c Config) MotionOn() bool { return c.Motion == nil || *c.Motion }
+
+// Nickname is what to call the person, or "".
+func (c Config) Nickname() string {
+	if c.Name == nil {
+		return ""
+	}
+	return *c.Name
+}
+
+// Declined says whether the person said no to a helper tool.
+func (c Config) Declined(tool string) bool {
+	for _, t := range c.NoHelpers {
+		if t == tool {
+			return true
+		}
+	}
+	return false
+}
 
 // LoadConfig reads the settings. A missing or damaged file means defaults: settings must never stop a diagnosis.
 func (s *Store) LoadConfig() Config {

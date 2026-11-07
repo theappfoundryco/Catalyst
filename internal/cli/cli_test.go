@@ -13,7 +13,9 @@ import (
 	"github.com/theappfoundryco/catalyst/internal/doctor"
 	"github.com/theappfoundryco/catalyst/internal/host"
 	"github.com/theappfoundryco/catalyst/internal/journal"
+	"github.com/theappfoundryco/catalyst/internal/kit"
 	"github.com/theappfoundryco/catalyst/internal/run"
+	"github.com/theappfoundryco/catalyst/internal/session"
 	"github.com/theappfoundryco/catalyst/internal/state"
 	"github.com/theappfoundryco/catalyst/internal/ui"
 )
@@ -311,5 +313,300 @@ func TestLegacyEditPutsItBackWhenZshObjects(t *testing.T) {
 	got, _ := os.ReadFile(rc)
 	if string(got) != text {
 		t.Fatalf("%q", got)
+	}
+}
+
+// With no prompt left, a command missing from the list would be out of reach for anyone in the session.
+func TestEveryCommandIsReachableFromTheList(t *testing.T) {
+	a, _ := testApp(t, "linux")
+	reach := map[string]bool{}
+	var walk func(items []session.Item)
+	walk = func(items []session.Item) {
+		for _, it := range items {
+			if len(it.Name) > 10 {
+				t.Errorf("%q is wider than the name column", it.Name)
+			}
+			if it.Sub != nil {
+				walk(it.Sub)
+			} else {
+				reach[it.Args[0]] = true
+			}
+		}
+	}
+	walk(a.homeItems())
+	skip := map[string]bool{"help": true, "version": true, "legacy": true, "setup": true} // legacy appears only where the old app left something
+	for _, c := range commands() {
+		if !skip[c.Name] && !reach[c.Name] {
+			t.Errorf("%s is not on the list", c.Name)
+		}
+	}
+}
+
+func TestOldAppRowOnlyWhenItLeftSomething(t *testing.T) {
+	a, _ := testApp(t, "darwin")
+	row := func() bool {
+		for _, it := range a.homeItems() {
+			for _, s := range it.Sub {
+				if s.Args[0] == "legacy" {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	if _, err := os.Lstat("/Applications/Catalyst.app"); err == nil {
+		t.Skip("this Mac still has the old app")
+	}
+	if row() {
+		t.Fatal("offered a cleanup with nothing to clean")
+	}
+	put(t, a.E.Path(legacySource), "x")
+	if !row() {
+		t.Fatal("hid the cleanup")
+	}
+}
+
+// A red bar and "All systems nominal" on one card is how people stop believing a tool.
+func TestStatusOnlyCheersWhenEverythingIsGreen(t *testing.T) {
+	if p, clear := statusVerdict(100, 76, 68, true, true, 0); clear || len(p) != 1 || !strings.Contains(p[0], "CPU") {
+		t.Fatal(p, clear)
+	}
+	if p, clear := statusVerdict(10, 95, 95, true, true, 0); clear || len(p) != 2 {
+		t.Fatal(p, clear)
+	}
+	if p, clear := statusVerdict(10, 76, 20, true, true, 0); clear || len(p) != 0 { // yellow memory is normal on a Mac: no alarm, no cheer
+		t.Fatal(p, clear)
+	}
+	if p, clear := statusVerdict(10, 20, 20, true, true, 0); !clear || len(p) != 0 {
+		t.Fatal(p, clear)
+	}
+	if _, clear := statusVerdict(10, 99, 99, false, false, 0); !clear { // what could not be read does not count against it
+		t.Fatal(clear)
+	}
+	if p, clear := statusVerdict(10, 20, 20, true, true, 6<<30); clear || len(p) != 1 || !strings.Contains(p[0], "swap") {
+		t.Fatal(p, clear)
+	}
+}
+
+func TestHeaderFollowsWhatJustHappened(t *testing.T) {
+	a, _ := testApp(t, "linux")
+	if h := a.header(); h.Mood != kit.Idle || !strings.Contains(strings.Join(h.Lines, " "), "No checkup yet") {
+		t.Fatal(h)
+	}
+	a.reaction = reaction{kit.Happy, "Moved 2 folders"}
+	h := a.header()
+	if h.Mood != kit.Happy || h.Lines[len(h.Lines)-1] != "Moved 2 folders" {
+		t.Fatal(h)
+	}
+	if len(h.Lines) > 5 {
+		t.Fatalf("%d lines beside Kit", len(h.Lines))
+	}
+	a.Store.Record(state.Health{Date: time.Now(), Score: 70, Issues: 3})
+	if h := a.header(); len(h.Lines) > 5 || h.Lines[len(h.Lines)-1] != "Moved 2 folders" {
+		t.Fatal(h)
+	}
+}
+
+func TestNoCommandDrawsKit(t *testing.T) {
+	a, out := testApp(t, "linux")
+	a.U.Mascot = true
+	cmdHelp(a, nil)
+	cmdStatus(a, nil)
+	if strings.ContainsAny(out.String(), "▀▄") {
+		t.Fatal(out.String())
+	}
+}
+
+func undoRow(a *App) session.Item {
+	for _, it := range a.homeItems() {
+		if it.Name == "Undo" {
+			return it
+		}
+	}
+	return session.Item{}
+}
+
+// Undo is dimmed and skipped with nothing to reverse, and otherwise says what it would reverse.
+func TestUndoRowSaysWhatItWouldReverse(t *testing.T) {
+	a, _ := testApp(t, "linux")
+	if r := undoRow(a); !r.Disabled || r.Detail != "" {
+		t.Fatal(r)
+	}
+	now := time.Date(2026, 11, 7, 14, 7, 0, 0, time.Local)
+	a.E.Now = func() time.Time { return now }
+	batch := journal.NewBatch(now)
+	for _, name := range []string{"one", "two"} {
+		dir := filepath.Join(a.E.Home, ".Trash", name)
+		os.MkdirAll(dir, 0o755)
+		a.Journal.Add(journal.Entry{Time: now, Batch: batch, Kind: journal.KindTrash, Title: name, From: "/x/" + name, To: dir})
+	}
+	r := undoRow(a)
+	if r.Disabled || r.Detail != "Moved 2 folders to the Trash, today 2:07 PM" {
+		t.Fatalf("%+v", r)
+	}
+	a.Journal.Add(journal.Entry{Time: now, Batch: batch, Kind: journal.KindUndo, Title: "Undone"})
+	if r := undoRow(a); !r.Disabled || r.Detail != "" {
+		t.Fatalf("still offered after it was undone: %+v", r)
+	}
+}
+
+func TestWhenSaid(t *testing.T) {
+	now := time.Date(2026, 11, 7, 9, 0, 0, 0, time.Local)
+	for in, want := range map[time.Time]string{
+		now.Add(-time.Hour):      "today 8:00 AM",
+		now.Add(-12 * time.Hour): "yesterday 9:00 PM",
+		now.Add(-72 * time.Hour): "Nov 4, 9:00 AM",
+	} {
+		if got := whenSaid(in, now); got != want {
+			t.Errorf("got %q, want %q", got, want)
+		}
+	}
+}
+
+func TestOnlyOwnNonSystemPortsCanBeStopped(t *testing.T) {
+	a, _ := testApp(t, "linux")
+	cases := []struct {
+		l    host.Listener
+		want bool
+	}{
+		{host.Listener{Port: 3000, PID: 4242, Command: "node"}, true},
+		{host.Listener{Port: 53, PID: 0, Command: ""}, false}, // another user's: no process number to signal
+		{host.Listener{Port: 5000, PID: 88, Command: "ControlCenter"}, false},
+		{host.Listener{Port: 9, PID: os.Getpid(), Command: "catalyst"}, false},
+	}
+	for _, c := range cases {
+		if got := a.canStop(c.l); got != c.want {
+			t.Errorf("%+v: got %v", c.l, got)
+		}
+	}
+	if !wide(host.Listener{Address: "*"}) || !wide(host.Listener{Address: "0.0.0.0"}) || wide(host.Listener{Address: "127.0.0.1"}) {
+		t.Fatal("wide")
+	}
+}
+
+func TestGreetingFollowsTheClock(t *testing.T) {
+	at := func(h int) time.Time { return time.Date(2026, 11, 7, h, 0, 0, 0, time.Local) }
+	for h, want := range map[int]string{8: "Good morning, Alex", 14: "Good afternoon, Alex", 20: "Good evening, Alex", 2: "Up late, Alex?"} {
+		if got := greeting("Alex", at(h)); got != want {
+			t.Errorf("%d: %q", h, got)
+		}
+	}
+	if got := greeting("", at(8)); got != "Good morning" {
+		t.Fatal(got)
+	}
+}
+
+func TestSayingNoToAHelperIsRemembered(t *testing.T) {
+	a, _ := testApp(t, "linux")
+	a.decline("smartmontools")
+	a.decline("smartmontools")
+	c := a.Store.LoadConfig()
+	if !c.Declined("smartmontools") || len(c.NoHelpers) != 1 {
+		t.Fatalf("%+v", c)
+	}
+}
+
+func TestSSHHostsUsingAKey(t *testing.T) {
+	home := t.TempDir()
+	cfg := filepath.Join(home, ".ssh", "config")
+	put(t, cfg, "Host github.com\n  IdentityFile ~/.ssh/id_work\nHost box\n  IdentityFile \"~/.ssh/id_home\"\n")
+	k := host.SSHKey{Private: filepath.Join(home, ".ssh", "id_work"), Public: filepath.Join(home, ".ssh", "id_work.pub")}
+	if got := sshHosts(cfg, home, k); len(got) != 1 || got[0] != "github.com" {
+		t.Fatal(got)
+	}
+}
+
+func TestEveryRowOnPortsHasKeysAndProtectedOnesCannotStop(t *testing.T) {
+	a, _ := testApp(t, "linux")
+	a.inSession = true
+	a.U.Marks = true
+	a.E.Run = &run.Fake{Replies: map[string]run.Result{
+		"ss -tlnpH": {Stdout: `LISTEN 0 128 127.0.0.1:3000 0.0.0.0:* users:(("node",pid=4242,fd=20))
+LISTEN 0 128 0.0.0.0:22 0.0.0.0:* users:(("sshd",pid=1,fd=3))`},
+	}}
+	cmdPorts(a, nil)
+	if len(a.outcome.Rows) != 2 || !a.outcome.Refresh {
+		t.Fatalf("%+v", a.outcome)
+	}
+	stops := func(r session.Row) bool {
+		for _, k := range r.Keys {
+			if k.Key == "s" {
+				return true
+			}
+		}
+		return false
+	}
+	if !stops(a.outcome.Rows[1]) || stops(a.outcome.Rows[0]) { // sorted by port: 22 is sshd, 3000 is node
+		t.Fatalf("%+v", a.outcome.Rows)
+	}
+}
+
+func TestStartupFileEditIsShownKeptAndUndone(t *testing.T) {
+	a, out := testApp(t, "darwin")
+	a.U.Yes = true
+	rc := filepath.Join(a.E.Home, ".zshrc_catalyst")
+	before := "alias ll='ls -l'\n# CATALYST_BEGIN path-order\nexport PATH=\"/usr/bin:/bin:/opt/homebrew/bin\"\n# CATALYST_END path-order\nalias gs='git status'\n"
+	put(t, rc, before)
+	if !a.editFile(rc, "Remove the old app's PATH block", dropBlock("# CATALYST_BEGIN path-order", "# CATALYST_END path-order")) {
+		t.Fatal(out.String())
+	}
+	b, _ := os.ReadFile(rc)
+	if strings.Contains(string(b), "PATH") || !strings.Contains(string(b), "alias gs") {
+		t.Fatalf("after: %q", b)
+	}
+	if !strings.Contains(out.String(), "- export PATH") {
+		t.Fatalf("the change was not shown first: %s", out.String())
+	}
+	if last := a.Journal.LastUndoable(); len(last) != 1 || !strings.Contains(a.lastChange(last), "Edited ~/.zshrc_catalyst") {
+		t.Fatalf("%+v", last)
+	}
+	cmdUndo(a, []string{"--yes"})
+	if b, _ := os.ReadFile(rc); string(b) != before {
+		t.Fatalf("undo left %q", b)
+	}
+}
+
+func TestReplaceLineOnlyWhenItStillReadsTheSame(t *testing.T) {
+	lines := []string{"a", "export JAVA_HOME=/gone", "b"}
+	got := replaceLine(2, "export JAVA_HOME=/gone", "# off")(append([]string{}, lines...))
+	if got[1] != "# off" {
+		t.Fatal(got)
+	}
+	got = replaceLine(2, "something else", "# off")(append([]string{}, lines...))
+	if got[1] != "export JAVA_HOME=/gone" {
+		t.Fatal("changed a line that no longer matched")
+	}
+}
+
+func TestKitLinkIsAddedOnceAndNeverTakesAnotherKit(t *testing.T) {
+	a, _ := testApp(t, "darwin")
+	a.E.Look = func(string) (string, error) { return "", exec.ErrNotFound }
+	dir := t.TempDir()
+	self := filepath.Join(dir, "catalyst")
+	put(t, self, "binary")
+	if got := a.linkKit(self); got != kitAdded {
+		t.Fatal(got)
+	}
+	if to, _ := os.Readlink(filepath.Join(dir, "kit")); to != "catalyst" {
+		t.Fatalf("kit points at %q", to)
+	}
+	if got := a.linkKit(self); got != kitThere {
+		t.Fatal("a second run should find it there:", got)
+	}
+	// Someone else's kit on the PATH is never shadowed.
+	other := t.TempDir()
+	put(t, filepath.Join(other, "kit"), "another tool")
+	a.E.Look = func(n string) (string, error) { return filepath.Join(other, n), nil }
+	dir2 := t.TempDir()
+	put(t, filepath.Join(dir2, "catalyst"), "binary")
+	if got := a.linkKit(filepath.Join(dir2, "catalyst")); got != kitTaken {
+		t.Fatal(got)
+	}
+	if _, err := os.Lstat(filepath.Join(dir2, "kit")); err == nil {
+		t.Fatal("made a kit that would hide another one")
+	}
+	// A Homebrew copy is left to Homebrew.
+	if got := a.linkKit("/opt/homebrew/Cellar/catalyst/0.1.1/bin/catalyst"); got != kitNo {
+		t.Fatal(got)
 	}
 }

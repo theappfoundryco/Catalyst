@@ -49,14 +49,15 @@ make test
 - Removing anything goes through `internal/trash`. No `os.RemoveAll` on a person's files, ever.
 - Programs run through `internal/run`: argv only, never through a shell.
 - Never print, log or put in `--json` the value of a secret. Counts only.
-- Catalyst never handles a password. If something needs root, print the command for the person to run.
-- No downloaded code, no telemetry, no network calls unless the person asked for that command.
+- Catalyst never handles a password. When something needs root, show the exact command, ask, and run it through `sudo` on the person's terminal (`run.Attached`), so sudo reads the password itself. Never pass a password on stdin, never store one, never use `-S`.
+- No downloaded code, no telemetry, no network calls unless the person asked for that command. The one exception is Homebrew's own installer, shown in full and run only on a yes from Helpers.
+- Helper tools (Homebrew, smartmontools) install only on a yes, with the command shown first. A no is remembered. Uninstalling Catalyst never removes them.
 
 **Behaviour**
 - A check that could not run reports that. Only a check that ran can pass.
 - Missing tools must never crash anything. A check says skipped with a reason. Never show a stack trace.
 - Do not add a dependency without a clear need. Today there are two, both from the Go project (`golang.org/x/term` and `x/sys`).
-- Do not grow beyond what this tool is for. It diagnoses and cleans dev environments. It does not install or manage your packages, and it does not clean the system or other apps.
+- Do not grow beyond what this tool is for. It diagnoses dev environments and frees space safely: build artifacts, caches that rebuild themselves, and system areas only through the way Apple, the distribution or the owning app supports. It does not manage your packages, and it never deletes someone's data or the system's by hand.
 
 **Style**
 - No em dashes anywhere (code comments, docs, output, commits). Use commas or parentheses.
