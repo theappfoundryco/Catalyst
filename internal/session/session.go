@@ -74,6 +74,7 @@ type Outcome struct {
 	SkipWait bool          // nothing worth reading: go straight back
 	Quit     bool          // the program is gone or replaced: leave
 	Farewell []string      // with Quit: lines to print once the terminal is back to normal
+	Restart  string        // a new copy of the program is here: once this result is read, become it
 }
 
 // Config is everything a session needs.
@@ -287,6 +288,7 @@ type runner struct {
 	header   Header
 	armed    time.Time // when Ctrl-C was pressed once; a second press soon after leaves
 	farewell []string  // last words that must outlive the separate screen, such as "Catalyst is gone."
+	restart  string    // the program to become when the session ends, after an update
 	born     time.Time
 }
 
@@ -551,8 +553,13 @@ func (s *runner) run(name string, args []string) bool {
 			s.drain()
 			var quit bool
 			if act, quit = s.result(p); quit {
+				s.farewell = p.out.Farewell // leaving with Ctrl-C skips the restart, but not the note
 				return false
 			}
+		}
+		if p.out.Restart != "" {
+			s.restart, s.farewell = p.out.Restart, p.out.Farewell
+			return false
 		}
 		switch {
 		case act != nil && act.refresh:
@@ -857,6 +864,11 @@ func Run(c Config) int {
 	}
 	leave()
 	u.Out, u.Margin = real, 0
+	if s.restart != "" {
+		// The same terminal and the same name it was started by, so the new copy opens where this one was.
+		err := syscall.Exec(s.restart, []string{os.Args[0]}, os.Environ())
+		fmt.Fprintln(real, "  Could not start the new version ("+err.Error()+").")
+	}
 	for _, l := range s.farewell {
 		fmt.Fprintln(real, l)
 	}

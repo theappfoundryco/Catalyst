@@ -148,9 +148,9 @@ func cmdUpdate(a *App, args []string) int {
 	if a.linkKit(self) == kitAdded {
 		u.Ok("You can also type kit now.")
 	}
-	if a.inSession { // this running copy is still the old one
-		u.Say("  " + u.Dim("Run catalyst again to use it."))
-		a.outcome.Quit = true
+	if a.inSession { // this running copy is still the old one, so the session restarts as the new one
+		u.Say("  " + u.Dim("Press Enter to open "+tag+"."))
+		a.outcome.Restart = self
 		a.outcome.Farewell = []string{"  Catalyst is now on " + tag + ". Run catalyst again to use it."}
 	}
 	u.Blank()
