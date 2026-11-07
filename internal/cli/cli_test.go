@@ -577,3 +577,36 @@ func TestReplaceLineOnlyWhenItStillReadsTheSame(t *testing.T) {
 		t.Fatal("changed a line that no longer matched")
 	}
 }
+
+func TestKitLinkIsAddedOnceAndNeverTakesAnotherKit(t *testing.T) {
+	a, _ := testApp(t, "darwin")
+	a.E.Look = func(string) (string, error) { return "", exec.ErrNotFound }
+	dir := t.TempDir()
+	self := filepath.Join(dir, "catalyst")
+	put(t, self, "binary")
+	if got := a.linkKit(self); got != kitAdded {
+		t.Fatal(got)
+	}
+	if to, _ := os.Readlink(filepath.Join(dir, "kit")); to != "catalyst" {
+		t.Fatalf("kit points at %q", to)
+	}
+	if got := a.linkKit(self); got != kitThere {
+		t.Fatal("a second run should find it there:", got)
+	}
+	// Someone else's kit on the PATH is never shadowed.
+	other := t.TempDir()
+	put(t, filepath.Join(other, "kit"), "another tool")
+	a.E.Look = func(n string) (string, error) { return filepath.Join(other, n), nil }
+	dir2 := t.TempDir()
+	put(t, filepath.Join(dir2, "catalyst"), "binary")
+	if got := a.linkKit(filepath.Join(dir2, "catalyst")); got != kitTaken {
+		t.Fatal(got)
+	}
+	if _, err := os.Lstat(filepath.Join(dir2, "kit")); err == nil {
+		t.Fatal("made a kit that would hide another one")
+	}
+	// A Homebrew copy is left to Homebrew.
+	if got := a.linkKit("/opt/homebrew/Cellar/catalyst/0.1.1/bin/catalyst"); got != kitNo {
+		t.Fatal(got)
+	}
+}

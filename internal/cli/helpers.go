@@ -2,6 +2,7 @@ package cli
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -252,6 +253,14 @@ func cmdSetup(a *App, _ []string) int {
 		u.Blank()
 		a.installHelper(h) // shows the command and asks once; a no is remembered
 		u.Blank()
+	}
+	self, _ := os.Executable()
+	self, _ = filepath.EvalSymlinks(self)
+	switch a.linkKit(self) {
+	case kitAdded, kitThere:
+		u.Ok("You can type kit as well as catalyst")
+	case kitTaken:
+		u.Note("Something else on this machine is already called kit, so only catalyst opens Catalyst")
 	}
 	c = a.Store.LoadConfig()
 	c.SetupDone = true

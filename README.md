@@ -36,7 +36,7 @@ None of that is hard to fix. It is hard to notice. Catalyst looks at the machine
 
 | Area | What it does |
 |---|---|
-| **The list** | `catalyst` on its own opens one list on the terminal's separate screen, so nothing piles up in your scrollback. Arrows move, Enter opens, Esc goes back, Ctrl-C twice leaves. It greets you by name, and a dot beside your health score breathes in its colour, faster when something needs you. |
+| **The list** | `catalyst` on its own, or `kit` for short, opens one list on the terminal's separate screen, so nothing piles up in your scrollback. Arrows move, Enter opens, Esc goes back, Ctrl-C twice leaves. It greets you by name, and a dot beside your health score breathes in its colour, faster when something needs you. |
 | **Doctor** | Every check at once, a health score and a trend. Each finding opens a guide: why it matters, the real file and line, and numbered steps, with keys to edit, fix, copy or open the right Settings page. `r` checks again. |
 | **Sweep** | Build artifacts from old projects, and only the ones git confirms are disposable. |
 | **Clean** | App caches and old logs, which rebuild themselves. Open apps are left alone, and each row shows its path and opens in Finder. |
@@ -108,7 +108,7 @@ Requirements: macOS or Linux, on Apple silicon, Intel or ARM. That is all.
 curl -fsSL https://raw.githubusercontent.com/theappfoundryco/catalyst/main/get.sh | sh
 ```
 
-It downloads the newest release, checks its checksum, puts one file in `~/.local/bin`, offers to add that folder to your PATH, and opens Catalyst. The first time, it asks what to call you and offers the helpers worth having. In a script or CI it only installs, and `CATALYST_NO_OPEN=1` does the same at a terminal. Prefer to read it first?
+It downloads the newest release, checks its checksum, puts one file in `~/.local/bin` with `kit` as a shorter name for it (unless something else is already called kit), offers to add that folder to your PATH, and opens Catalyst. The first time, it asks what to call you and offers the helpers worth having. In a script or CI it only installs, and `CATALYST_NO_OPEN=1` does the same at a terminal. Prefer to read it first?
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/theappfoundryco/catalyst/main/get.sh -o get.sh

@@ -55,6 +55,10 @@ mv "$work/catalyst" "$DIR/catalyst.new"
 chmod 755 "$DIR/catalyst.new"
 mv "$DIR/catalyst.new" "$DIR/catalyst"  # a rename, so a running copy is never left half written
 ok "Installed $("$DIR/catalyst" --version) in $DIR"
+# kit is a shorter name for the same program: a link, made only when nothing else is already called kit.
+if [ ! -e "$DIR/kit" ] && [ ! -L "$DIR/kit" ] && ! command -v kit >/dev/null 2>&1; then
+  ln -s catalyst "$DIR/kit" && ok "You can type kit as well as catalyst"
+fi
 
 case ":$PATH:" in
   *":$DIR:"*) cmd=catalyst ;;

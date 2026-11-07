@@ -316,7 +316,7 @@ func cmdHelp(a *App, _ []string) int {
 	u.Blank()
 	u.Say("  " + u.Bold("Catalyst") + " " + u.Dim(version.Version))
 	u.Say("  " + u.Dim("The doctor for your dev environment."))
-	u.Say("  " + u.Dim("Run catalyst alone to open the list, or:"))
+	u.Say("  " + u.Dim("Run catalyst (or kit) alone to open the list, or:"))
 	u.Blank()
 	for _, c := range commands() {
 		u.Say(fmt.Sprintf("  %s  %s", u.Cyan(fmt.Sprintf("%-10s", c.Name)), c.Help))
