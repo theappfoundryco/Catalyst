@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Full scan before anything leaves this machine.
+set -e
+cd "$(git rev-parse --show-toplevel)"
+scripts/check-denylist.sh --all
+python3 scripts/check-personal.py --all
+command -v gitleaks >/dev/null 2>&1 || { echo "pre-push: gitleaks missing. Push blocked." >&2; exit 1; }
+gitleaks git --redact --no-banner --config .gitleaks.toml

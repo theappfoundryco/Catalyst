@@ -1,0 +1,207 @@
+// Package cli holds the commands. Every command returns an exit code: 0 fine, 1 issues found, 2 usage error, 3 a check could not run.
+package cli
+
+import (
+	"encoding/json"
+	"flag"
+	"fmt"
+	"os"
+	"strings"
+
+	"github.com/theappfoundryco/catalyst/internal/host"
+	"github.com/theappfoundryco/catalyst/internal/journal"
+	"github.com/theappfoundryco/catalyst/internal/session"
+	"github.com/theappfoundryco/catalyst/internal/state"
+	"github.com/theappfoundryco/catalyst/internal/ui"
+	"github.com/theappfoundryco/catalyst/internal/version"
+)
+
+// Exit codes.
+const (
+	ExitOK     = 0
+	ExitIssues = 1
+	ExitUsage  = 2
+	ExitFailed = 3
+)
+
+// App is what commands share.
+type App struct {
+	U       *ui.UI
+	E       *host.Env
+	Store   *state.Store
+	Journal *journal.Journal
+}
+
+type command struct {
+	Name, Args, Help string
+	Run              func(a *App, args []string) int
+}
+
+func commands() []command {
+	return []command{
+		{"doctor", "[--fix] [--only group] [--json] [-v]", "find what is wrong and fix what is safe", cmdDoctor},
+		{"sweep", "[paths] [--older-than 14d] [--deep] [--dry-run] [--json]", "reclaim space from build artifacts", cmdSweep},
+		{"status", "[--json]", "one-glance health of this machine", cmdStatus},
+		{"undo", "[--yes]", "reverse the last change Catalyst made", cmdUndo},
+		{"log", "[-n 20]", "everything Catalyst has changed", cmdLog},
+		{"disk", "[--folders] [--json]", "volumes, drive health and wear", cmdDisk},
+		{"battery", "[--json]", "charge, cycles and condition", cmdBattery},
+		{"net", "[host]", "connection, DNS and latency", cmdNet},
+		{"ports", "[kill PORT] [--json]", "what is listening, and stop it safely", cmdPorts},
+		{"startup", "[disable NAME | enable NAME] [--json]", "what starts by itself", cmdStartup},
+		{"ssh", "[--json]", "your keys and whether they are safe", cmdSSH},
+		{"path", "[add | remove | status]", "your PATH: dead folders, repeats and shadows", cmdPath},
+		{"config", "[set mascot on|off]", "show or change settings", cmdConfig},
+		{"legacy", "[--yes]", "clean up after the old Catalyst Mac app", cmdLegacy},
+		{"update", "[--check]", "move to the newest release", cmdUpdate},
+		{"uninstall", "[--yes]", "remove Catalyst from this machine", cmdUninstall},
+		{"version", "", "show the version", cmdVersion},
+		{"help", "", "show this list", cmdHelp},
+	}
+}
+
+// Main runs one command line.
+func Main(args []string) int {
+	return newApp().dispatch(args)
+}
+
+func newApp() *App {
+	e := host.New()
+	s := state.New(e.Home, os.Getenv)
+	u := ui.New()
+	if !s.LoadConfig().MascotOn() {
+		u.Mascot = false
+	}
+	return &App{U: u, E: e, Store: s, Journal: journal.New(s.Dir)}
+}
+
+func (a *App) dispatch(args []string) int {
+	var rest []string
+	for _, x := range args {
+		switch x {
+		case "--no-color", "--plain":
+			a.U.Color, a.U.TTY, a.U.Mascot = false, false, false
+		case "--version":
+			return cmdVersion(a, nil)
+		case "--help", "-h":
+			if len(args) == 1 {
+				return cmdHelp(a, nil)
+			}
+			rest = append(rest, x)
+		default:
+			rest = append(rest, x)
+		}
+	}
+	if len(rest) == 0 {
+		if a.U.TTY && a.U.InTTY {
+			return a.session()
+		}
+		return cmdHelp(a, nil) // a pipe has nobody to talk to
+	}
+	for _, c := range commands() {
+		if c.Name == rest[0] {
+			return c.Run(a, rest[1:])
+		}
+	}
+	a.U.Stop(fmt.Sprintf("There is no command called %q.", rest[0]))
+	a.U.Hint("See them all: catalyst help")
+	return ExitUsage
+}
+
+func (a *App) session() int {
+	var list []session.Command
+	for _, c := range commands() {
+		if c.Name != "help" && c.Name != "version" {
+			list = append(list, session.Command{Name: c.Name, Help: c.Help})
+		}
+	}
+	return session.Run(session.Config{
+		UI: a.U, Commands: list, Welcome: a.welcome(),
+		Run: func(args []string) int {
+			if len(args) == 0 {
+				return ExitOK
+			}
+			if args[0] == "help" {
+				return cmdHelp(a, nil)
+			}
+			return a.dispatch(args)
+		},
+	})
+}
+
+// flags builds a flag set that explains itself in plain words and never exits by itself.
+func (a *App) flags(name, usage string) *flag.FlagSet {
+	fs := flag.NewFlagSet(name, flag.ContinueOnError)
+	fs.SetOutput(discard{})
+	fs.Usage = func() { a.U.Say("  Usage: catalyst " + name + " " + usage) }
+	return fs
+}
+
+type discard struct{}
+
+func (discard) Write(b []byte) (int, error) { return len(b), nil }
+
+// parse runs a flag set and reports the problem in plain words. ok is false when the command should stop.
+func (a *App) parse(fs *flag.FlagSet, args []string) (code int, ok bool) {
+	// Flags may come after positional arguments, the way people type them.
+	var flags, plain []string
+	for i := 0; i < len(args); i++ {
+		x := args[i]
+		if !strings.HasPrefix(x, "-") || x == "-" {
+			plain = append(plain, x)
+			continue
+		}
+		flags = append(flags, x)
+		name := strings.TrimLeft(x, "-")
+		if !strings.Contains(name, "=") && i+1 < len(args) {
+			if f := fs.Lookup(name); f != nil {
+				if _, isBool := f.Value.(interface{ IsBoolFlag() bool }); !isBool {
+					i++
+					flags = append(flags, args[i])
+				}
+			}
+		}
+	}
+	if err := fs.Parse(append(flags, plain...)); err != nil {
+		if err == flag.ErrHelp {
+			fs.Usage()
+			return ExitOK, false
+		}
+		a.U.Stop(err.Error())
+		fs.Usage()
+		return ExitUsage, false
+	}
+	return ExitOK, true
+}
+
+func emit(a *App, v any) int {
+	enc := json.NewEncoder(a.U.Out)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(v); err != nil {
+		return ExitFailed
+	}
+	return ExitOK
+}
+
+func cmdVersion(a *App, _ []string) int {
+	fmt.Fprintln(a.U.Out, "catalyst "+version.Version)
+	return ExitOK
+}
+
+func cmdHelp(a *App, _ []string) int {
+	u := a.U
+	u.Blank()
+	u.Beside("idle", []string{u.Bold("Catalyst") + " " + u.Dim(version.Version), u.Dim("The doctor for your dev environment."), u.Dim("Type catalyst alone for a session, or:")})
+	u.Blank()
+	for _, c := range commands() {
+		u.Say(fmt.Sprintf("  %s  %s", u.Cyan(fmt.Sprintf("%-10s", c.Name)), c.Help))
+	}
+	u.Blank()
+	u.Say(u.Dim("  Exit codes: 0 fine, 1 issues found, 2 usage error, 3 a check could not run."))
+	u.Say(u.Dim("  Reading never needs permission. Changing always does. Nothing is sent anywhere."))
+	u.Blank()
+	return ExitOK
+}
+
+// Dispatch runs one command line on a prepared App, for the demo.
+func Dispatch(a *App, args []string) int { return a.dispatch(args) }

@@ -1,0 +1,16 @@
+# secrets
+.env
+*.env
+*.pem
+*.key
+*.pass
+*.secret*
+*.bak*
+*.log
+# maintainer-only notes and the personal denylist (never commit)
+.private/
+# local scratch and build output
+.cache/
+dist/
+/catalyst
+.DS_Store

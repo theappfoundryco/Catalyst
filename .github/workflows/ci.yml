@@ -1,0 +1,90 @@
+name: CI
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  leak-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: gitleaks (full history)  # the program itself, checked against its published checksum; the packaged action asks organisations for a licence key
+        run: |
+          v=8.30.1
+          curl -fsSL "https://github.com/gitleaks/gitleaks/releases/download/v$v/gitleaks_${v}_linux_x64.tar.gz" -o "$RUNNER_TEMP/gitleaks.tgz"
+          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  $RUNNER_TEMP/gitleaks.tgz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/gitleaks.tgz" -C "$RUNNER_TEMP" gitleaks
+          "$RUNNER_TEMP/gitleaks" git --redact --no-banner --config .gitleaks.toml
+      - name: data guard
+        run: scripts/check-data-guard.sh --all
+      - name: personal values (emails, public IPs)
+        run: python3 scripts/check-personal.py --all
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: format
+        run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+      - name: vet
+        run: go vet ./...
+      - name: no em dashes
+        run: |
+          if git grep -nP '\x{2014}' -- . ':!CODE_OF_CONDUCT.md'; then echo "Use commas or parentheses." >&2; exit 1; fi
+
+  tests:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: git config --global user.name CI && git config --global user.email ci@example.com
+      - run: go test ./...
+      - name: every command runs on this system
+        run: |
+          go build -o catalyst ./cmd/catalyst
+          ./catalyst --version
+          ./catalyst doctor || [ $? -le 1 ]
+          ./catalyst status
+          ./catalyst sweep --dry-run
+          ./catalyst ports
+          ./catalyst disk
+          ./catalyst path || [ $? -le 1 ]
+          ./catalyst startup
+          ./catalyst ssh || [ $? -le 1 ]
+          ./catalyst battery
+          ./catalyst log
+          ./catalyst doctor --json > report.json || [ $? -le 1 ]
+          python3 -c 'import json; print(json.load(open("report.json"))["score"])'
+
+  distros:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ["debian:12", "fedora:41", "alpine:3.20", "archlinux:latest"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: CGO_ENABLED=0 go build -o catalyst ./cmd/catalyst
+      - name: runs with nothing installed
+        run: |
+          docker run --rm -v "$PWD:/c:ro" "${{ matrix.image }}" sh -c '
+            cd /tmp
+            /c/catalyst doctor -v; c=$?; [ $c -le 1 ] || exit $c
+            /c/catalyst status && /c/catalyst sweep --dry-run && /c/catalyst disk && /c/catalyst ports && /c/catalyst startup'
