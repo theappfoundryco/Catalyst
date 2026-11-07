@@ -8,8 +8,11 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/theappfoundryco/catalyst/internal/doctor"
+	"github.com/theappfoundryco/catalyst/internal/journal"
+	"github.com/theappfoundryco/catalyst/internal/run"
 	"github.com/theappfoundryco/catalyst/internal/session"
 	"github.com/theappfoundryco/catalyst/internal/ui"
 )
@@ -26,6 +29,52 @@ type guide struct {
 	screen   []string
 	label    string // what the screen key is called
 	facts    []string
+	// A change Catalyst can make to a startup file, shown and undoable.
+	fixLabel, fixTitle, fixFile string
+	fixChange                   func(lines []string) []string
+	install                     []string // a command that installs what is missing, run on this terminal after a yes
+}
+
+var traceLine = regexp.MustCompile(`^\+(.+?):(\d+)> (?:export )?PATH=(.*)$`)
+
+// pathCulprit traces a new login shell and finds the line that last put Apple's folders back in front of Homebrew's.
+// Only PATH lines are read from the trace: anything else a startup file sets stays unread.
+func (a *App) pathCulprit() (string, int) {
+	if a.E.Shell == "" || !strings.HasSuffix(a.E.Shell, "zsh") {
+		return "", 0
+	}
+	r := a.E.Run.Run(15*time.Second, a.E.Shell, "-l", "-i", "-x", "-c", "exit")
+	brewFirst := func(path string) bool {
+		parts := strings.Split(strings.Trim(path, `"'`), ":")
+		b, sys := -1, -1
+		for i, p := range parts {
+			if p == "/opt/homebrew/bin" && b < 0 {
+				b = i
+			}
+			if p == "/usr/bin" && sys < 0 {
+				sys = i
+			}
+		}
+		return b >= 0 && (sys < 0 || b < sys)
+	}
+	file, line := "", 0
+	was := false
+	for _, l := range strings.Split(r.Stderr, "\n") {
+		m := traceLine.FindStringSubmatch(l)
+		if m == nil || strings.HasPrefix(m[1], "(eval)") {
+			continue
+		}
+		now := brewFirst(m[3])
+		if was && !now {
+			file = m[1]
+			line, _ = strconv.Atoi(m[2])
+		}
+		was = now
+	}
+	if was { // the last word was Homebrew first after all
+		return "", 0
+	}
+	return file, line
 }
 
 // findLine finds the first line in the startup files that contains any of the needles, outside comments.
@@ -74,6 +123,31 @@ func (a *App) guideFor(r doctor.Result) guide {
 		case strings.Contains(t, "Apple's tools come before Homebrew's"):
 			g.why = "When you type git or python3, the first folder on your PATH that has it wins. /usr/bin comes first, so Apple's older copies run and the ones Homebrew installed are ignored."
 			g.file, g.line = a.findLine("brew shellenv", "/opt/homebrew/bin")
+			if cf, cl := a.pathCulprit(); cf != "" {
+				g.where = []string{fmt.Sprintf("%s, line %d", a.E.Tilde(cf), cl)}
+				if filepath.Base(cf) == ".zshrc_catalyst" {
+					g.why = "Your brew line is fine. A file the old Catalyst Mac app wrote, ~/.zshrc_catalyst, is loaded later and replaces your whole PATH with a fixed list: Apple's folders first, Homebrew's last. Everything your .zshrc set before it is thrown away."
+					g.steps = []string{
+						fmt.Sprintf("Remove the old app's PATH block in ~/.zshrc_catalyst (around line %d). Press f, and the lines are shown before anything changes.", cl),
+						"Or clear out everything the old app left, with Old app cleanup (g).",
+						"Open a new terminal and run: which git. It should say /opt/homebrew/bin/git.",
+					}
+					g.fixLabel, g.fixTitle, g.fixFile = "remove the old block", "Remove the old app's PATH block", cf
+					g.fixChange = dropBlock("# CATALYST_BEGIN path-order", "# CATALYST_END path-order")
+					g.screen, g.label = []string{"legacy"}, "Old app cleanup"
+					g.file, g.line = cf, cl
+				} else {
+					g.why = "Your brew line runs, but a line after it puts Apple's folders back in front. The last line to change PATH wins."
+					g.steps = []string{
+						fmt.Sprintf("Open %s at line %d. That is the line that puts /usr/bin first.", a.E.Tilde(cf), cl),
+						"Either remove it, or move your brew line below it.",
+						"Open a new terminal and run: which git. It should say /opt/homebrew/bin/git.",
+					}
+					g.file, g.line = cf, cl
+				}
+				g.copy = "which -a git"
+				break
+			}
 			if g.file != "" {
 				g.steps = []string{
 					fmt.Sprintf("Open %s at line %d. That line puts Homebrew on your PATH.", a.E.Tilde(g.file), g.line),
@@ -128,15 +202,35 @@ func (a *App) guideFor(r doctor.Result) guide {
 		} else {
 			g.why = "Some build tools only find Java through JAVA_HOME."
 		}
+		line := ""
+		if g.file != "" && g.line > 0 {
+			if b, err := os.ReadFile(g.file); err == nil {
+				if ls := strings.Split(string(b), "\n"); g.line <= len(ls) {
+					line = ls[g.line-1]
+				}
+			}
+		}
 		switch {
 		case len(jdks) > 0 && a.E.Mac():
 			g.copy = "export JAVA_HOME=$(/usr/libexec/java_home)"
-			g.steps = []string{"Replace the JAVA_HOME line with the one below. It always finds the newest JDK you have, so it never goes stale again:", "  " + g.copy}
+			g.steps = []string{"Replace the JAVA_HOME line with the one below. It always finds the newest JDK you have, so it never goes stale again. Press f to have it done:", "  " + g.copy}
+			if line != "" && strings.Contains(t, "gone") {
+				g.fixLabel, g.fixTitle, g.fixFile = "point it at your JDK", "Point JAVA_HOME at the JDK you have", g.file
+				g.fixChange = replaceLine(g.line, line, g.copy)
+			}
 		case len(jdks) > 0:
 			g.steps = []string{"Point JAVA_HOME at one of the JDKs listed above."}
 		default:
+			g.facts = append(g.facts, "No JDK is installed now.")
+			g.steps = []string{"If you do not use Java now, turn the line off. Press f: it becomes a comment, so it is easy to bring back.", "If you do, install a JDK (press i), then come back here and press f to point JAVA_HOME at it:", "  brew install --cask temurin"}
 			g.copy = "brew install --cask temurin"
-			g.steps = []string{"No JDK is installed now. Either delete the JAVA_HOME line, or install one:", "  " + g.copy}
+			if line != "" {
+				g.fixLabel, g.fixTitle, g.fixFile = "turn the line off", "Turn off the JAVA_HOME line", g.file
+				g.fixChange = replaceLine(g.line, line, "# "+strings.TrimSpace(line)+"  # turned off by Catalyst: this JDK is gone")
+			}
+			if a.E.Mac() && a.brew() != "" {
+				g.install = []string{a.brew(), "install", "--cask", "temurin"}
+			}
 		}
 		if g.file != "" {
 			g.steps = append([]string{fmt.Sprintf("Open %s at line %d.", a.E.Tilde(g.file), g.line)}, g.steps...)
@@ -310,6 +404,7 @@ func (a *App) topMemory(n int) []string {
 // showGuide is one finding on its own screen.
 func (a *App) showGuide(r doctor.Result) {
 	u := a.U
+	a.outcome.Refresh = true
 	g := a.guideFor(r)
 	u.Hdr("How to sort it out")
 	switch r.Severity {
@@ -364,6 +459,14 @@ func (a *App) showGuide(r doctor.Result) {
 	if r.Fix != nil && r.Fix.Kind != doctor.FixManual {
 		*acts = append(*acts, goTo("f", "fix it", "Doctor", "doctor", "--fix", "--only", r.Check))
 	}
+	if g.fixChange != nil && g.fixFile != "" {
+		file, title, change := g.fixFile, g.fixTitle, g.fixChange
+		*acts = append(*acts, a.page("f", g.fixLabel, "Doctor", func() { a.editFile(file, title, change) }))
+	}
+	if len(g.install) > 0 {
+		cmd := g.install
+		*acts = append(*acts, a.page("i", "install a JDK", "Doctor", func() { a.runInstall("Install a JDK", cmd) }))
+	}
 	if g.file != "" {
 		*acts = append(*acts, a.editKey(g.file, g.line))
 	}
@@ -384,4 +487,56 @@ func (a *App) showGuide(r doctor.Result) {
 	if len(g.screen) > 0 {
 		*acts = append(*acts, goTo("g", g.label, g.label, g.screen...))
 	}
+}
+
+// dropBlock removes the lines from begin to end, both included.
+func dropBlock(begin, end string) func([]string) []string {
+	return func(lines []string) []string {
+		var out []string
+		in := false
+		for _, l := range lines {
+			t := strings.TrimSpace(l)
+			if t == begin {
+				in = true
+				continue
+			}
+			if in && t == end {
+				in = false
+				continue
+			}
+			if !in {
+				out = append(out, l)
+			}
+		}
+		return out
+	}
+}
+
+// replaceLine swaps one line, but only if it still reads as it did, so a file edited since is never changed blindly.
+func replaceLine(n int, was, with string) func([]string) []string {
+	return func(lines []string) []string {
+		if n >= 1 && n <= len(lines) && lines[n-1] == was {
+			lines[n-1] = with
+		}
+		return lines
+	}
+}
+
+// runInstall shows a command, asks, and runs it on this terminal so it can ask its own questions.
+func (a *App) runInstall(title string, cmd []string) {
+	u := a.U
+	u.Say("  " + u.Bold(title))
+	u.Say("     " + u.Accent(strings.Join(cmd, " ")))
+	u.Hint("It downloads from the internet, and may ask for your password itself.")
+	if !u.Ask("Run it?") {
+		u.Say("  " + u.Dim("Nothing was installed."))
+		return
+	}
+	if _, code := run.Attached(false, cmd[0], cmd[1:]...); code != 0 {
+		u.Warn("It did not finish. What it said is above.")
+		return
+	}
+	a.Journal.Add(journal.Entry{Time: a.E.Now(), Batch: journal.NewBatch(a.E.Now()), Kind: journal.KindRun, Title: title, Command: cmd})
+	a.outcome.Changed = true
+	u.Ok("Installed. Press Esc, and the guide checks again.")
 }

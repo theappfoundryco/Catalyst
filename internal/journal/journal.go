@@ -19,6 +19,7 @@ const (
 	KindRun   = "run"     // ran a command; cannot be undone
 	KindUndo  = "undone"  // Batch was reversed
 	KindEmpty = "emptied" // Batch was emptied from the Trash, so it can no longer be undone
+	KindEdit  = "edited"  // changed the text file From; To is a copy of it from before
 )
 
 // Entry is one change.
@@ -93,12 +94,12 @@ func (j *Journal) LastUndoable() []Entry {
 	}
 	for i := len(all) - 1; i >= 0; i-- {
 		e := all[i]
-		if undone[e.Batch] || (e.Kind != KindTrash && e.Kind != KindChmod) {
+		if undone[e.Batch] || (e.Kind != KindTrash && e.Kind != KindChmod && e.Kind != KindEdit) {
 			continue
 		}
 		var batch []Entry
 		for _, x := range all {
-			if x.Batch == e.Batch && (x.Kind == KindTrash || x.Kind == KindChmod) {
+			if x.Batch == e.Batch && (x.Kind == KindTrash || x.Kind == KindChmod || x.Kind == KindEdit) {
 				batch = append(batch, x)
 			}
 		}

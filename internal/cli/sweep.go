@@ -265,6 +265,8 @@ func cmdUndo(a *App, args []string) int {
 			u.Hint("back to " + a.E.Tilde(e.From))
 		case journal.KindChmod:
 			u.Hint(fmt.Sprintf("back to mode %o on %s", e.OldMode, a.E.Tilde(e.From)))
+		case journal.KindEdit:
+			u.Hint(a.E.Tilde(e.From) + " back to how it was before")
 		}
 	}
 	if !u.Ask("Undo this?") {
@@ -280,6 +282,8 @@ func cmdUndo(a *App, args []string) int {
 			err = trash.Restore(e.From, e.To, e.Info)
 		case journal.KindChmod:
 			err = os.Chmod(e.From, e.OldMode)
+		case journal.KindEdit:
+			err = restoreCopy(e.To, e.From)
 		}
 		if err != nil {
 			u.Stop(a.E.Tilde(e.From) + ": " + err.Error())

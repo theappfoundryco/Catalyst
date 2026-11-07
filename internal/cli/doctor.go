@@ -46,6 +46,7 @@ func cmdDoctor(a *App, args []string) int {
 		return a.doctorJSON(filter)
 	}
 	u := a.U
+	a.outcome.Refresh = true
 	u.Banner(tagline)
 	sp := u.Spin("Reading what a new terminal sees")
 	a.E.LoadShell()

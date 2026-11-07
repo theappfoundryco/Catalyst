@@ -540,3 +540,40 @@ LISTEN 0 128 0.0.0.0:22 0.0.0.0:* users:(("sshd",pid=1,fd=3))`},
 		t.Fatalf("%+v", a.outcome.Rows)
 	}
 }
+
+func TestStartupFileEditIsShownKeptAndUndone(t *testing.T) {
+	a, out := testApp(t, "darwin")
+	a.U.Yes = true
+	rc := filepath.Join(a.E.Home, ".zshrc_catalyst")
+	before := "alias ll='ls -l'\n# CATALYST_BEGIN path-order\nexport PATH=\"/usr/bin:/bin:/opt/homebrew/bin\"\n# CATALYST_END path-order\nalias gs='git status'\n"
+	put(t, rc, before)
+	if !a.editFile(rc, "Remove the old app's PATH block", dropBlock("# CATALYST_BEGIN path-order", "# CATALYST_END path-order")) {
+		t.Fatal(out.String())
+	}
+	b, _ := os.ReadFile(rc)
+	if strings.Contains(string(b), "PATH") || !strings.Contains(string(b), "alias gs") {
+		t.Fatalf("after: %q", b)
+	}
+	if !strings.Contains(out.String(), "- export PATH") {
+		t.Fatalf("the change was not shown first: %s", out.String())
+	}
+	if last := a.Journal.LastUndoable(); len(last) != 1 || !strings.Contains(a.lastChange(last), "Edited ~/.zshrc_catalyst") {
+		t.Fatalf("%+v", last)
+	}
+	cmdUndo(a, []string{"--yes"})
+	if b, _ := os.ReadFile(rc); string(b) != before {
+		t.Fatalf("undo left %q", b)
+	}
+}
+
+func TestReplaceLineOnlyWhenItStillReadsTheSame(t *testing.T) {
+	lines := []string{"a", "export JAVA_HOME=/gone", "b"}
+	got := replaceLine(2, "export JAVA_HOME=/gone", "# off")(append([]string{}, lines...))
+	if got[1] != "# off" {
+		t.Fatal(got)
+	}
+	got = replaceLine(2, "something else", "# off")(append([]string{}, lines...))
+	if got[1] != "export JAVA_HOME=/gone" {
+		t.Fatal("changed a line that no longer matched")
+	}
+}

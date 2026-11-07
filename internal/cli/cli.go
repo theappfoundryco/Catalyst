@@ -205,6 +205,8 @@ func (a *App) lastChange(batch []journal.Entry) string {
 			}
 		case journal.KindChmod:
 			chmods++
+		case journal.KindEdit:
+			return "Edited " + a.E.Tilde(e.From) + ", " + whenSaid(batch[0].Time, a.E.Now())
 		}
 	}
 	what := ""
