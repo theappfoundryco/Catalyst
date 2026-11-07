@@ -30,7 +30,14 @@ type App struct {
 	E       *host.Env
 	Store   *state.Store
 	Journal *journal.Journal
+
+	inSession bool
+	outcome   session.Outcome // what the session should do once this command returns
+	reaction  reaction        // what Kit and the home screen say about it
 }
+
+// reaction is the home screen's response to what just ran. It is how a command shows up in Kit's mood, since Kit stays home.
+type reaction struct{ mood, line string }
 
 type command struct {
 	Name, Args, Help string
@@ -109,24 +116,57 @@ func (a *App) dispatch(args []string) int {
 }
 
 func (a *App) session() int {
-	var list []session.Command
-	for _, c := range commands() {
-		if c.Name != "help" && c.Name != "version" {
-			list = append(list, session.Command{Name: c.Name, Help: c.Help})
-		}
-	}
+	a.inSession = true
 	return session.Run(session.Config{
-		UI: a.U, Commands: list, Welcome: a.welcome(),
-		Run: func(args []string) int {
-			if len(args) == 0 {
-				return ExitOK
-			}
-			if args[0] == "help" {
-				return cmdHelp(a, nil)
-			}
-			return a.dispatch(args)
+		UI: a.U, Items: a.homeItems(), Header: a.header,
+		Run: func(args []string) session.Outcome {
+			a.outcome, a.reaction = session.Outcome{}, reaction{}
+			a.dispatch(args)
+			return a.outcome
 		},
 	})
+}
+
+// homeItems is the list on the home screen. The most-used things come first, and what is rare waits under More.
+func (a *App) homeItems() []session.Item {
+	helps := map[string]string{}
+	for _, c := range commands() {
+		helps[c.Name] = strings.TrimPrefix(c.Help, "your PATH: ") // the row is already called PATH
+	}
+	item := func(name, label string, gap bool) session.Item {
+		return session.Item{Name: label, Help: helps[name], Args: []string{name}, Gap: gap}
+	}
+	more := []session.Item{item("log", "History", false), item("config", "Settings", false), item("update", "Update", false), item("uninstall", "Uninstall", false)}
+	if a.oldAppPresent() {
+		more = append(more, item("legacy", "Old app", false))
+	}
+	return []session.Item{
+		item("doctor", "Doctor", false),
+		item("sweep", "Sweep", false),
+		item("status", "Status", false),
+		item("undo", "Undo", false),
+		item("disk", "Disk", true),
+		item("battery", "Battery", false),
+		item("net", "Network", false),
+		item("ports", "Ports", false),
+		item("startup", "Startup", false),
+		item("ssh", "SSH keys", false),
+		item("path", "PATH", false),
+		{Name: "More", Help: "history, settings, update, uninstall", Gap: true, Sub: more},
+	}
+}
+
+// oldAppPresent looks for what the old Mac app leaves most often, so the cleanup only shows up for someone who needs it.
+func (a *App) oldAppPresent() bool {
+	if !a.E.Mac() {
+		return false
+	}
+	for _, p := range []string{"/Applications/Catalyst.app", a.E.Path(legacySource)} {
+		if _, err := os.Lstat(p); err == nil {
+			return true
+		}
+	}
+	return false
 }
 
 // flags builds a flag set that explains itself in plain words and never exits by itself.
@@ -191,7 +231,9 @@ func cmdVersion(a *App, _ []string) int {
 func cmdHelp(a *App, _ []string) int {
 	u := a.U
 	u.Blank()
-	u.Beside("idle", []string{u.Bold("Catalyst") + " " + u.Dim(version.Version), u.Dim("The doctor for your dev environment."), u.Dim("Type catalyst alone for a session, or:")})
+	u.Say("  " + u.Bold("Catalyst") + " " + u.Dim(version.Version))
+	u.Say("  " + u.Dim("The doctor for your dev environment."))
+	u.Say("  " + u.Dim("Run catalyst alone to open the list, or:"))
 	u.Blank()
 	for _, c := range commands() {
 		u.Say(fmt.Sprintf("  %s  %s", u.Cyan(fmt.Sprintf("%-10s", c.Name)), c.Help))

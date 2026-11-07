@@ -134,10 +134,8 @@ def main():
     t.send(b"\x1b[B", 0.2)
     t.send(b" ", 0.3)
     t.save("sweep.png", "catalyst sweep")
-    env2 = dict(env)
-    t = Term([binary], env2, cols=88, rows=20)
+    t = Term([demo], env, cols=88, rows=24)  # the invented machine has a health history, so the header has something to say
     t.pump(1.0)
-    t.send(b"do", 0.5)
     t.save("session.png", "catalyst")
     os.write(t.fd, b"\x03")
     shutil.rmtree(home, ignore_errors=True)

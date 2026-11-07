@@ -36,7 +36,7 @@ None of that is hard to fix. It is hard to notice. Catalyst looks at the machine
 
 | Command | What it does |
 |---|---|
-| `catalyst` | A session like Claude Code: where things stand, with every command a few keys away. |
+| `catalyst` | Opens one list: where things stand, and everything below. Arrow keys move, Enter opens. |
 | `catalyst doctor` | Runs every check at once and gives a health score and a trend. `--fix` shows each change before it happens. |
 | `catalyst sweep` | Reclaims space from build artifacts, and only the ones git confirms are disposable. |
 | `catalyst undo` | Reverses the last change. `catalyst log` lists everything Catalyst ever changed. |
@@ -48,6 +48,8 @@ None of that is hard to fix. It is hard to notice. Catalyst looks at the machine
 | `catalyst startup` | What starts by itself, and which of it is broken. |
 | `catalyst ssh` | Your keys, and whether they are safe. |
 | `catalyst path` | Your PATH: dead folders, repeats, what hides what, and which file added each. |
+
+<p align="center"><img src=".github/assets/session.png" alt="The Catalyst home screen: Kit, the machine's health, and a list of commands" width="90%"></p>
 
 <p align="center"><img src=".github/assets/sweep.png" alt="The catalyst sweep menu with two folders selected" width="90%"></p>
 
@@ -79,7 +81,7 @@ Requirements: macOS or Linux, on Apple silicon, Intel or ARM. That is all.
 curl -fsSL https://raw.githubusercontent.com/theappfoundryco/catalyst/main/get.sh | sh
 ```
 
-It downloads the newest release, checks its checksum, puts one file in `~/.local/bin`, and offers to add that folder to your PATH. Prefer to read it first?
+It downloads the newest release, checks its checksum, puts one file in `~/.local/bin`, offers to add that folder to your PATH, and opens Catalyst. In a script or CI it only installs, and `CATALYST_NO_OPEN=1` does the same at a terminal. Prefer to read it first?
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/theappfoundryco/catalyst/main/get.sh -o get.sh
@@ -112,13 +114,13 @@ catalyst doctor --only keys         # one group
 catalyst sweep --dry-run --json     # what it would offer
 ```
 
-Exit codes: 0 fine, 1 issues found, 2 usage error, 3 a check could not run. Colour and Kit turn themselves off in pipes, with `NO_COLOR`, in CI and in narrow windows.
+Exit codes: 0 fine, 1 issues found, 2 usage error, 3 a check could not run. Colour turns itself off in pipes and with `NO_COLOR`.
 
 ## Meet Kit
 
 <img align="right" src=".github/assets/kit.svg" alt="Kit" width="120">
 
-Cat + alyst. Kit appears at moments that matter and stays out of the way otherwise, and its mood is real information: a doctor's hat while checking, alarmed only for something critical, a party only on a clean 100. `catalyst config set mascot off` if you would rather not. Adding a mood is one of the friendliest first pull requests here.
+Cat + alyst. Kit lives in one place, the top of the home screen, and never follows you into a command or a script. Its mood is real information about what just happened: a doctor's hat after a checkup, alarmed only for something critical, a party only on a clean 100, and pleased after a sweep. `catalyst config set mascot off` if you would rather not. Adding a mood is one of the friendliest first pull requests here.
 
 ## Documentation and community
 

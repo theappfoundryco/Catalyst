@@ -2,8 +2,9 @@
 # One-line install: downloads the newest release for this machine, checks it, and puts it in ~/.local/bin.
 #   curl -fsSL https://raw.githubusercontent.com/theappfoundryco/catalyst/main/get.sh | sh
 # Nothing else is needed: no Python, no git, no Xcode. Nothing outside ~/.local/bin changes without asking.
+# At a terminal it opens Catalyst when it finishes. In a script or CI it only installs.
 # Environment: CATALYST_DIR (folder, default ~/.local/bin), CATALYST_VERSION (for example v0.1.0, default the newest),
-#              CATALYST_BASE (another download address, for testing)
+#              CATALYST_BASE (another download address, for testing), CATALYST_NO_OPEN (any value: install without opening)
 set -eu
 REPO="theappfoundryco/catalyst"
 DIR="${CATALYST_DIR:-$HOME/.local/bin}"
@@ -74,5 +75,13 @@ case ":$PATH:" in
       printf '  Add %s to your PATH to type catalyst from any folder.\n' "$DIR"
     fi ;;
 esac
-printf '\n  %s%sReady.%s Try: %s%s doctor%s\n' "$B" "$G" "$R" "$B" "$cmd" "$R"
+
+# Open it straight away for a person at a terminal. Piped from curl, stdin is this script, so give it the keyboard.
+# It runs as a child rather than through exec, so the temporary folder is still cleaned up and the last note can print.
+if [ -t 1 ] && [ -z "${CI:-}" ] && [ -z "${CATALYST_NO_OPEN:-}" ] && [ "${TERM:-dumb}" != dumb ] && (exec </dev/tty) 2>/dev/null; then
+  "$DIR/catalyst" </dev/tty || true
+  if [ "$cmd" != catalyst ]; then printf '  Open it again with: %s\n' "$cmd"; fi
+else
+  printf '\n  %s%sReady.%s Try: %s%s doctor%s\n' "$B" "$G" "$R" "$B" "$cmd" "$R"
+fi
 if [ "$cmd" = catalyst ] && ! command -v catalyst >/dev/null 2>&1; then printf '  %sOpen a new terminal first, so it can find the command.%s\n' "$D" "$R"; fi

@@ -95,7 +95,7 @@ func cmdDisk(a *App, args []string) int {
 			u.Say(fmt.Sprintf("  %s  %s", u.Cyan(fmt.Sprintf("%9s", ui.Size(r.size))), r.name))
 		}
 	}
-	u.Signoff()
+	u.Blank()
 	return ExitOK
 }
 
@@ -142,7 +142,7 @@ func cmdBattery(a *App, args []string) int {
 	if b.TemperatureC > 0 {
 		u.Row("Temperature", fmt.Sprintf("%.0f°C", b.TemperatureC))
 	}
-	u.Signoff()
+	u.Blank()
 	return ExitOK
 }
 

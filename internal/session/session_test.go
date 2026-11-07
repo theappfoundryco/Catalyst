@@ -5,106 +5,146 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/theappfoundryco/catalyst/internal/kit"
 	"github.com/theappfoundryco/catalyst/internal/ui"
 )
 
-func editor() *Editor {
-	return &Editor{Commands: []Command{{"doctor", "find problems"}, {"disk", "volumes"}, {"sweep", "reclaim"}}}
+func picker() *Picker {
+	return &Picker{Items: []Item{
+		{Name: "Doctor", Help: "find problems", Args: []string{"doctor"}},
+		{Name: "Sweep", Help: "reclaim", Args: []string{"sweep"}},
+		{Name: "More", Help: "the rest", Gap: true, Sub: []Item{{Name: "History", Args: []string{"log"}}}},
+	}}
 }
 
-func typeIn(e *Editor, s string) {
-	for _, r := range s {
-		e.Key(string(r))
+// Moving to a row and pressing Enter has to open that row. In 0.1.0 it did nothing unless something had been typed.
+func TestEnterOpensWhatIsHighlightedWithNothingTyped(t *testing.T) {
+	p := picker()
+	if p.Key("down") != Keep {
+		t.Fatal("moving is not a choice")
 	}
-}
-
-func TestEnterRunsTheHighlightedCommand(t *testing.T) {
-	e := editor()
-	typeIn(e, "do")
-	if e.Key("enter") != Submit || e.Line() != "doctor" {
-		t.Fatal(e.Line())
-	}
-}
-
-func TestArrowsChoose(t *testing.T) {
-	e := editor()
-	typeIn(e, "d")
-	e.Key("down")
-	if e.Line() != "disk" {
-		t.Fatal(e.Line())
-	}
-	e.Key("up")
-	e.Key("up")
-	if e.Line() != "doctor" {
-		t.Fatal(e.Line())
+	if p.Key("enter") != Open || p.Items[p.Cur].Args[0] != "sweep" {
+		t.Fatal(p.Cur)
 	}
 }
 
-func TestTabCompletesThenArgumentsPassThrough(t *testing.T) {
-	e := editor()
-	typeIn(e, "sw")
-	e.Key("tab")
-	if e.Text != "sweep " {
-		t.Fatalf("%q", e.Text)
-	}
-	typeIn(e, "--dry-run")
-	if e.Matches() != nil || e.Line() != "sweep --dry-run" {
-		t.Fatal(e.Line())
+func TestEnterOnTheFirstRowWithoutMoving(t *testing.T) {
+	p := picker()
+	if p.Key("enter") != Open || p.Items[p.Cur].Name != "Doctor" {
+		t.Fatal(p.Cur)
 	}
 }
 
-func TestSlashWorksTooAndUnknownPassesThrough(t *testing.T) {
-	e := editor()
-	typeIn(e, "/do")
-	if e.Line() != "doctor" {
-		t.Fatal(e.Line())
+func TestArrowsGoRoundBothEnds(t *testing.T) {
+	p := picker()
+	p.Key("up")
+	if p.Cur != 2 {
+		t.Fatal(p.Cur)
 	}
-	e = editor()
-	typeIn(e, "zzz")
-	if e.Line() != "zzz" {
-		t.Fatal(e.Line())
+	p.Key("down")
+	if p.Cur != 0 {
+		t.Fatal(p.Cur)
 	}
-}
-
-func TestBackspaceEscAndQuit(t *testing.T) {
-	e := editor()
-	typeIn(e, "dox")
-	e.Key("backspace")
-	if e.Text != "do" {
-		t.Fatal(e.Text)
+	p.Key("j")
+	if p.Cur != 1 {
+		t.Fatal(p.Cur)
 	}
-	e.Key("esc")
-	if e.Text != "" {
-		t.Fatal(e.Text)
-	}
-	if e.Key("ctrl-c") != Quit || e.Key("ctrl-d") != Quit {
-		t.Fatal("quit")
+	p.Key("k")
+	if p.Cur != 0 {
+		t.Fatal(p.Cur)
 	}
 }
 
-func TestSplitKeepsAnArrowTogetherAndAPasteApart(t *testing.T) {
-	if got := split([]byte("\x1b[A")); len(got) != 1 || got[0] != "up" {
-		t.Fatal(got)
-	}
-	if got := split([]byte("doc")); strings.Join(got, "") != "doc" || len(got) != 3 {
-		t.Fatal(got)
-	}
-	if got := split([]byte("do\r")); got[2] != "enter" {
-		t.Fatal(got)
+func TestLettersDoNothingBecauseThereIsNothingToType(t *testing.T) {
+	p := picker()
+	for _, k := range []string{"d", "o", "/", " ", "tab", "backspace", ""} {
+		if p.Key(k) != Keep || p.Cur != 0 {
+			t.Fatalf("%q", k)
+		}
 	}
 }
 
-func TestFrameFitsAtEveryWidth(t *testing.T) {
-	var b bytes.Buffer
-	u := ui.Plain(&b, 80)
+func TestLeaving(t *testing.T) {
+	p := picker()
+	if p.Key("q") != Leave || p.Key("esc") != Back || p.Key("left") != Back || p.Key("ctrl-c") != Quit || p.Key("ctrl-d") != Quit {
+		t.Fatal("keys")
+	}
+}
+
+func header(long string) Header {
+	return Header{Lines: []string{"Catalyst v1", long, "", "Health 90", long}}
+}
+
+func bigList(long string) []Item {
+	var items []Item
+	for i := 0; i < 14; i++ {
+		items = append(items, Item{Name: "Item", Help: long, Gap: i%4 == 0})
+	}
+	return items
+}
+
+// A line wider than the window wraps, and a screen taller than it scrolls. Either one breaks every redraw after it.
+func TestFrameFitsAtEverySize(t *testing.T) {
 	long := strings.Repeat("words ", 40)
-	c := Config{Commands: []Command{{"doctor", long}, {"sweep", long}}, Welcome: Welcome{Lines: []string{long, long}}}
-	for _, w := range []int{40, 60, 80, 120} {
-		u.FixedW = w
-		for _, l := range frameLines(u, c, &Editor{Commands: c.Commands}, "idle", true) {
-			if ui.Visible(l) > w {
-				t.Errorf("width %d: %d columns: %q", w, ui.Visible(l), l)
+	for _, size := range [][2]int{{20, 6}, {30, 8}, {40, 10}, {60, 12}, {80, 24}, {100, 30}, {200, 60}, {80, 0}} {
+		cols, rows := size[0], size[1]
+		var b bytes.Buffer
+		u := ui.Plain(&b, cols)
+		u.Mascot = true
+		p := &Picker{Items: bigList(long), Cur: 9}
+		lines := frame(u, p, func(withKit bool) []string {
+			return headerLines(u, header(long), kit.Idle, withKit && cols >= minForKit, cols)
+		}, "↑ ↓ move   Enter open   q quit", cols, rows)
+		limit := rows - 1
+		if rows == 0 {
+			limit = 23
+		}
+		if len(lines) > limit {
+			t.Errorf("%v: %d lines", size, len(lines))
+		}
+		for _, l := range lines {
+			if ui.Visible(l) > cols {
+				t.Errorf("%v: %d columns: %q", size, ui.Visible(l), l)
 			}
 		}
+		if !strings.Contains(strings.Join(lines, "\n"), "›") {
+			t.Errorf("%v: the cursor's row scrolled out of view", size)
+		}
+	}
+}
+
+// The text beside Kit must not move when the mood changes, and no mood may be wider than the room it has.
+func TestEveryMoodFitsTheSameSlot(t *testing.T) {
+	u := ui.Plain(&bytes.Buffer{}, 100)
+	for mood := range kit.Sprites {
+		if w := kit.Width(mood); w > kitColumns {
+			t.Fatalf("%s is %d wide, and the slot is %d", mood, w, kitColumns)
+		}
+		lines := headerLines(u, Header{Lines: []string{"name"}}, mood, true, 100)
+		if len(lines) != kitRows {
+			t.Fatalf("%s: %d lines", mood, len(lines))
+		}
+		last := lines[kitRows-1]
+		if at := ui.Visible(last[:strings.Index(last, "name")]); at != 2+kitColumns+2 {
+			t.Fatalf("%s: text starts at column %d", mood, at)
+		}
+	}
+}
+
+func TestShortWindowDropsKitBeforeTheList(t *testing.T) {
+	u := ui.Plain(&bytes.Buffer{}, 80)
+	p := &Picker{Items: bigList("help")}
+	kitUsed := false
+	top := func(withKit bool) []string {
+		kitUsed = withKit
+		return headerLines(u, header("x"), kit.Idle, withKit, 80)
+	}
+	frame(u, p, top, "keys", 80, 16)
+	if kitUsed {
+		t.Fatal("kept Kit in a window too short for it")
+	}
+	frame(u, p, top, "keys", 80, 40)
+	if !kitUsed {
+		t.Fatal("dropped Kit with plenty of room")
 	}
 }

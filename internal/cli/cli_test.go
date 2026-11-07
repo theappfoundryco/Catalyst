@@ -13,7 +13,9 @@ import (
 	"github.com/theappfoundryco/catalyst/internal/doctor"
 	"github.com/theappfoundryco/catalyst/internal/host"
 	"github.com/theappfoundryco/catalyst/internal/journal"
+	"github.com/theappfoundryco/catalyst/internal/kit"
 	"github.com/theappfoundryco/catalyst/internal/run"
+	"github.com/theappfoundryco/catalyst/internal/session"
 	"github.com/theappfoundryco/catalyst/internal/state"
 	"github.com/theappfoundryco/catalyst/internal/ui"
 )
@@ -311,5 +313,103 @@ func TestLegacyEditPutsItBackWhenZshObjects(t *testing.T) {
 	got, _ := os.ReadFile(rc)
 	if string(got) != text {
 		t.Fatalf("%q", got)
+	}
+}
+
+// With no prompt left, a command missing from the list would be out of reach for anyone in the session.
+func TestEveryCommandIsReachableFromTheList(t *testing.T) {
+	a, _ := testApp(t, "linux")
+	reach := map[string]bool{}
+	var walk func(items []session.Item)
+	walk = func(items []session.Item) {
+		for _, it := range items {
+			if len(it.Name) > 10 {
+				t.Errorf("%q is wider than the name column", it.Name)
+			}
+			if it.Sub != nil {
+				walk(it.Sub)
+			} else {
+				reach[it.Args[0]] = true
+			}
+		}
+	}
+	walk(a.homeItems())
+	skip := map[string]bool{"help": true, "version": true, "legacy": true} // legacy appears only where the old app left something
+	for _, c := range commands() {
+		if !skip[c.Name] && !reach[c.Name] {
+			t.Errorf("%s is not on the list", c.Name)
+		}
+	}
+}
+
+func TestOldAppRowOnlyWhenItLeftSomething(t *testing.T) {
+	a, _ := testApp(t, "darwin")
+	row := func() bool {
+		for _, it := range a.homeItems() {
+			for _, s := range it.Sub {
+				if s.Args[0] == "legacy" {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	if _, err := os.Lstat("/Applications/Catalyst.app"); err == nil {
+		t.Skip("this Mac still has the old app")
+	}
+	if row() {
+		t.Fatal("offered a cleanup with nothing to clean")
+	}
+	put(t, a.E.Path(legacySource), "x")
+	if !row() {
+		t.Fatal("hid the cleanup")
+	}
+}
+
+// A red bar and "All systems nominal" on one card is how people stop believing a tool.
+func TestStatusOnlyCheersWhenEverythingIsGreen(t *testing.T) {
+	if p, clear := statusVerdict(100, 76, 68, true, true); clear || len(p) != 1 || !strings.Contains(p[0], "CPU") {
+		t.Fatal(p, clear)
+	}
+	if p, clear := statusVerdict(10, 95, 95, true, true); clear || len(p) != 2 {
+		t.Fatal(p, clear)
+	}
+	if p, clear := statusVerdict(10, 76, 20, true, true); clear || len(p) != 0 { // yellow memory is normal on a Mac: no alarm, no cheer
+		t.Fatal(p, clear)
+	}
+	if p, clear := statusVerdict(10, 20, 20, true, true); !clear || len(p) != 0 {
+		t.Fatal(p, clear)
+	}
+	if _, clear := statusVerdict(10, 99, 99, false, false); !clear { // what could not be read does not count against it
+		t.Fatal(clear)
+	}
+}
+
+func TestHeaderFollowsWhatJustHappened(t *testing.T) {
+	a, _ := testApp(t, "linux")
+	if h := a.header(); h.Mood != kit.Idle || !strings.Contains(strings.Join(h.Lines, " "), "No checkup yet") {
+		t.Fatal(h)
+	}
+	a.reaction = reaction{kit.Happy, "Moved 2 folders"}
+	h := a.header()
+	if h.Mood != kit.Happy || h.Lines[len(h.Lines)-1] != "Moved 2 folders" {
+		t.Fatal(h)
+	}
+	if len(h.Lines) > 5 {
+		t.Fatalf("%d lines beside Kit", len(h.Lines))
+	}
+	a.Store.Record(state.Health{Date: time.Now(), Score: 70, Issues: 3})
+	if h := a.header(); len(h.Lines) > 5 || h.Lines[len(h.Lines)-1] != "Moved 2 folders" {
+		t.Fatal(h)
+	}
+}
+
+func TestNoCommandDrawsKit(t *testing.T) {
+	a, out := testApp(t, "linux")
+	a.U.Mascot = true
+	cmdHelp(a, nil)
+	cmdStatus(a, nil)
+	if strings.ContainsAny(out.String(), "▀▄") {
+		t.Fatal(out.String())
 	}
 }

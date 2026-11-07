@@ -145,6 +145,10 @@ func cmdUpdate(a *App, args []string) int {
 		return ExitFailed
 	}
 	u.Ok("Now on " + tag)
+	if a.inSession { // this running copy is still the old one
+		u.Say("  " + u.Dim("Run catalyst again to use it."))
+		a.outcome.Quit = true
+	}
 	u.Blank()
 	return ExitOK
 }
@@ -215,6 +219,7 @@ func cmdUninstall(a *App, args []string) int {
 		return ExitFailed
 	}
 	u.Ok("Catalyst is gone.")
+	a.outcome.Quit = true
 	u.Blank()
 	return ExitOK
 }

@@ -8,6 +8,8 @@ import (
 
 	"github.com/theappfoundryco/catalyst/internal/doctor"
 	"github.com/theappfoundryco/catalyst/internal/journal"
+	"github.com/theappfoundryco/catalyst/internal/kit"
+	"github.com/theappfoundryco/catalyst/internal/session"
 	"github.com/theappfoundryco/catalyst/internal/state"
 	"github.com/theappfoundryco/catalyst/internal/trash"
 	"github.com/theappfoundryco/catalyst/internal/ui"
@@ -178,7 +180,8 @@ func (a *App) verdict(all []doctor.Result, score int, c doctor.Counts, fixing bo
 	if c.Failed > 0 {
 		parts = append(parts, fmt.Sprintf("%d could not run", c.Failed))
 	}
-	lines := []string{head, u.Dim(strings.Join(parts, ", "))}
+	u.Say("  " + head)
+	u.Say("  " + u.Dim(strings.Join(parts, ", ")))
 	fixable := 0
 	for _, r := range all {
 		if r.State == doctor.Issue && r.Fix != nil && r.Fix.Kind != doctor.FixManual {
@@ -186,19 +189,21 @@ func (a *App) verdict(all []doctor.Result, score int, c doctor.Counts, fixing bo
 		}
 	}
 	switch {
+	case fixable > 0 && !fixing && a.inSession:
+		u.Say("  " + u.Dim("Press f to go through them. Each change is shown before it runs."))
+		a.outcome.Actions = append(a.outcome.Actions, session.Action{Key: "f", Label: "fix these", Title: "Doctor", Args: []string{"doctor", "--fix"}})
 	case fixable > 0 && !fixing:
-		lines = append(lines, u.Bold("Next:")+" catalyst doctor --fix   "+u.Dim("shows each change before it runs"))
+		u.Say("  " + u.Bold("Next:") + " catalyst doctor --fix   " + u.Dim("shows each change before it runs"))
 	case c.Critical+c.Warning+c.Info == 0 && c.Failed == 0:
-		lines = append(lines, u.Dim(ui.Signoffs[a.E.Now().Nanosecond()%len(ui.Signoffs)]))
+		u.Say("  " + u.Dim(ui.Signoffs[a.E.Now().Nanosecond()%len(ui.Signoffs)]))
 	}
-	mood := "doctor"
+	a.reaction.mood = kit.Doctor
 	switch {
 	case c.Critical > 0:
-		mood = "alarm"
+		a.reaction.mood = kit.Alarm
 	case score == 100 && c.Failed == 0:
-		mood = "party"
+		a.reaction.mood = kit.Party
 	}
-	u.Beside(mood, lines)
 }
 
 func plural1(n int) string {
@@ -226,7 +231,7 @@ func trendWords(change int, since, now time.Time) string {
 func (a *App) applyFixes(all []doctor.Result) {
 	u := a.U
 	batch := journal.NewBatch(a.E.Now())
-	any := false
+	any, changed := false, false
 	for _, r := range all {
 		if r.State != doctor.Issue || r.Fix == nil {
 			continue
@@ -251,13 +256,20 @@ func (a *App) applyFixes(all []doctor.Result) {
 			continue
 		}
 		u.Ok("Done")
+		changed = true
 	}
 	if !any {
 		u.Blank()
 		u.Say("  " + u.Dim("Nothing here can be fixed automatically."))
 		return
 	}
-	u.Say("  " + u.Dim("Change your mind? catalyst undo   See everything: catalyst log"))
+	switch {
+	case !changed:
+	case a.inSession:
+		u.Say("  " + u.Dim("Change your mind? Undo is on the home screen."))
+	default:
+		u.Say("  " + u.Dim("Change your mind? catalyst undo   See everything: catalyst log"))
+	}
 }
 
 func (a *App) applyFix(f doctor.Fix, batch string) error {

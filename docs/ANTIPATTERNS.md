@@ -39,7 +39,11 @@ Mistakes that already happened in this project or the Mac app before it, so they
 - **A background key reader.** It steals the keys meant for a command's own menu. Wait for input with `select`, and read only when a key is ready.
 - **Raw logs on screen.** Long steps show a spinner. Details appear only when something fails.
 - **A question after a long step has started.** Ask first, then work.
+- **A list and a prompt on one screen.** 0.1.0 showed a list you could arrow through with a box to type in, and Enter only obeyed the box. Pick one way to choose. The session is a list.
+- **Kit on every screen.** Repeated Kits stacked up the scrollback and meant nothing. Kit is drawn once, on the home screen, and reacts there.
 - **Kit in a pipe.** Kit and colour are for a person at a terminal. Never in `--json`, CI, `NO_COLOR` or narrow windows.
+- **Spreading a menu to the window's edge.** Sizes far from their names are hard to read across. Columns are as wide as their content.
+- **A cheerful line nobody checked.** The status card said "All systems nominal" under a red CPU bar. A sign-off prints only after the values were looked at.
 - **Celebrating a failure.** The party mood is for a clean 100, and only then.
 - **A stack trace.** Catch it, and say in plain words what to do.
 

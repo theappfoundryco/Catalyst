@@ -1,5 +1,8 @@
-// Package session is bare `catalyst`: an inline prompt on your normal scrollback, never a full-screen takeover.
-// It only ever draws below the cursor, so whatever a command prints stays in your terminal's history.
+// Package session is bare `catalyst`: one list you move through with the arrow keys, and Enter opens what is highlighted.
+// There is nothing to type here. Anything with arguments belongs in the shell, as `catalyst ports kill 3000`.
+//
+// Every screen clears the window the way the homelab installer does, so earlier output is one scroll away. This is also
+// the only place Kit appears: at the top of the home screen, once.
 package session
 
 import (
@@ -15,166 +18,177 @@ import (
 	"golang.org/x/term"
 )
 
-// Command is one entry in the list.
-type Command struct{ Name, Help string }
+// Item is one row. A row with Sub opens another list, and any other row runs Args.
+type Item struct {
+	Name, Help string
+	Args       []string
+	Gap        bool // a blank row above it
+	Sub        []Item
+}
 
-// Welcome is what shows beside Kit.
-type Welcome struct{ Lines []string }
+// Header is what sits at the top of the home screen.
+type Header struct {
+	Mood  string // Kit's reaction to what just happened. Empty means idle, which moves
+	Lines []string
+}
+
+// Action is a key offered at the bottom of a result, such as f to fix what the doctor just found.
+type Action struct {
+	Key, Label string
+	Title      string // what the next screen is called
+	Args       []string
+}
+
+// Outcome is what a finished command wants to happen next.
+type Outcome struct {
+	Actions  []Action
+	SkipWait bool // nothing worth reading: go straight back
+	Quit     bool // the program is gone or replaced: leave, with the last words still on screen
+}
 
 // Config is everything a session needs.
 type Config struct {
-	UI       *ui.UI
-	Commands []Command
-	Welcome  Welcome
-	Run      func(args []string) int
+	UI     *ui.UI
+	Items  []Item
+	Header func() Header
+	Run    func(args []string) Outcome
 }
 
-// Editor is the prompt's text and selection. It holds no terminal, so it can be tested with plain key names.
-type Editor struct {
-	Commands []Command
-	Text     string
-	Sel      int
+// Picker is a list and its cursor. It holds no terminal, so it can be tested with plain key names.
+type Picker struct {
+	Items []Item
+	Cur   int
 }
 
-// Matches lists commands fitting what has been typed. Once an argument is being typed the list closes.
-func (e *Editor) Matches() []Command {
-	if strings.Contains(strings.TrimLeft(e.Text, "/ "), " ") {
-		return nil
-	}
-	want := strings.ToLower(strings.TrimLeft(e.Text, "/ "))
-	var out []Command
-	for _, c := range e.Commands {
-		if strings.HasPrefix(c.Name, want) {
-			out = append(out, c)
-		}
-	}
-	return out
-}
-
-// Result of a key press.
+// What a key press asks for.
 const (
-	Keep = iota
-	Submit
-	Quit
+	Keep  = iota
+	Open  // run what is highlighted
+	Back  // Esc or left arrow
+	Leave // q
+	Quit  // Ctrl-C or Ctrl-D
 )
 
 // Key applies one key.
-func (e *Editor) Key(k string) int {
-	m := e.Matches()
+func (p *Picker) Key(k string) int {
+	n := len(p.Items)
 	switch k {
+	case "up", "k":
+		if n > 0 {
+			p.Cur = (p.Cur + n - 1) % n
+		}
+	case "down", "j":
+		if n > 0 {
+			p.Cur = (p.Cur + 1) % n
+		}
 	case "enter":
-		return Submit
+		return Open
+	case "esc", "left":
+		return Back
+	case "q", "Q":
+		return Leave
 	case "ctrl-c", "ctrl-d":
 		return Quit
-	case "esc", "ctrl-u":
-		e.Text, e.Sel = "", 0
-	case "up":
-		if e.Sel > 0 {
-			e.Sel--
-		}
-	case "down":
-		if e.Sel < len(m)-1 {
-			e.Sel++
-		}
-	case "tab":
-		if len(m) > 0 && e.Sel < len(m) {
-			e.Text = m[e.Sel].Name + " "
-			e.Sel = 0
-		}
-	case "backspace":
-		if r := []rune(e.Text); len(r) > 0 {
-			e.Text = string(r[:len(r)-1])
-			e.Sel = 0
-		}
-	case "", "left", "right":
-	default:
-		if []rune(k)[0] >= 32 {
-			e.Text += k
-			e.Sel = 0
-		}
 	}
 	return Keep
 }
 
-// Line is what should run for the current text. Enter on a partial word runs the highlighted command.
-func (e *Editor) Line() string {
-	t := strings.TrimSpace(strings.TrimLeft(e.Text, "/ "))
-	if t == "" || strings.Contains(t, " ") {
-		return t
+const (
+	kitColumns = 20 // the widest mood, so the text beside Kit never moves when the mood changes
+	kitRows    = 5
+	minForKit  = 60
+)
+
+// headerLines puts Kit beside the text, both resting on the same last line. Without room for Kit, only the text is left.
+func headerLines(u *ui.UI, h Header, mood string, withKit bool, cols int) []string {
+	if !withKit {
+		var out []string
+		for _, l := range h.Lines {
+			if l != "" {
+				out = append(out, "  "+ui.Fit(l, cols-3))
+			}
+		}
+		return out
 	}
-	if m := e.Matches(); len(m) > 0 && e.Sel < len(m) {
-		return m[e.Sel].Name
+	art := kit.Render(mood, u.Truecolor)
+	pad := strings.Repeat(" ", kitColumns-kit.Width(mood))
+	out := make([]string, kitRows)
+	for i := range out {
+		left := strings.Repeat(" ", kitColumns)
+		if j := i - (kitRows - len(art)); j >= 0 {
+			left = art[j] + pad
+		}
+		text := ""
+		if j := i - (kitRows - len(h.Lines)); j >= 0 && j < len(h.Lines) {
+			text = h.Lines[j]
+		}
+		out[i] = strings.TrimRight("  "+left+"  "+ui.Fit(text, cols-kitColumns-5), " ")
 	}
-	return t
+	return out
 }
 
-func frameLines(u *ui.UI, c Config, e *Editor, mood string, showWelcome bool) []string {
-	cols := u.Width()
+// rows draws the list, and says which line holds the cursor.
+func (p *Picker) rows(u *ui.UI, cols int) ([]string, int) {
 	var out []string
-	if showWelcome {
-		art := []string{}
-		w := 0
-		if u.Mascot && cols >= 60 {
-			art, w = kit.Render(mood, u.Truecolor), kit.Width(mood)
+	at := 0
+	for i, it := range p.Items {
+		if it.Gap {
+			out = append(out, "")
 		}
-		rows := len(art)
-		if len(c.Welcome.Lines) > rows {
-			rows = len(c.Welcome.Lines)
+		name := fmt.Sprintf("%-10s", it.Name)
+		help := ""
+		if cols >= 40 {
+			help = ui.Fit(it.Help, cols-17)
 		}
-		top := rows - len(c.Welcome.Lines) // the text sits beside Kit's feet, the same as when the session scrolls on
-		if top > 1 {
-			top = 1
+		if i == p.Cur {
+			at = len(out)
+			out = append(out, strings.TrimRight("  "+u.Cyan("›")+" "+u.Head(name)+"  "+help, " "))
+		} else {
+			out = append(out, strings.TrimRight("    "+name+"  "+u.Dim(help), " "))
 		}
-		for i := 0; i < rows; i++ {
-			left := strings.Repeat(" ", w)
-			if i < len(art) {
-				left = art[i]
-			}
-			right := ""
-			if j := i - top; j >= 0 && j < len(c.Welcome.Lines) {
-				right = c.Welcome.Lines[j]
-			}
-			gap := "   "
-			if w == 0 {
-				gap = ""
-			}
-			out = append(out, "  "+left+gap+ui.Fit(right, cols-w-6))
-		}
+	}
+	return out, at
+}
+
+// fitRows keeps the cursor's line in view when the window is too short for the whole list.
+func fitRows(lines []string, at, room int) []string {
+	if room < 1 {
+		room = 1
+	}
+	if len(lines) <= room {
+		return lines
+	}
+	top := at - room/2
+	if top < 0 {
+		top = 0
+	}
+	if top+room > len(lines) {
+		top = len(lines) - room
+	}
+	return lines[top : top+room]
+}
+
+// frame builds a whole screen: top, list, keys. It never uses the window's last row, because writing there scrolls it.
+func frame(u *ui.UI, p *Picker, top func(withKit bool) []string, keys string, cols, rows int) []string {
+	if rows <= 0 {
+		rows = 24
+	}
+	list, at := p.rows(u, cols)
+	foot := []string{"", "  " + u.Dim(ui.Fit(keys, cols-3))}
+	head := top(true)
+	if len(head)+1+len(list)+len(foot) > rows-1 {
+		head = top(false)
+	}
+	room := rows - 1 - len(head) - 1 - len(foot)
+	if room < 3 { // a tiny window: the list and the keys matter most
+		head, room = nil, rows-1-len(foot)
+	}
+	out := append([]string{}, head...)
+	if len(head) > 0 {
 		out = append(out, "")
 	}
-	ruleW := cols - 4
-	if ruleW > 60 {
-		ruleW = 60
-	}
-	rule := "  " + u.Rule(ruleW)
-	out = append(out, rule)
-	prompt := "  " + u.Cyan("›") + " " + u.Bold(e.Text)
-	if e.Text == "" {
-		prompt += u.Dim("type a command")
-	} else {
-		if m := e.Matches(); len(m) > 0 && e.Sel < len(m) {
-			want := strings.TrimLeft(e.Text, "/ ")
-			prompt += u.Dim(strings.TrimPrefix(m[e.Sel].Name, want))
-		}
-	}
-	out = append(out, ui.Fit(prompt, cols-1))
-	out = append(out, rule)
-	const maxRows = 8
-	m := e.Matches()
-	start := 0
-	if e.Sel >= maxRows {
-		start = e.Sel - maxRows + 1
-	}
-	for i := start; i < len(m) && i < start+maxRows; i++ {
-		line := fmt.Sprintf("%-10s %s", m[i].Name, m[i].Help)
-		if i == e.Sel {
-			out = append(out, "  "+u.Cyan(ui.Fit(fmt.Sprintf("%-10s", m[i].Name), 10))+" "+ui.Fit(m[i].Help, cols-16))
-		} else {
-			out = append(out, "  "+u.Dim(ui.Fit(line, cols-4)))
-		}
-	}
-	out = append(out, "  "+u.Dim(ui.Fit("↑ ↓ move   Tab complete   Enter run   Ctrl-C leave", cols-4)))
-	return out
+	out = append(out, fitRows(list, at, room)...)
+	return append(out, foot...)
 }
 
 // waitKey waits for a key press, up to the timeout, and returns what was read. It reads nothing unless a key is ready.
@@ -202,110 +216,209 @@ func waitKey(fd int, in *os.File, timeout time.Duration) ([]byte, error) {
 	return buf[:got], nil
 }
 
-// Run is the session loop. It returns the exit code to leave with.
-func Run(c Config) int {
-	u := c.UI
-	fd := int(u.In.Fd())
-	e := &Editor{Commands: c.Commands}
-	welcome := true
-	u.Blank()
+type runner struct {
+	c      Config
+	u      *ui.UI
+	fd     int
+	final  bool // a command said the program is finished, so its last words stay on screen
+	header Header
+}
+
+func (s *runner) clear()      { fmt.Fprint(s.u.Out, "\033[H\033[2J") }
+func (s *runner) hideCursor() { fmt.Fprint(s.u.Out, "\033[?25l") }
+func (s *runner) showCursor() { fmt.Fprint(s.u.Out, "\033[?25h") }
+
+// keys waits for input in raw mode, running tick while it waits. A closed keyboard reads as Ctrl-D, so nothing spins forever.
+func (s *runner) keys(tick func()) []string {
+	old, err := term.MakeRaw(s.fd)
+	if err != nil {
+		return []string{"ctrl-d"}
+	}
+	defer term.Restore(s.fd, old)
 	for {
-		old, err := term.MakeRaw(fd)
+		got, err := waitKey(s.fd, s.u.In, 100*time.Millisecond)
 		if err != nil {
-			return 1
+			return []string{"ctrl-d"}
 		}
-		fmt.Fprint(u.Out, "\033[?25l")
-		drawn, frame := 0, 0
-		mood := func() string {
+		if k := ui.Keys(got); len(k) > 0 {
+			return k
+		}
+		if tick != nil {
+			tick()
+		}
+	}
+}
+
+// drain drops keys pressed while a command ran, so a stray Enter cannot skip past its result unread.
+func (s *runner) drain() {
+	old, err := term.MakeRaw(s.fd)
+	if err != nil {
+		return
+	}
+	defer term.Restore(s.fd, old)
+	for {
+		if got, err := waitKey(s.fd, s.u.In, 0); err != nil || len(got) == 0 {
+			return
+		}
+	}
+}
+
+func (s *runner) paint(lines []string) {
+	var b strings.Builder // one write, so an animation frame never shows half drawn
+	b.WriteString("\033[H")
+	for _, l := range lines {
+		b.WriteString("\033[2K" + l + "\r\n")
+	}
+	b.WriteString("\033[J")
+	fmt.Fprint(s.u.Out, b.String())
+}
+
+// list shows one list until the person leaves it. It returns false when the whole session should end.
+func (s *runner) list(items []Item, title string) bool {
+	u := s.u
+	p := &Picker{Items: items}
+	home := title == ""
+	keys := "↑ ↓ move   Enter open   Esc back"
+	if home {
+		keys = "↑ ↓ move   Enter open   q quit"
+	}
+	frameNo := 0
+	lastMove := time.Now()
+	cols, rows := u.Width(), u.Height()
+	draw := func() {
+		mood := s.header.Mood
+		if home && u.Mascot && (mood == "" || mood == kit.Idle) {
 			switch {
-			case !welcome:
-				return kit.Idle
-			case frame%14 == 9: // a blink every so often
-				return kit.Blink
-			case frame%2 == 1:
-				return kit.Wag
+			case frameNo%14 == 9: // a blink every so often
+				mood = kit.Blink
+			case frameNo%2 == 1:
+				mood = kit.Wag
+			default:
+				mood = kit.Idle
 			}
-			return kit.Idle
 		}
-		draw := func() {
-			if drawn > 0 {
-				fmt.Fprintf(u.Out, "\033[%dA", drawn)
+		top := func(withKit bool) []string {
+			if !home {
+				return u.TitleLines(title)[:3]
 			}
-			lines := frameLines(u, c, e, mood(), welcome)
-			for _, l := range lines {
-				fmt.Fprint(u.Out, "\r\033[2K"+l+"\r\n")
+			return headerLines(u, s.header, mood, withKit && u.Mascot && cols >= minForKit, cols)
+		}
+		s.paint(frame(u, p, top, keys, cols, rows))
+	}
+	s.clear()
+	s.hideCursor()
+	draw()
+	for {
+		tick := func() {
+			if c, r := u.Width(), u.Height(); c != cols || r != rows {
+				cols, rows = c, r
+				s.clear()
+				draw()
+				return
 			}
-			fmt.Fprint(u.Out, "\033[J")
-			drawn = len(lines)
+			if home && u.Mascot && (s.header.Mood == "" || s.header.Mood == kit.Idle) && time.Since(lastMove) >= 420*time.Millisecond {
+				frameNo++
+				lastMove = time.Now()
+				draw()
+			}
+		}
+		for _, k := range s.keys(tick) {
+			switch p.Key(k) {
+			case Quit:
+				return false
+			case Leave:
+				return !home
+			case Back:
+				if !home {
+					return true
+				}
+			case Open:
+				it := p.Items[p.Cur]
+				stay := false
+				if it.Sub != nil {
+					stay = s.list(it.Sub, it.Name)
+				} else {
+					stay = s.run(it.Name, it.Args)
+				}
+				if !stay {
+					return false
+				}
+				s.header = s.c.Header() // what just ran may have changed the health, or given Kit something to react to
+				cols, rows = u.Width(), u.Height()
+				s.clear()
+				s.hideCursor()
+			}
 		}
 		draw()
-		result := Keep
-		last := time.Now()
-		for result == Keep {
-			got, err := waitKey(fd, u.In, 100*time.Millisecond)
-			if err != nil {
-				result = Quit
-				break
+	}
+}
+
+// run clears the window, runs one command, and waits on its result. It returns false when the session should end.
+func (s *runner) run(name string, args []string) bool {
+	u := s.u
+	for {
+		s.clear()
+		s.showCursor() // a command may ask a question, and a person should see where they are typing
+		u.Title(name)
+		out := s.c.Run(args)
+		if out.Quit {
+			s.final = true
+			return false
+		}
+		if out.SkipWait {
+			return true
+		}
+		bits := []string{}
+		for _, a := range out.Actions {
+			bits = append(bits, a.Key+" "+a.Label)
+		}
+		bits = append(bits, "Enter back", "q quit")
+		u.Blank()
+		u.Say("  " + u.Dim(strings.Join(bits, "   ")))
+		s.hideCursor()
+		s.drain()
+		next, quit := s.wait(out.Actions)
+		if quit {
+			return false
+		}
+		if next == nil {
+			return true
+		}
+		name, args = next.Title, next.Args
+	}
+}
+
+// wait blocks on the keys under a result. It returns the action chosen (nil to go back), or true to end the session.
+func (s *runner) wait(actions []Action) (*Action, bool) {
+	for {
+		for _, k := range s.keys(nil) {
+			switch k {
+			case "enter", "esc", "left":
+				return nil, false
+			case "q", "Q", "ctrl-c", "ctrl-d":
+				return nil, true
 			}
-			for _, k := range split(got) {
-				if result = e.Key(k); result != Keep {
-					break
+			for i := range actions {
+				if k == actions[i].Key {
+					return &actions[i], false
 				}
 			}
-			if len(got) > 0 {
-				draw()
-			}
-			if welcome && u.Mascot && time.Since(last) >= 420*time.Millisecond {
-				frame++
-				last = time.Now()
-				draw()
-			}
 		}
-		// Clear the live block, so scrollback keeps only what actually happened.
-		fmt.Fprintf(u.Out, "\033[%dA\r\033[J", drawn)
-		fmt.Fprint(u.Out, "\033[?25h")
-		term.Restore(fd, old)
-		if result == Quit {
-			return 0
-		}
-		line := e.Line()
-		e.Text, e.Sel = "", 0
-		if line == "" {
-			continue
-		}
-		if line == "exit" || line == "quit" || line == "q" {
-			return 0
-		}
-		if welcome {
-			staticWelcome(u, c)
-			welcome = false
-		}
-		fmt.Fprintln(u.Out, "  "+u.Cyan("›")+" "+u.Bold(line))
-		c.Run(strings.Fields(line))
-		fmt.Fprintln(u.Out)
 	}
 }
 
-func staticWelcome(u *ui.UI, c Config) {
-	u.Beside(kit.Idle, c.Welcome.Lines)
+// Run is the session. It returns the exit code to leave with.
+func Run(c Config) int {
+	u := c.UI
+	u.Out = ui.Squeeze(u.Out) // commands each open and close with a blank line; on one screen, one is enough
+	s := &runner{c: c, u: u, fd: int(u.In.Fd()), header: c.Header()}
+	defer s.showCursor()
+	s.list(c.Items, "")
+	if s.final {
+		return 0
+	}
+	s.clear()
+	u.Say("  " + u.Dim("Catalyst closed. Everything also runs directly, like: catalyst doctor"))
 	u.Blank()
-}
-
-// split turns one read into keys. A paste arrives as one long read, and an arrow arrives as three bytes that belong together.
-func split(b []byte) []string {
-	if len(b) == 0 {
-		return nil
-	}
-	if b[0] == 27 {
-		return []string{ui.ReadKey(b)}
-	}
-	var out []string
-	for _, r := range string(b) {
-		s := string(r)
-		if r < 32 || r == 127 {
-			s = ui.ReadKey([]byte{byte(r)})
-		}
-		out = append(out, s)
-	}
-	return out
+	return 0
 }

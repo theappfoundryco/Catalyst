@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/theappfoundryco/catalyst/internal/journal"
+	"github.com/theappfoundryco/catalyst/internal/kit"
+	"github.com/theappfoundryco/catalyst/internal/session"
 	"github.com/theappfoundryco/catalyst/internal/state"
 	"github.com/theappfoundryco/catalyst/internal/sweep"
 	"github.com/theappfoundryco/catalyst/internal/trash"
@@ -133,19 +135,18 @@ func (a *App) sweepOffer(rep sweep.Report, age time.Duration, dry, pickAll bool)
 		skipNote = "Protected " + strings.Join(skipped, " and ") + "."
 	}
 	if len(rep.Items) == 0 {
-		lines := []string{u.Bold("Nothing to sweep.")}
+		u.Say("  " + u.Bold("Nothing to sweep."))
 		if skipNote != "" {
-			lines = append(lines, u.Dim(skipNote))
+			u.Say("  " + u.Dim(skipNote))
 		}
-		u.Beside("sleep", lines)
 		u.Blank()
+		a.reaction = reaction{kit.Sleep, u.Dim("Nothing to sweep right now.")}
 		return ExitOK
 	}
-	lines := []string{u.Head(fmt.Sprintf("Found %s to reclaim", ui.Count(len(rep.Items), "folder", "folders"))) + " " + u.Dim("(about "+ui.Size(rep.Total())+")")}
+	u.Say("  " + u.Head(fmt.Sprintf("Found %s to reclaim", ui.Count(len(rep.Items), "folder", "folders"))) + " " + u.Dim("(about "+ui.Size(rep.Total())+")"))
 	if skipNote != "" {
-		lines = append(lines, u.Dim(skipNote))
+		u.Say("  " + u.Dim(skipNote))
 	}
-	u.Beside("sweep", lines)
 	u.Blank()
 	items := make([]ui.Item, len(rep.Items))
 	for i, it := range rep.Items {
@@ -156,14 +157,14 @@ func (a *App) sweepOffer(rep sweep.Report, age time.Duration, dry, pickAll bool)
 		right := "about " + ui.Size(it.Size)
 		if !it.Active.IsZero() {
 			right += ", idle " + ui.Ago(it.Active, a.E.Now())
-		} else {
-			right += ", rebuilds itself"
 		}
-		about := it.Title + ". Goes to the Trash. "
-		if it.Cost == sweep.Safe {
-			about += "It rebuilds itself."
-		} else {
-			about += "To get it back: " + it.Restore + "."
+		about := it.About
+		switch {
+		case about != "":
+		case it.Cost == sweep.Safe:
+			about = it.Title + ". It rebuilds itself."
+		default:
+			about = it.Title + ". To get it back: " + it.Restore + "."
 		}
 		// Only what rebuilds by itself starts ticked. Anything needing a reinstall is a choice you make.
 		items[i] = ui.Item{Label: label, Right: right, About: about, Size: it.Size, Picked: pickAll || it.Cost == sweep.Safe}
@@ -177,9 +178,12 @@ func (a *App) sweepOffer(rep sweep.Report, age time.Duration, dry, pickAll bool)
 		u.Blank()
 		return ExitOK
 	}
-	m := &ui.Menu{Items: items, Noun: "folder", Nouns: "folders", Action: "sweep"}
+	m := &ui.Menu{Items: items, Noun: "folder", Nouns: "folders", Action: "sweep", Note: "Everything goes to the Trash, and catalyst undo brings it back."}
+	if a.inSession {
+		m.Cancel, m.Note = "back", "Everything goes to the Trash, and Undo brings it back."
+	}
 	if !m.Run(u) {
-		u.Blank()
+		a.outcome.SkipWait = true
 		u.Say("  " + u.Dim("Nothing was moved."))
 		u.Blank()
 		return ExitOK
@@ -193,7 +197,6 @@ func (a *App) sweepApply(rep sweep.Report, picked []ui.Item) int {
 	moved, failed := 0, 0
 	var freed int64
 	var problems []string
-	u.Blank()
 	err := u.Step("Moving to the Trash", "Moved to the Trash", func(s *ui.Spinner) (string, error) {
 		for i, p := range picked {
 			if !p.Picked {
@@ -218,15 +221,19 @@ func (a *App) sweepApply(rep sweep.Report, picked []ui.Item) int {
 	u.Blank()
 	switch {
 	case moved == 0 && failed == 0:
+		a.outcome.SkipWait = true
 		u.Say("  " + u.Dim("Nothing was selected, so nothing was moved."))
 	case moved == 0:
 		u.Stop("Nothing could be moved.")
 	default:
 		a.Store.SaveSweep(state.Sweep{Date: a.E.Now()})
-		u.Beside("happy", []string{
-			u.Bold(ui.Count(moved, "folder", "folders")) + " moved, about " + u.Bold(ui.Size(freed)) + " freed once you empty the Trash.",
-			u.Dim("Change your mind? catalyst undo"),
-		})
+		u.Say("  " + u.Bold(ui.Count(moved, "folder", "folders")) + " moved, about " + u.Bold(ui.Size(freed)) + " freed once you empty the Trash.")
+		if a.inSession {
+			a.outcome.Actions = append(a.outcome.Actions, session.Action{Key: "u", Label: "undo", Title: "Undo", Args: []string{"undo"}})
+			a.reaction = reaction{kit.Happy, u.Green(fmt.Sprintf("Moved %s, about %s.", ui.Count(moved, "folder", "folders"), ui.Size(freed))) + " " + u.Dim("Undo brings them back.")}
+		} else {
+			u.Say("  " + u.Dim("Change your mind? catalyst undo"))
+		}
 	}
 	u.Blank()
 	if failed > 0 {
@@ -286,6 +293,7 @@ func cmdUndo(a *App, args []string) int {
 	if failed > 0 {
 		return ExitFailed
 	}
+	a.reaction.line = u.Dim("Everything is back where it was.")
 	return ExitOK
 }
 

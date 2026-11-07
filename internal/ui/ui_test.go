@@ -39,7 +39,6 @@ func TestNothingIsWiderThanTheWindow(t *testing.T) {
 		u.Say("  " + long)
 		u.Row("Label", long)
 		u.Hdr("Title")
-		u.Beside("doctor", []string{"Health", long})
 		for _, l := range strings.Split(b.String(), "\n") {
 			if Visible(l) > w && !strings.Contains(l, "Health") && !strings.HasPrefix(l, "  This is") {
 				t.Errorf("width %d: %d columns: %q", w, Visible(l), l)
@@ -126,8 +125,8 @@ func TestMenuKeys(t *testing.T) {
 		t.Fatal("q")
 	}
 	m.key("up")
-	if m.cur != 0 {
-		t.Fatal("up past the top")
+	if m.cur != len(m.Items)-1 {
+		t.Fatal("up from the top goes round to the bottom")
 	}
 }
 
@@ -153,6 +152,63 @@ func TestMenuFitsAndScrolls(t *testing.T) {
 		if !strings.Contains(joined, "Selected") && !strings.Contains(joined, "Nothing selected") {
 			t.Errorf("%v: no total", size)
 		}
+	}
+}
+
+// The sizes used to sit at the far edge of a wide window, a long way from the names they belong to.
+func TestMenuKeepsSizesBesideTheNames(t *testing.T) {
+	m := &Menu{Noun: "folder", Nouns: "folders", Action: "sweep", Items: []Item{{Label: "pip cache", Right: "about 1 GB", About: "x"}}}
+	for _, l := range m.frame(Plain(&bytes.Buffer{}, 200), 200, 40) {
+		if strings.Contains(l, "about 1 GB") && strings.Index(l, "about 1 GB") > 25 {
+			t.Fatalf("too far away: %q", l)
+		}
+	}
+}
+
+func TestTitleTakesThePlaceOfTheFirstHeadingOnly(t *testing.T) {
+	var b bytes.Buffer
+	u := Plain(&b, 80)
+	u.Title("Disk")
+	u.Hdr("Disks")
+	u.Hdr("Drive health")
+	if s := b.String(); !strings.Contains(s, "Catalyst › Disk") || strings.Contains(s, "Disks") || !strings.Contains(s, "Drive health") {
+		t.Fatal(s)
+	}
+}
+
+func TestSqueezeKeepsOneBlankLine(t *testing.T) {
+	var b bytes.Buffer
+	w := Squeeze(&b)
+	w.Write([]byte("one\n\n\n\n"))
+	w.Write([]byte("\r\033[K\n\n"))
+	w.Write([]byte("two\n"))
+	if got := strings.ReplaceAll(strings.ReplaceAll(b.String(), "\r", ""), "\033[K", ""); got != "one\n\ntwo\n" {
+		t.Fatalf("%q", got)
+	}
+	b.Reset()
+	w = Squeeze(&b)
+	w.Write([]byte("\n\nfirst\n")) // nothing above it, so no blank lines are owed
+	if b.String() != "first\n" {
+		t.Fatalf("%q", b.String())
+	}
+}
+
+func TestKeysSplitsWhatArrivesTogether(t *testing.T) {
+	got := Keys([]byte("\x1b[B\x1b[B\r"))
+	if strings.Join(got, ",") != "down,down,enter" {
+		t.Fatal(got)
+	}
+	if got := Keys([]byte("\x1b")); len(got) != 1 || got[0] != "esc" {
+		t.Fatal(got)
+	}
+	if got := Keys([]byte("\x1b[1;2A")); len(got) != 0 {
+		t.Fatal(got)
+	}
+	if got := Keys([]byte("aé")); strings.Join(got, ",") != "a,é" {
+		t.Fatal(got)
+	}
+	if got := Keys(nil); len(got) != 0 {
+		t.Fatal(got)
 	}
 }
 

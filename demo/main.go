@@ -17,6 +17,7 @@ import (
 	"github.com/theappfoundryco/catalyst/internal/run"
 	"github.com/theappfoundryco/catalyst/internal/state"
 	"github.com/theappfoundryco/catalyst/internal/ui"
+	"github.com/theappfoundryco/catalyst/internal/version"
 )
 
 // slowRunner answers from a table, and moves a fake clock forward when a shell starts, so the timing check has something to say.
@@ -34,6 +35,7 @@ func (s slowRunner) Run(t time.Duration, name string, args ...string) run.Result
 }
 
 func main() {
+	version.Version = "0.1.1" // a screenshot should not say "dev"
 	home, err := os.MkdirTemp("", "catalyst-demo-")
 	if err != nil {
 		panic(err)

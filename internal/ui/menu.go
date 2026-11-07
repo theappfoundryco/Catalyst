@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"golang.org/x/term"
 )
@@ -23,6 +24,8 @@ type Menu struct {
 	Noun      string // "folder"
 	Nouns     string // "folders"
 	Action    string // "sweep"
+	Note      string // one line under the total
+	Cancel    string // what the Esc key is called at the bottom; "cancel" unless set
 	cur, top  int
 	cancelled bool
 }
@@ -39,7 +42,12 @@ func (m *Menu) picked() (n int, total int64) {
 
 // frame builds every row of the menu. Keeping it free of terminal calls makes it testable at any size.
 func (m *Menu) frame(u *UI, cols, rows int) []string {
-	view := rows - 5
+	// A roomy window gets spaces between the parts. A title may sit above the menu, so that is counted too.
+	roomy := rows >= 18
+	view := rows - 8
+	if roomy {
+		view = rows - 13
+	}
 	if view > len(m.Items) {
 		view = len(m.Items)
 	}
@@ -51,6 +59,12 @@ func (m *Menu) frame(u *UI, cols, rows int) []string {
 	}
 	if m.cur >= m.top+view {
 		m.top = m.cur - view + 1
+	}
+	longest := 0
+	for _, it := range m.Items {
+		if n := Visible(it.Label); n > longest {
+			longest = n
+		}
 	}
 	var out []string
 	for j := 0; j < view && m.top+j < len(m.Items); j++ {
@@ -67,6 +81,9 @@ func (m *Menu) frame(u *UI, cols, rows int) []string {
 			label = u.Bold(label)
 		}
 		avail := cols - 9 - Visible(it.Right) - 3
+		if avail > longest { // sizes sit beside the names, not far off at the window's edge
+			avail = longest
+		}
 		if avail < 12 {
 			avail = 12
 		}
@@ -78,21 +95,36 @@ func (m *Menu) frame(u *UI, cols, rows int) []string {
 		if pad < 0 {
 			pad = 0
 		}
-		row := lead + mark + " " + label + strings.Repeat(" ", pad) + "  " + u.Dim(it.Right)
+		row := lead + mark + " " + label + strings.Repeat(" ", pad) + "   " + u.Dim(it.Right)
 		out = append(out, Fit(row, cols-1))
 	}
 	about := m.Items[m.cur].About
 	if len(m.Items) > view {
 		about += fmt.Sprintf("  (%d of %d, more with ↑ ↓)", m.cur+1, len(m.Items))
 	}
+	gap := func() {
+		if roomy {
+			out = append(out, "")
+		}
+	}
+	gap()
 	out = append(out, "      "+u.Dim(Fit(about, cols-8)))
+	gap()
 	n, total := m.picked()
 	if n == 0 {
 		out = append(out, "  "+u.Bold("Nothing selected"))
 	} else {
 		out = append(out, "  "+u.Bold(fmt.Sprintf("Selected: %s, about %s", Count(n, m.Noun, m.Nouns), Size(total))))
 	}
-	out = append(out, "  "+u.Dim(Fit(fmt.Sprintf("↑ ↓ move   Space select   a all or none   Enter %s   q cancel", m.Action), cols-3)))
+	if m.Note != "" && roomy {
+		out = append(out, "  "+u.Dim(Fit(m.Note, cols-3)))
+	}
+	gap()
+	cancel := m.Cancel
+	if cancel == "" {
+		cancel = "cancel"
+	}
+	out = append(out, "  "+u.Dim(Fit(fmt.Sprintf("↑ ↓ move   Space select   a all or none   Enter %s   Esc %s", m.Action, cancel), cols-3)))
 	return out
 }
 
@@ -100,13 +132,9 @@ func (m *Menu) frame(u *UI, cols, rows int) []string {
 func (m *Menu) key(k string) bool {
 	switch k {
 	case "up", "k":
-		if m.cur > 0 {
-			m.cur--
-		}
+		m.cur = (m.cur + len(m.Items) - 1) % len(m.Items)
 	case "down", "j":
-		if m.cur < len(m.Items)-1 {
-			m.cur++
-		}
+		m.cur = (m.cur + 1) % len(m.Items)
 	case " ", "x":
 		m.Items[m.cur].Picked = !m.Items[m.cur].Picked
 	case "a", "A":
@@ -163,6 +191,33 @@ func ReadKey(buf []byte) string {
 	return string(buf)
 }
 
+// Keys splits one read into key names. Holding an arrow delivers several at once, and each one has to count.
+func Keys(b []byte) []string {
+	var out []string
+	for i := 0; i < len(b); {
+		if b[i] == 27 && i+1 < len(b) && (b[i+1] == '[' || b[i+1] == 'O') {
+			j := i + 2
+			for j < len(b) && (b[j] < 0x40 || b[j] > 0x7e) {
+				j++
+			}
+			if j == len(b) {
+				break
+			}
+			if k := ReadKey(b[i : j+1]); k != "" {
+				out = append(out, k)
+			}
+			i = j + 1
+			continue
+		}
+		r, n := utf8.DecodeRune(b[i:])
+		if k := ReadKey(b[i : i+n]); k != "" && r != utf8.RuneError {
+			out = append(out, k)
+		}
+		i += n
+	}
+	return out
+}
+
 // Run shows the menu and returns false when it was cancelled. Too small a window or no keyboard means
 // picking by number instead, so it still works over a pipe.
 func (m *Menu) Run(u *UI) bool {
@@ -179,7 +234,7 @@ func (m *Menu) Run(u *UI) bool {
 	fmt.Fprint(u.Out, "\033[?25l")
 	defer fmt.Fprint(u.Out, "\033[?25h")
 	drawn := 0
-	buf := make([]byte, 16)
+	buf := make([]byte, 64)
 	for {
 		cols, rows = u.Width(), u.Height()
 		if drawn > 0 {
@@ -195,10 +250,17 @@ func (m *Menu) Run(u *UI) bool {
 			m.cancelled = true
 			break
 		}
-		if m.key(ReadKey(buf[:n])) {
+		done := false
+		for _, k := range Keys(buf[:n]) {
+			if done = m.key(k); done {
+				break
+			}
+		}
+		if done {
 			break
 		}
 	}
+	fmt.Fprintf(u.Out, "\033[%dA\r\033[J", drawn) // the choice is made, so only its result stays on screen
 	return !m.cancelled
 }
 

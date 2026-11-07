@@ -5,34 +5,50 @@ import (
 	"os"
 	"strings"
 
+	"github.com/theappfoundryco/catalyst/internal/kit"
 	"github.com/theappfoundryco/catalyst/internal/session"
 	"github.com/theappfoundryco/catalyst/internal/state"
 	"github.com/theappfoundryco/catalyst/internal/ui"
 	"github.com/theappfoundryco/catalyst/internal/version"
 )
 
-func (a *App) welcome() session.Welcome {
+// header is the text beside Kit on the home screen, read fresh each time so it follows what just ran. The name comes first,
+// and the last line is the one that changes: what just happened, or else what is worth doing.
+func (a *App) header() session.Header {
 	u := a.U
-	w := session.Welcome{Lines: []string{u.Bold("Catalyst") + " " + u.Dim("v"+strings.TrimPrefix(version.Version, "v"))}}
 	shell := ""
 	if a.E.Shell != "" {
 		s := a.E.Shell
 		shell = ", " + s[strings.LastIndex(s, "/")+1:]
 	}
-	w.Lines = append(w.Lines, u.Dim(a.E.OSName()+", "+a.E.Arch+shell))
+	lines := []string{
+		u.Bold("Catalyst") + " " + u.Dim("v"+strings.TrimPrefix(version.Version, "v")),
+		u.Dim(a.E.OSName() + ", " + a.E.Arch + shell),
+		"",
+	}
+	mood := a.reaction.mood
+	if mood == "" {
+		mood = kit.Idle
+	}
 	h := a.Store.History()
 	if len(h) == 0 {
-		w.Lines = append(w.Lines, u.Dim("No checkup yet. Try doctor."))
-		return w
+		line := a.reaction.line
+		if line == "" {
+			line = u.Dim("No checkup yet. Doctor is a good start.")
+		}
+		return session.Header{Mood: mood, Lines: append(lines, line)}
 	}
 	last := h[len(h)-1]
-	line := u.ScoreStyle(last.Score)(fmt.Sprintf("Health %d", last.Score))
+	health := u.ScoreStyle(last.Score)(fmt.Sprintf("Health %d", last.Score))
 	if change, since, ok := state.Trend(h); ok {
-		line += " " + u.Dim(trendWords(change, since, a.E.Now()))
+		health += " " + u.Dim(trendWords(change, since, a.E.Now()))
 	} else {
-		line += " " + u.Dim("from "+ui.When(last.Date))
+		health += " " + u.Dim("from "+ui.When(last.Date))
 	}
-	w.Lines = append(w.Lines, line)
+	lines = append(lines, health)
+	if a.reaction.line != "" {
+		return session.Header{Mood: mood, Lines: append(lines, a.reaction.line)}
+	}
 	var bits []string
 	if last.Critical > 0 {
 		bits = append(bits, u.Red(ui.Count(last.Critical, "thing needs", "things need")+" fixing"))
@@ -43,9 +59,9 @@ func (a *App) welcome() session.Welcome {
 		bits = append(bits, u.Cyan("about "+ui.Size(s.Bytes))+" "+u.Dim("to sweep"))
 	}
 	if len(bits) > 0 {
-		w.Lines = append(w.Lines, strings.Join(bits, u.Dim("  ·  ")))
+		lines = append(lines, strings.Join(bits, u.Dim("  ·  ")))
 	}
-	return w
+	return session.Header{Mood: mood, Lines: lines}
 }
 
 type statusReport struct {
@@ -57,6 +73,29 @@ type statusReport struct {
 	Disk    int     `json:"disk_percent"`
 	Battery *int    `json:"battery_percent,omitempty"`
 	Health  *int    `json:"health,omitempty"`
+}
+
+// The percentages at which a bar turns yellow and red.
+const (
+	cpuWarn, cpuCrit   = 60, 85
+	memWarn, memCrit   = 75, 90
+	diskWarn, diskCrit = 75, 90
+)
+
+// statusVerdict decides how the card ends. It only reports what is red, because a Mac's memory sits in the yellow all day
+// and that is normal. allClear is true only when every bar is green, and only then may the card say something cheerful.
+func statusVerdict(cpu, mem, disk int, memOK, diskOK bool) (problems []string, allClear bool) {
+	if cpu >= cpuCrit {
+		problems = append(problems, "The CPU is very busy right now.")
+	}
+	if memOK && mem >= memCrit {
+		problems = append(problems, "Memory is nearly full.")
+	}
+	if diskOK && disk >= diskCrit {
+		problems = append(problems, "The disk is nearly full.")
+	}
+	allClear = cpu < cpuWarn && (!memOK || mem < memWarn) && (!diskOK || disk < diskWarn)
+	return problems, allClear
 }
 
 func cmdStatus(a *App, args []string) int {
@@ -86,28 +125,26 @@ func cmdStatus(a *App, args []string) int {
 	if u.Width() < 60 {
 		bar = 10
 	}
-	u.Blank()
-	head := []string{u.Bold(name) + " " + u.Dim(a.E.OSName())}
+	u.Hdr("Status")
+	u.Row("Machine", name+"  "+u.Dim(a.E.OSName()))
 	if len(h) > 0 {
 		last := h[len(h)-1]
-		line := u.ScoreStyle(last.Score)(fmt.Sprintf("Health %d", last.Score))
-		line += " " + u.Dim("from "+ui.When(last.Date))
-		head = append(head, line)
+		u.Row("Health", u.ScoreStyle(last.Score)(fmt.Sprintf("%d", last.Score))+"  "+u.Dim("from "+ui.When(last.Date)))
+	} else if a.inSession {
+		u.Row("Health", u.Dim("No checkup yet"))
 	} else {
-		head = append(head, u.Dim("No checkup yet: catalyst doctor"))
+		u.Row("Health", u.Dim("No checkup yet: catalyst doctor"))
 	}
-	u.Beside("idle", head)
-	u.Say("  " + u.Rule(52))
 	loadPct := 0
 	if threads > 0 {
 		loadPct = int(load * 100 / float64(threads))
 	}
-	u.Row("CPU", u.Bar(loadPct, bar, 60, 85)+"  "+u.Dim(fmt.Sprintf("load %.2f of %d", load, threads)))
+	u.Row("CPU", u.Bar(loadPct, bar, cpuWarn, cpuCrit)+"  "+u.Dim(fmt.Sprintf("load %.2f of %d", load, threads)))
 	if memOK {
-		u.Row("Memory", u.Bar(mem.Percent(), bar, 75, 90)+"  "+u.Dim(ui.RAM(mem.Used)+" of "+ui.RAM(mem.Total)))
+		u.Row("Memory", u.Bar(mem.Percent(), bar, memWarn, memCrit)+"  "+u.Dim(ui.RAM(mem.Used)+" of "+ui.RAM(mem.Total)))
 	}
 	if volOK {
-		u.Row("Disk", u.Bar(vol.UsedPercent, bar, 75, 90)+"  "+u.Dim(ui.Size(vol.Free)+" free"))
+		u.Row("Disk", u.Bar(vol.UsedPercent, bar, diskWarn, diskCrit)+"  "+u.Dim(ui.Size(vol.Free)+" free"))
 	}
 	if bat.Present {
 		note := bat.Source
@@ -117,7 +154,11 @@ func cmdStatus(a *App, args []string) int {
 		u.Row("Battery", u.Green(fmt.Sprintf("%d%%", bat.Percent))+"  "+u.Dim(note))
 	}
 	if s, ok := a.Store.LastSweep(); ok && s.Bytes > 0 {
-		u.Row("To sweep", "about "+ui.Size(s.Bytes)+"  "+u.Dim("catalyst sweep"))
+		if a.inSession {
+			u.Row("To sweep", "about "+ui.Size(s.Bytes))
+		} else {
+			u.Row("To sweep", "about "+ui.Size(s.Bytes)+"  "+u.Dim("catalyst sweep"))
+		}
 	}
 	if _, err := a.E.Look("docker"); err == nil {
 		if out, ok := a.E.Out("docker", "ps", "-q"); ok {
@@ -128,6 +169,17 @@ func cmdStatus(a *App, args []string) int {
 			u.Row("Docker", ui.Count(n, "container", "containers")+" running")
 		}
 	}
-	u.Signoff()
+	problems, allClear := statusVerdict(loadPct, mem.Percent(), vol.UsedPercent, memOK, volOK)
+	if len(problems) > 0 {
+		u.Blank()
+		for _, p := range problems {
+			u.Warn(p)
+		}
+		u.Blank()
+	} else if allClear {
+		u.Signoff()
+	} else {
+		u.Blank()
+	}
 	return ExitOK
 }
