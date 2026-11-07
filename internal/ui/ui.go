@@ -32,6 +32,10 @@ type UI struct {
 	Yes       bool // --yes: answer yes to every question
 	FixedW    int  // set by tests and demos
 	titled    bool // Title already named this screen, so the command's own first heading would only repeat it
+
+	// Echo, when set, is told what a person typed at a question. The terminal shows it already, but a screen that is
+	// redrawn later, such as the session's scrolling view of a result, only knows what was written.
+	Echo func(typed string)
 }
 
 // New decides everything from the environment. NO_COLOR, a pipe or TERM=dumb all mean plain text.
@@ -216,7 +220,7 @@ func (u *UI) Hdr(title string) {
 
 // TitleLines names a screen in the session: a blank line, where you are, a rule and a blank line.
 func (u *UI) TitleLines(name string) []string {
-	return []string{"", "  " + u.Dim("Catalyst ›") + " " + u.Bold(name), "  " + u.Rule(52), ""}
+	return []string{"", "  " + u.Dim("Catalyst") + u.Faint(" › ") + u.Bold(name), "  " + u.Faint(strings.Repeat("─", u.Wide())), ""}
 }
 
 // Title prints TitleLines, and tells the next Hdr or Banner that this screen already has its heading.

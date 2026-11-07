@@ -94,7 +94,7 @@ func TestFrameFitsAtEverySize(t *testing.T) {
 		p := &Picker{Items: bigList(long), Cur: 9}
 		lines := frame(u, p, func(withKit bool) []string {
 			return headerLines(u, header(long), kit.Idle, withKit && cols >= minForKit, cols)
-		}, "↑ ↓ move   Enter open   q quit", cols, rows)
+		}, u.KeyBar("↑↓", "move", "⏎", "open", "ctrl-c", "exit"), cols, rows)
 		limit := rows - 1
 		if rows == 0 {
 			limit = 23
@@ -139,11 +139,11 @@ func TestShortWindowDropsKitBeforeTheList(t *testing.T) {
 		kitUsed = withKit
 		return headerLines(u, header("x"), kit.Idle, withKit, 80)
 	}
-	frame(u, p, top, "keys", 80, 16)
+	frame(u, p, top, u.KeyBar("k", "keys"), 80, 16)
 	if kitUsed {
 		t.Fatal("kept Kit in a window too short for it")
 	}
-	frame(u, p, top, "keys", 80, 40)
+	frame(u, p, top, u.KeyBar("k", "keys"), 80, 40)
 	if !kitUsed {
 		t.Fatal("dropped Kit with plenty of room")
 	}
@@ -183,5 +183,38 @@ func TestDetailSitsUnderItsRowAndFits(t *testing.T) {
 		if ui.Visible(r) > 40 {
 			t.Fatalf("%d columns: %q", ui.Visible(r), r)
 		}
+	}
+}
+
+// A result taller than the window is scrolled from this copy, so it has to match what a person saw.
+func TestScreenKeepsWhatWasShown(t *testing.T) {
+	s := newScreen()
+	s.Write([]byte("\n  ⠋ Checking\033[K\r  ⠙ Checking (1s)\033[K\r\033[K  ✓ Shell starts fast\n"))
+	s.Write([]byte("  [ ] one\n  [ ] two\n\033[2A\r\033[J  Moved 2\n"))
+	s.Write([]byte("  Do it? [y/N] "))
+	s.Write([]byte("y\n"))
+	s.Write([]byte("  \033[32m✓\033[0m Done \xe2"))
+	s.Write([]byte("\x9c\x93\n\n\n"))
+	got := strings.Join(s.Lines(), "|")
+	want := "  ✓ Shell starts fast|  Moved 2|  Do it? [y/N] y|  \033[32m✓\033[0m Done ✓"
+	if got != want {
+		t.Fatalf("\ngot  %q\nwant %q", got, want)
+	}
+}
+
+func TestCtrlCOnceWarnsTwiceLeaves(t *testing.T) {
+	s := &runner{u: ui.Plain(&bytes.Buffer{}, 80)}
+	if s.ctrlC() {
+		t.Fatal("left on the first press")
+	}
+	if !strings.Contains(strings.Join(s.footer("⏎", "open"), ""), "again to exit") {
+		t.Fatal("no warning after the first press")
+	}
+	if !s.ctrlC() {
+		t.Fatal("stayed on the second press")
+	}
+	s.armed = s.armed.Add(-3 * twice)
+	if s.ctrlC() {
+		t.Fatal("a press long after the first counted as the second")
 	}
 }

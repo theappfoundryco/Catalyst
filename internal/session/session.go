@@ -1,15 +1,18 @@
 // Package session is bare `catalyst`: one list you move through with the arrow keys, and Enter opens what is highlighted.
 // There is nothing to type here. Anything with arguments belongs in the shell, as `catalyst ports kill 3000`.
 //
-// Every screen clears the window the way the homelab installer does, so earlier output is one scroll away. This is also
-// the only place Kit appears: at the top of the home screen, once.
+// It runs on the terminal's separate screen, so it leaves no trail in your scrollback, and Ctrl-C twice leaves. This is
+// also the only place Kit appears: at the top of the home screen, once.
 package session
 
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/theappfoundryco/catalyst/internal/kit"
@@ -44,8 +47,9 @@ type Action struct {
 // Outcome is what a finished command wants to happen next.
 type Outcome struct {
 	Actions  []Action
-	SkipWait bool // nothing worth reading: go straight back
-	Quit     bool // the program is gone or replaced: leave, with the last words still on screen
+	SkipWait bool     // nothing worth reading: go straight back
+	Quit     bool     // the program is gone or replaced: leave
+	Farewell []string // with Quit: lines to print once the terminal is back to normal
 }
 
 // Config is everything a session needs.
@@ -169,14 +173,14 @@ func (p *Picker) rows(u *ui.UI, cols int) ([]string, int) {
 		switch {
 		case i == p.Cur:
 			at = len(out)
-			out = append(out, strings.TrimRight("  "+u.Cyan("›")+" "+u.Head(name)+"  "+help, " "))
+			out = append(out, ui.Fit("  "+u.Band(u.Accent(u.Bold(name))+"  "+help, u.Wide()), cols-1))
 		case it.Disabled:
-			out = append(out, strings.TrimRight("    "+u.Dim(name+"  "+help), " "))
+			out = append(out, strings.TrimRight("    "+u.Faint(name+"  "+help), " "))
 		default:
 			out = append(out, strings.TrimRight("    "+name+"  "+u.Dim(help), " "))
 		}
 		if it.Detail != "" && cols >= 30 {
-			out = append(out, "      "+u.Dim("└ "+ui.Fit(it.Detail, cols-9)))
+			out = append(out, "      "+u.Faint("└ ")+u.Soft(ui.Fit(it.Detail, cols-9)))
 		}
 	}
 	return out, at
@@ -201,12 +205,12 @@ func fitRows(lines []string, at, room int) []string {
 }
 
 // frame builds a whole screen: top, list, keys. It never uses the window's last row, because writing there scrolls it.
-func frame(u *ui.UI, p *Picker, top func(withKit bool) []string, keys string, cols, rows int) []string {
+func frame(u *ui.UI, p *Picker, top func(withKit bool) []string, foot []string, cols, rows int) []string {
 	if rows <= 0 {
 		rows = 24
 	}
 	list, at := p.rows(u, cols)
-	foot := []string{"", "  " + u.Dim(ui.Fit(keys, cols-3))}
+	foot = append([]string{""}, foot...)
 	head := top(true)
 	if len(head)+1+len(list)+len(foot) > rows-1 {
 		head = top(false)
@@ -249,28 +253,50 @@ func waitKey(fd int, in *os.File, timeout time.Duration) ([]byte, error) {
 }
 
 type runner struct {
-	c      Config
-	u      *ui.UI
-	fd     int
-	final  bool // a command said the program is finished, so its last words stay on screen
-	header Header
+	c        Config
+	u        *ui.UI
+	term     io.Writer // the real terminal, under the copy every command's output also goes to
+	tee      *tee
+	fd       int
+	header   Header
+	armed    time.Time // when Ctrl-C was pressed once; a second press soon after leaves
+	farewell []string  // last words that must outlive the separate screen, such as "Catalyst is gone."
 }
+
+const twice = 2 * time.Second
 
 func (s *runner) clear()      { fmt.Fprint(s.u.Out, "\033[H\033[2J") }
 func (s *runner) hideCursor() { fmt.Fprint(s.u.Out, "\033[?25l") }
 func (s *runner) showCursor() { fmt.Fprint(s.u.Out, "\033[?25h") }
 
-// keys waits for input in raw mode, running tick while it waits. A closed keyboard reads as Ctrl-D, so nothing spins forever.
+// ctrlC applies one Ctrl-C and says whether it was the second. The first only warns, so a stray press never closes it.
+func (s *runner) ctrlC() bool {
+	if !s.armed.IsZero() && time.Since(s.armed) < twice {
+		return true
+	}
+	s.armed = time.Now()
+	return false
+}
+
+// footer is the key bar, or the Ctrl-C warning while it applies.
+func (s *runner) footer(pairs ...string) []string {
+	if !s.armed.IsZero() && time.Since(s.armed) < twice {
+		return s.u.Notice("Press Ctrl-C again to exit")
+	}
+	return s.u.KeyBar(pairs...)
+}
+
+// keys waits for input in raw mode, running tick while it waits. A closed keyboard reads as two Ctrl-Ds, so nothing spins.
 func (s *runner) keys(tick func()) []string {
 	old, err := term.MakeRaw(s.fd)
 	if err != nil {
-		return []string{"ctrl-d"}
+		return []string{"eof"}
 	}
 	defer term.Restore(s.fd, old)
 	for {
 		got, err := waitKey(s.fd, s.u.In, 100*time.Millisecond)
 		if err != nil {
-			return []string{"ctrl-d"}
+			return []string{"eof"}
 		}
 		if k := ui.Keys(got); len(k) > 0 {
 			return k
@@ -302,7 +328,7 @@ func (s *runner) paint(lines []string) {
 		b.WriteString("\033[2K" + l + "\r\n")
 	}
 	b.WriteString("\033[J")
-	fmt.Fprint(s.u.Out, b.String())
+	fmt.Fprint(s.term, b.String())
 }
 
 // list shows one list until the person leaves it. It returns false when the whole session should end.
@@ -311,12 +337,9 @@ func (s *runner) list(items []Item, title string) bool {
 	p := &Picker{Items: items}
 	p.Settle()
 	home := title == ""
-	keys := "↑ ↓ move   Enter open   Esc back"
-	if home {
-		keys = "↑ ↓ move   Enter open   q quit"
-	}
 	frameNo := 0
 	lastMove := time.Now()
+	wasArmed := false
 	cols, rows := u.Width(), u.Height()
 	draw := func() {
 		mood := s.header.Mood
@@ -336,36 +359,47 @@ func (s *runner) list(items []Item, title string) bool {
 			}
 			return headerLines(u, s.header, mood, withKit && u.Mascot && cols >= minForKit, cols)
 		}
-		s.paint(frame(u, p, top, keys, cols, rows))
+		foot := s.footer("↑↓", "move", "⏎", "open", "esc", "back")
+		if home {
+			foot = s.footer("↑↓", "move", "⏎", "open", "ctrl-c", "exit")
+		}
+		s.paint(frame(u, p, top, foot, cols, rows))
 	}
 	s.clear()
 	s.hideCursor()
 	draw()
 	for {
 		tick := func() {
-			if c, r := u.Width(), u.Height(); c != cols || r != rows {
-				cols, rows = c, r
+			armed := !s.armed.IsZero() && time.Since(s.armed) < twice
+			switch {
+			case u.Width() != cols || u.Height() != rows:
+				cols, rows = u.Width(), u.Height()
 				s.clear()
 				draw()
-				return
-			}
-			if home && u.Mascot && (s.header.Mood == "" || s.header.Mood == kit.Idle) && time.Since(lastMove) >= 420*time.Millisecond {
+			case wasArmed && !armed: // the warning has had its moment
+				draw()
+			case home && u.Mascot && (s.header.Mood == "" || s.header.Mood == kit.Idle) && time.Since(lastMove) >= 420*time.Millisecond:
 				frameNo++
 				lastMove = time.Now()
 				draw()
 			}
+			wasArmed = armed
 		}
 		for _, k := range s.keys(tick) {
+			if k == "eof" {
+				return false
+			}
 			switch p.Key(k) {
 			case Quit:
-				return false
-			case Leave:
-				return !home
-			case Back:
+				if s.ctrlC() {
+					return false
+				}
+			case Leave, Back:
 				if !home {
 					return true
 				}
 			case Open:
+				s.armed = time.Time{}
 				it := p.Items[p.Cur]
 				stay := false
 				if it.Sub != nil {
@@ -386,35 +420,33 @@ func (s *runner) list(items []Item, title string) bool {
 				s.hideCursor()
 			}
 		}
+		wasArmed = !s.armed.IsZero() && time.Since(s.armed) < twice
 		draw()
 	}
 }
 
-// run clears the window, runs one command, and waits on its result. It returns false when the session should end.
+// run clears the window, runs one command, and shows its result. It returns false when the session should end.
 func (s *runner) run(name string, args []string) bool {
 	u := s.u
 	for {
 		s.clear()
 		s.showCursor() // a command may ask a question, and a person should see where they are typing
 		u.Title(name)
+		copy := newScreen()
+		s.tee.copy = copy
+		u.Echo = func(typed string) { copy.Write([]byte(typed)) }
 		out := s.c.Run(args)
+		s.tee.copy, u.Echo = io.Discard, nil
 		if out.Quit {
-			s.final = true
+			s.farewell = out.Farewell
 			return false
 		}
 		if out.SkipWait {
 			return true
 		}
-		bits := []string{}
-		for _, a := range out.Actions {
-			bits = append(bits, a.Key+" "+a.Label)
-		}
-		bits = append(bits, "Enter back", "q quit")
-		u.Blank()
-		u.Say("  " + u.Dim(strings.Join(bits, "   ")))
 		s.hideCursor()
 		s.drain()
-		next, quit := s.wait(out.Actions)
+		next, quit := s.result(name, copy.Lines(), out.Actions)
 		if quit {
 			return false
 		}
@@ -425,37 +457,140 @@ func (s *runner) run(name string, args []string) bool {
 	}
 }
 
-// wait blocks on the keys under a result. It returns the action chosen (nil to go back), or true to end the session.
-func (s *runner) wait(actions []Action) (*Action, bool) {
+// result shows what a command printed, under its title. Taller than the window, it scrolls, starting at the end the way
+// the command left it, since the verdict is usually last.
+func (s *runner) result(name string, body []string, actions []Action) (*Action, bool) {
+	u := s.u
+	top := -1
+	wasArmed := false
+	view := func() int {
+		v := u.Height() - 1 - 4 - 1 - 2 // the title, the line above the keys, the keys
+		if u.Height() <= 0 {
+			v = 16
+		}
+		if v < 3 {
+			v = 3
+		}
+		return v
+	}
+	clamp := func() {
+		if most := len(body) - view(); top > most {
+			top = most
+		}
+		if top < 0 {
+			top = 0
+		}
+	}
+	draw := func() {
+		v := view()
+		if top == -1 {
+			top = len(body) - v
+		}
+		clamp()
+		cols := u.Width()
+		out := u.TitleLines(name)
+		end := top + v
+		if end > len(body) {
+			end = len(body)
+		}
+		for _, l := range body[top:end] {
+			out = append(out, ui.Fit(l, cols-1))
+		}
+		scrolls := len(body) > v
+		pairs := []string{}
+		for _, a := range actions {
+			pairs = append(pairs, a.Key, a.Label)
+		}
+		if scrolls {
+			pairs = append(pairs, "↑↓", "scroll")
+			var where []string
+			if top > 0 {
+				where = append(where, ui.Count(top, "line", "lines")+" above")
+			}
+			if below := len(body) - end; below > 0 {
+				where = append(where, ui.Count(below, "line", "lines")+" below")
+			}
+			out = append(out, "  "+u.Faint(strings.Join(where, "  ·  ")))
+		} else {
+			out = append(out, "")
+		}
+		pairs = append(pairs, "⏎", "back", "ctrl-c", "exit")
+		s.paint(append(out, s.footer(pairs...)...))
+	}
+	s.clear()
+	draw()
+	cols, rows := u.Width(), u.Height()
 	for {
-		for _, k := range s.keys(nil) {
+		tick := func() {
+			armed := !s.armed.IsZero() && time.Since(s.armed) < twice
+			if u.Width() != cols || u.Height() != rows || (wasArmed && !armed) {
+				cols, rows = u.Width(), u.Height()
+				s.clear()
+				draw()
+			}
+			wasArmed = armed
+		}
+		for _, k := range s.keys(tick) {
 			switch k {
-			case "enter", "esc", "left":
-				return nil, false
-			case "q", "Q", "ctrl-c", "ctrl-d":
+			case "eof":
 				return nil, true
+			case "enter", "esc", "left", "q":
+				return nil, false
+			case "ctrl-c", "ctrl-d":
+				if s.ctrlC() {
+					return nil, true
+				}
+			case "up", "k":
+				top--
+			case "down", "j":
+				top++
+			case "pgup":
+				top -= view()
+			case "pgdn", " ":
+				top += view()
+			case "home", "g":
+				top = 0
+			case "end", "G":
+				top = len(body)
 			}
 			for i := range actions {
 				if k == actions[i].Key {
+					s.armed = time.Time{}
 					return &actions[i], false
 				}
 			}
 		}
+		wasArmed = !s.armed.IsZero() && time.Since(s.armed) < twice
+		draw()
 	}
 }
 
-// Run is the session. It returns the exit code to leave with.
+// Run is the session. It draws on the terminal's separate screen, the one full-screen programs like less and vim use,
+// so nothing piles up in your scrollback and the terminal comes back as it was when you leave. It returns the exit code.
 func Run(c Config) int {
 	u := c.UI
-	u.Out = ui.Squeeze(u.Out) // commands each open and close with a blank line; on one screen, one is enough
-	s := &runner{c: c, u: u, fd: int(u.In.Fd()), header: c.Header()}
-	defer s.showCursor()
+	real := u.Out
+	s := &runner{c: c, u: u, term: real, tee: &tee{term: real, copy: io.Discard}, fd: int(u.In.Fd())}
+	u.Out = ui.Squeeze(s.tee) // commands each open and close with a blank line; on one screen, one is enough
+	leave := func() { fmt.Fprint(real, "\033[?25h\033[?1049l") }
+	fmt.Fprint(real, "\033[?1049h")
+	// A command waiting on a question reads a normal line, where Ctrl-C is a signal rather than a key. Put the terminal
+	// back before going, or the shell would be left on the separate screen with no cursor.
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)
+	defer signal.Stop(sigs)
+	go func() {
+		if _, ok := <-sigs; ok {
+			leave()
+			os.Exit(130)
+		}
+	}()
+	s.header = c.Header()
 	s.list(c.Items(), "")
-	if s.final {
-		return 0
+	leave()
+	u.Out = real
+	for _, l := range s.farewell {
+		fmt.Fprintln(real, l)
 	}
-	s.clear()
-	u.Say("  " + u.Dim("Catalyst closed. Everything also runs directly, like: catalyst doctor"))
-	u.Blank()
 	return 0
 }

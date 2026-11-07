@@ -75,6 +75,9 @@ type statusReport struct {
 	Health  *int    `json:"health,omitempty"`
 }
 
+// heavySwap is where the doctor's memory check starts to warn, so the two never disagree.
+const heavySwap = 4 << 30
+
 // The percentages at which a bar turns yellow and red.
 const (
 	cpuWarn, cpuCrit   = 60, 85
@@ -84,7 +87,7 @@ const (
 
 // statusVerdict decides how the card ends. It only reports what is red, because a Mac's memory sits in the yellow all day
 // and that is normal. allClear is true only when every bar is green, and only then may the card say something cheerful.
-func statusVerdict(cpu, mem, disk int, memOK, diskOK bool) (problems []string, allClear bool) {
+func statusVerdict(cpu, mem, disk int, memOK, diskOK bool, swap int64) (problems []string, allClear bool) {
 	if cpu >= cpuCrit {
 		problems = append(problems, "The CPU is very busy right now.")
 	}
@@ -94,7 +97,10 @@ func statusVerdict(cpu, mem, disk int, memOK, diskOK bool) (problems []string, a
 	if diskOK && disk >= diskCrit {
 		problems = append(problems, "The disk is nearly full.")
 	}
-	allClear = cpu < cpuWarn && (!memOK || mem < memWarn) && (!diskOK || disk < diskWarn)
+	if swap > heavySwap {
+		problems = append(problems, "Heavy swapping: memory ran out for what is open. Quitting big apps or a restart gives back "+ui.RAM(swap)+" of disk.")
+	}
+	allClear = cpu < cpuWarn && (!memOK || mem < memWarn) && (!diskOK || disk < diskWarn) && swap <= heavySwap
 	return problems, allClear
 }
 
@@ -142,6 +148,13 @@ func cmdStatus(a *App, args []string) int {
 	u.Row("CPU", u.Bar(loadPct, bar, cpuWarn, cpuCrit)+"  "+u.Dim(fmt.Sprintf("load %.2f of %d", load, threads)))
 	if memOK {
 		u.Row("Memory", u.Bar(mem.Percent(), bar, memWarn, memCrit)+"  "+u.Dim(ui.RAM(mem.Used)+" of "+ui.RAM(mem.Total)))
+		if mem.SwapUsed > 0 {
+			swap := ui.RAM(mem.SwapUsed) + " in use"
+			if mem.SwapUsed > heavySwap {
+				swap = u.Orange(swap)
+			}
+			u.Row("Swap", swap+"  "+u.Dim("disk standing in for memory"))
+		}
 	}
 	if volOK {
 		u.Row("Disk", u.Bar(vol.UsedPercent, bar, diskWarn, diskCrit)+"  "+u.Dim(ui.Size(vol.Free)+" free"))
@@ -169,7 +182,7 @@ func cmdStatus(a *App, args []string) int {
 			u.Row("Docker", ui.Count(n, "container", "containers")+" running")
 		}
 	}
-	problems, allClear := statusVerdict(loadPct, mem.Percent(), vol.UsedPercent, memOK, volOK)
+	problems, allClear := statusVerdict(loadPct, mem.Percent(), vol.UsedPercent, memOK, volOK, mem.SwapUsed)
 	if len(problems) > 0 {
 		u.Blank()
 		for _, p := range problems {

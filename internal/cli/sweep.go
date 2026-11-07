@@ -143,7 +143,7 @@ func (a *App) sweepOffer(rep sweep.Report, age time.Duration, dry, pickAll bool)
 		a.reaction = reaction{kit.Sleep, u.Dim("Nothing to sweep right now.")}
 		return ExitOK
 	}
-	u.Say("  " + u.Head(fmt.Sprintf("Found %s to reclaim", ui.Count(len(rep.Items), "folder", "folders"))) + " " + u.Dim("(about "+ui.Size(rep.Total())+")"))
+	u.Say("  " + u.Bold(fmt.Sprintf("Found %s to reclaim", ui.Count(len(rep.Items), "folder", "folders"))) + u.Faint("  ·  ") + u.Dim("about "+ui.Size(rep.Total())))
 	if skipNote != "" {
 		u.Say("  " + u.Dim(skipNote))
 	}
@@ -154,9 +154,9 @@ func (a *App) sweepOffer(rep sweep.Report, age time.Duration, dry, pickAll bool)
 		if !it.Global {
 			label = it.Project + " / " + filepath.Base(it.Path)
 		}
-		right := "about " + ui.Size(it.Size)
+		right := ""
 		if !it.Active.IsZero() {
-			right += ", idle " + ui.Ago(it.Active, a.E.Now())
+			right = "idle " + ui.Ago(it.Active, a.E.Now())
 		}
 		about := it.About
 		switch {

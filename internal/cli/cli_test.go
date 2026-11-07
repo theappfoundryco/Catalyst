@@ -368,20 +368,23 @@ func TestOldAppRowOnlyWhenItLeftSomething(t *testing.T) {
 
 // A red bar and "All systems nominal" on one card is how people stop believing a tool.
 func TestStatusOnlyCheersWhenEverythingIsGreen(t *testing.T) {
-	if p, clear := statusVerdict(100, 76, 68, true, true); clear || len(p) != 1 || !strings.Contains(p[0], "CPU") {
+	if p, clear := statusVerdict(100, 76, 68, true, true, 0); clear || len(p) != 1 || !strings.Contains(p[0], "CPU") {
 		t.Fatal(p, clear)
 	}
-	if p, clear := statusVerdict(10, 95, 95, true, true); clear || len(p) != 2 {
+	if p, clear := statusVerdict(10, 95, 95, true, true, 0); clear || len(p) != 2 {
 		t.Fatal(p, clear)
 	}
-	if p, clear := statusVerdict(10, 76, 20, true, true); clear || len(p) != 0 { // yellow memory is normal on a Mac: no alarm, no cheer
+	if p, clear := statusVerdict(10, 76, 20, true, true, 0); clear || len(p) != 0 { // yellow memory is normal on a Mac: no alarm, no cheer
 		t.Fatal(p, clear)
 	}
-	if p, clear := statusVerdict(10, 20, 20, true, true); !clear || len(p) != 0 {
+	if p, clear := statusVerdict(10, 20, 20, true, true, 0); !clear || len(p) != 0 {
 		t.Fatal(p, clear)
 	}
-	if _, clear := statusVerdict(10, 99, 99, false, false); !clear { // what could not be read does not count against it
+	if _, clear := statusVerdict(10, 99, 99, false, false, 0); !clear { // what could not be read does not count against it
 		t.Fatal(clear)
+	}
+	if p, clear := statusVerdict(10, 20, 20, true, true, 6<<30); clear || len(p) != 1 || !strings.Contains(p[0], "swap") {
+		t.Fatal(p, clear)
 	}
 }
 

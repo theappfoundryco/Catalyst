@@ -159,5 +159,8 @@ func (u *UI) prompt(q string) string {
 	fmt.Fprint(u.Out, "  "+q)
 	r := bufio.NewReader(u.In)
 	line, _ := r.ReadString('\n')
+	if u.Echo != nil {
+		u.Echo(strings.TrimRight(line, "\r\n") + "\n")
+	}
 	return strings.TrimSpace(line)
 }

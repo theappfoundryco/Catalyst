@@ -148,6 +148,7 @@ func cmdUpdate(a *App, args []string) int {
 	if a.inSession { // this running copy is still the old one
 		u.Say("  " + u.Dim("Run catalyst again to use it."))
 		a.outcome.Quit = true
+		a.outcome.Farewell = []string{"  Catalyst is now on " + tag + ". Run catalyst again to use it."}
 	}
 	u.Blank()
 	return ExitOK
@@ -220,6 +221,7 @@ func cmdUninstall(a *App, args []string) int {
 	}
 	u.Ok("Catalyst is gone.")
 	a.outcome.Quit = true
+	a.outcome.Farewell = []string{"  Catalyst is gone. What it moved to the Trash is still there."}
 	u.Blank()
 	return ExitOK
 }
