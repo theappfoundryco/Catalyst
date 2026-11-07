@@ -1,0 +1,24 @@
+name: Idea for a check or a feature
+description: Something that goes wrong on dev machines that Catalyst could catch
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What goes wrong
+      description: The problem you hit, and how long it took to work out. Catalyst stays small on purpose, so a real story helps most.
+    validations:
+      required: true
+  - type: textarea
+    id: detect
+    attributes:
+      label: How could it be detected
+      description: The command or file that shows the problem, and its output when it is broken.
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where does this apply
+      options:
+        - macOS and Linux
+        - macOS only
+        - Linux only

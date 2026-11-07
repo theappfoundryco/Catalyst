@@ -1,0 +1,47 @@
+name: Bug report
+description: Something does not work the way it should
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time. Output from Catalyst can hold your username, folder names and hostnames, so please read it before you paste it.
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - macOS (Apple Silicon)
+        - macOS (Intel)
+        - Linux (Debian or Ubuntu)
+        - Linux (Fedora or RHEL)
+        - Linux (Arch)
+        - Linux (other)
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The output of `catalyst --version`.
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what you expected
+      description: The command you ran and what it printed. A wrong result from a check is a bug even if nothing crashed.
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Output of the tool it reads
+      description: For a wrong check, the raw output of the tool behind it (for example `pmset -g batt`) lets someone write a test from it.
+  - type: checkboxes
+    id: personal
+    attributes:
+      label: Before you submit
+      options:
+        - label: I removed names, emails, hostnames and anything else personal
+          required: true

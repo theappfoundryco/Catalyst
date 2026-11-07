@@ -1,0 +1,12 @@
+# Every change needs a review from a code owner (enforced by the main ruleset).
+* @imsg8
+
+# Code that can change a person's machine, the install and the safety checks. Add a second owner here when there is one.
+/get.sh @imsg8
+/internal/trash/ @imsg8
+/internal/sweep/ @imsg8
+/internal/run/ @imsg8
+/scripts/check-* @imsg8
+/.github/ @imsg8
+/.githooks/ @imsg8
+/.gitleaks.toml @imsg8

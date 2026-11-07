@@ -1,0 +1,6 @@
+title = "catalyst"
+[extend]
+useDefault = true
+
+[allowlist]
+paths = ['''\.private/''', '''_test\.go$''', '''^demo/''']
