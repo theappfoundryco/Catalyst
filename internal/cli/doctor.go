@@ -129,6 +129,13 @@ func (a *App) printResult(r doctor.Result, verbose bool, took time.Duration, fir
 	if firstOfCheck {
 		title += u.Took(took)
 	}
+	if r.State == doctor.Issue || r.State == doctor.Failed {
+		keys := []session.Action{a.page("⏎", "how to fix", "Doctor", func() { a.showGuide(r) })}
+		if r.Fix != nil && r.Fix.Kind != doctor.FixManual {
+			keys = append(keys, goTo("f", "fix it", "Doctor", "doctor", "--fix", "--only", r.Check))
+		}
+		title = a.row(keys...) + title
+	}
 	switch r.State {
 	case doctor.Passed:
 		u.Ok(title)
@@ -190,8 +197,10 @@ func (a *App) verdict(all []doctor.Result, score int, c doctor.Counts, fixing bo
 	}
 	switch {
 	case fixable > 0 && !fixing && a.inSession:
-		u.Say("  " + u.Dim("Press f to go through them. Each change is shown before it runs."))
-		a.outcome.Actions = append(a.outcome.Actions, session.Action{Key: "f", Label: "fix these", Title: "Doctor", Args: []string{"doctor", "--fix"}})
+		u.Say("  " + u.Dim("Move to a finding and press Enter for how to sort it out. F fixes all that can be, each shown first."))
+		a.outcome.Actions = append(a.outcome.Actions, session.Action{Key: "F", Label: "fix all", Title: "Doctor", Args: []string{"doctor", "--fix"}})
+	case a.inSession && c.Critical+c.Warning+c.Info > 0:
+		u.Say("  " + u.Dim("Move to a finding and press Enter for how to sort it out."))
 	case fixable > 0 && !fixing:
 		u.Say("  " + u.Bold("Next:") + " catalyst doctor --fix   " + u.Dim("shows each change before it runs"))
 	case c.Critical+c.Warning+c.Info == 0 && c.Failed == 0:
@@ -257,6 +266,7 @@ func (a *App) applyFixes(all []doctor.Result) {
 		}
 		u.Ok("Done")
 		changed = true
+		a.outcome.Changed = true
 	}
 	if !any {
 		u.Blank()

@@ -36,6 +36,13 @@ type UI struct {
 	// Echo, when set, is told what a person typed at a question. The terminal shows it already, but a screen that is
 	// redrawn later, such as the session's scrolling view of a result, only knows what was written.
 	Echo func(typed string)
+
+	// Margin is kept free at the right edge. The session keeps one column, since writing in the last one can make a
+	// terminal wrap a line it was told to end.
+	Margin int
+
+	// Marks is on while a session is reading, so commands can tag the lines a cursor may rest on. See Mark.
+	Marks bool
 }
 
 // New decides everything from the environment. NO_COLOR, a pipe or TERM=dumb all mean plain text.
@@ -88,11 +95,11 @@ func (u *UI) Width() int {
 		return u.FixedW
 	}
 	if c, err := strconv.Atoi(os.Getenv("COLUMNS")); err == nil && c >= 20 {
-		return c
+		return c - u.Margin
 	}
 	if f, ok := u.Out.(fder); ok {
 		if w, _, err := term.GetSize(int(f.Fd())); err == nil && w >= 20 {
-			return w
+			return w - u.Margin
 		}
 	}
 	return 80

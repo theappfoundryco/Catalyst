@@ -2,6 +2,7 @@ package session
 
 import (
 	"io"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -20,10 +21,11 @@ type screen struct {
 	cr      bool // a carriage return happened, so the next text replaces the line
 	esc     []byte
 	inEsc   bool
-	partial []byte // the start of a character split across two writes
+	partial []byte      // the start of a character split across two writes
+	marks   map[int]int // row id to the line it was printed on, from ui.Mark
 }
 
-func newScreen() *screen { return &screen{lines: []string{""}} }
+func newScreen() *screen { return &screen{lines: []string{""}, marks: map[int]int{}} }
 
 func (s *screen) Write(p []byte) (int, error) {
 	s.mu.Lock()
@@ -100,21 +102,41 @@ func (s *screen) sequence(params string, final byte) {
 		if s.cr {
 			s.lines[s.row] = ""
 		}
+	case 'z': // ui.Mark: remember the line, draw nothing
+		if id, ok := strings.CutSuffix(params, ";7770"); ok {
+			if n, err := strconv.Atoi(id); err == nil {
+				s.marks[n] = s.row
+			}
+		}
 	}
 }
 
 // Lines is the result as shown, without blank lines at either end.
 func (s *screen) Lines() []string {
+	l, _ := s.Page()
+	return l
+}
+
+// Page is the result as shown, and the line each marked row ended up on.
+func (s *screen) Page() ([]string, map[int]int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	out := append([]string{}, s.lines...)
 	for len(out) > 0 && strings.TrimSpace(stripped(out[len(out)-1])) == "" {
 		out = out[:len(out)-1]
 	}
+	skip := 0
 	for len(out) > 0 && strings.TrimSpace(stripped(out[0])) == "" {
 		out = out[1:]
+		skip++
 	}
-	return out
+	marks := map[int]int{}
+	for id, line := range s.marks {
+		if line-skip >= 0 && line-skip < len(out) {
+			marks[id] = line - skip
+		}
+	}
+	return out, marks
 }
 
 func stripped(s string) string {
@@ -135,11 +157,20 @@ func stripped(s string) string {
 type tee struct {
 	term io.Writer
 	copy io.Writer
+	mute bool // measuring again behind the screen that shows: only the copy hears it
 }
+
+var markCode = regexp.MustCompile(`\x1b\[\d+;7770z`)
 
 func (t *tee) Write(p []byte) (int, error) {
 	t.copy.Write(p)
-	return t.term.Write(p)
+	if t.mute {
+		return len(p), nil
+	}
+	if _, err := t.term.Write(markCode.ReplaceAll(p, nil)); err != nil { // marks are for the copy only
+		return 0, err
+	}
+	return len(p), nil
 }
 
 func (t *tee) Fd() uintptr {

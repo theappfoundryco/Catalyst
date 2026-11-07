@@ -16,6 +16,15 @@ type Item struct {
 	About  string // shown under the list for the row the cursor is on
 	Size   int64
 	Picked bool
+	Locked bool   // shown so it can be read about, but it can never be ticked
+	Path   string // where it is, shown under the list for the row the cursor is on
+}
+
+// MenuKey is an extra key that acts on the row under the cursor without leaving the menu, such as o to show it in
+// Finder. Do returns a short line saying what happened.
+type MenuKey struct {
+	Key, Label string
+	Do         func(i int) string
 }
 
 // Menu is an arrow-key checklist with a running total.
@@ -28,6 +37,8 @@ type Menu struct {
 	Cancel    string // what the Esc key is called at the bottom; "cancel" unless set
 	Single    bool   // pick one row with Enter, instead of ticking several
 	Chosen    int    // with Single: the row picked
+	Keys      []MenuKey
+	flash     string // what the last extra key did, shown until the next key
 	cur, top  int
 	cancelled bool
 }
@@ -49,6 +60,19 @@ func (m *Menu) frame(u *UI, cols, rows int) []string {
 	view := rows - 9
 	if roomy {
 		view = rows - 14
+	}
+	hasPath := false
+	for _, it := range m.Items {
+		hasPath = hasPath || it.Path != ""
+	}
+	if hasPath {
+		view--
+	}
+	for _, it := range m.Items { // a long note takes more lines under the list
+		if Visible(it.About) > cols-8 {
+			view -= 2
+			break
+		}
 	}
 	if view > len(m.Items) {
 		view = len(m.Items)
@@ -78,7 +102,11 @@ func (m *Menu) frame(u *UI, cols, rows int) []string {
 		i := m.top + j
 		it := m.Items[i]
 		mark := ""
-		if !m.Single {
+		switch {
+		case m.Single:
+		case it.Locked:
+			mark = u.Faint("–") + " "
+		default:
 			mark = u.Dot(it.Picked) + " "
 		}
 		avail := cols - 10 - sizeW - Visible(it.Right) - 3
@@ -98,9 +126,14 @@ func (m *Menu) frame(u *UI, cols, rows int) []string {
 		if it.Right != "" {
 			right = "   " + u.Faint(it.Right)
 		}
-		if i == m.cur {
+		switch {
+		case i == m.cur && it.Locked:
+			out = append(out, Fit("  "+u.Band(mark+u.Dim(label)+u.Dim(size)+right, u.Wide()), cols-1))
+		case i == m.cur:
 			out = append(out, Fit("  "+u.Band(mark+u.Bold(label)+size+right, u.Wide()), cols-1))
-		} else {
+		case it.Locked:
+			out = append(out, Fit("    "+mark+u.Faint(label)+u.Faint(size)+right, cols-1))
+		default:
 			out = append(out, Fit("    "+mark+label+u.Dim(size)+right, cols-1))
 		}
 	}
@@ -114,7 +147,31 @@ func (m *Menu) frame(u *UI, cols, rows int) []string {
 		}
 	}
 	gap()
-	out = append(out, "     "+u.Soft(Fit(about, cols-7)))
+	// Every row's note takes the same number of lines, up to three, so the menu keeps one height as the cursor moves and
+	// each redraw lands exactly on the last.
+	tall := 1
+	for _, it := range m.Items {
+		if n := len(u.Wrap("     "+it.About, cols-2)); n > tall {
+			tall = n
+		}
+	}
+	if tall > 3 {
+		tall = 3
+	}
+	notes := u.Wrap("     "+about, cols-2)
+	if m.flash != "" {
+		notes = []string{"     " + u.Accent(m.flash)}
+	}
+	for i := 0; i < tall; i++ {
+		l := " " // not empty, or oneBlank would fold it away and the height would change
+		if i < len(notes) {
+			l = u.Soft(Fit(notes[i], cols-2))
+		}
+		out = append(out, l)
+	}
+	if hasPath {
+		out = append(out, "     "+u.Faint(Fit(m.Items[m.cur].Path, cols-7)))
+	}
 	gap()
 	if !m.Single {
 		n, total := m.picked()
@@ -136,10 +193,14 @@ func (m *Menu) frame(u *UI, cols, rows int) []string {
 	if cancel == "" {
 		cancel = "cancel"
 	}
-	keys := u.KeyBar("↑↓", "move", "space", "select", "a", "all", "⏎", m.Action, "esc", cancel)
+	pairs := []string{"↑↓", "move", "space", "select", "a", "all"}
 	if m.Single {
-		keys = u.KeyBar("↑↓", "move", "⏎", m.Action, "esc", cancel)
+		pairs = pairs[:2]
 	}
+	for _, k := range m.Keys {
+		pairs = append(pairs, k.Key, k.Label)
+	}
+	keys := u.KeyBar(append(pairs, "⏎", m.Action, "esc", cancel)...)
 	return oneBlank(append(out, keys...))
 }
 
@@ -158,13 +219,20 @@ func oneBlank(lines []string) []string {
 
 // key applies one key press. It returns true when the menu is finished.
 func (m *Menu) key(k string) bool {
+	m.flash = ""
+	for _, x := range m.Keys {
+		if k == x.Key && x.Do != nil {
+			m.flash = x.Do(m.cur)
+			return false
+		}
+	}
 	switch k {
 	case "up", "k":
 		m.cur = (m.cur + len(m.Items) - 1) % len(m.Items)
 	case "down", "j":
 		m.cur = (m.cur + 1) % len(m.Items)
 	case " ", "x":
-		if !m.Single {
+		if !m.Single && !m.Items[m.cur].Locked {
 			m.Items[m.cur].Picked = !m.Items[m.cur].Picked
 		}
 	case "a", "A":
@@ -178,7 +246,7 @@ func (m *Menu) key(k string) bool {
 			}
 		}
 		for i := range m.Items {
-			m.Items[i].Picked = all
+			m.Items[i].Picked = all && !m.Items[i].Locked
 		}
 	case "enter":
 		m.Chosen = m.cur
@@ -342,7 +410,7 @@ func (m *Menu) byNumber(u *UI) bool {
 		m.Items[i].Picked = false
 	}
 	for _, f := range strings.FieldsFunc(reply, func(r rune) bool { return r == ' ' || r == ',' }) {
-		if n, err := strconv.Atoi(f); err == nil && n >= 1 && n <= len(m.Items) {
+		if n, err := strconv.Atoi(f); err == nil && n >= 1 && n <= len(m.Items) && !m.Items[n-1].Locked {
 			m.Items[n-1].Picked = true
 		}
 	}

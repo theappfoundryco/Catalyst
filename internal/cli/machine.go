@@ -270,6 +270,7 @@ func cmdPorts(a *App, args []string) int {
 		return emit(a, list)
 	}
 	u := a.U
+	a.outcome.Refresh = true
 	u.Hdr("What is listening")
 	if len(list) == 0 {
 		u.Say("  " + u.Dim("Nothing that this user can see."))
@@ -277,12 +278,15 @@ func cmdPorts(a *App, args []string) int {
 		return ExitOK
 	}
 	open, stoppable := 0, 0
+	var guarded []string
 	for _, l := range list {
 		if wide(l) {
 			open++
 		}
 		if a.canStop(l) {
 			stoppable++
+		} else if protectedProcs[l.Command] {
+			guarded = append(guarded, fmt.Sprintf("%s (%d)", l.Command, l.Port))
 		}
 	}
 	head := u.Bold(ui.Count(len(list), "program is listening", "programs are listening"))
@@ -300,8 +304,9 @@ func cmdPorts(a *App, args []string) int {
 	if nameW > 24 {
 		nameW = 24
 	}
-	u.Say("  " + u.Faint(fmt.Sprintf("%-7s %-*s  %s", "PORT", nameW, "PROGRAM", "REACHABLE FROM")))
+	u.Say("  " + u.Faint(fmt.Sprintf("%-7s %-*s  %-7s %s", "PORT", nameW, "PROGRAM", "PID", "REACHABLE FROM")))
 	for _, l := range list {
+		l := l
 		name := l.Command
 		if name == "" {
 			name = "(another user's)"
@@ -310,20 +315,84 @@ func cmdPorts(a *App, args []string) int {
 		if wide(l) {
 			reach = u.Orange("● your whole network")
 		}
-		u.Say(fmt.Sprintf("  %s %s  %s", u.Accent(fmt.Sprintf("%-7d", l.Port)), fmt.Sprintf("%-*s", nameW, ui.Fit(name, nameW)), reach))
+		pid := ""
+		if l.PID > 0 {
+			pid = strconv.Itoa(l.PID)
+		}
+		if protectedProcs[l.Command] {
+			reach += u.Faint("  protected")
+		}
+		keys := []session.Action{a.page("⏎", "details", fmt.Sprintf("Port %d", l.Port), func() { a.portDetails(l) })}
+		if a.canStop(l) {
+			keys = append(keys, goTo("s", "stop it", "Ports", "ports", "kill", strconv.Itoa(l.Port)))
+		}
+		keys = append(keys, a.urlKey("w", "open in browser", fmt.Sprintf("http://localhost:%d", l.Port)))
+		u.Say(fmt.Sprintf("  %s%s %s  %s %s", a.row(keys...), u.Accent(fmt.Sprintf("%-7d", l.Port)), fmt.Sprintf("%-*s", nameW, ui.Fit(name, nameW)), u.Faint(fmt.Sprintf("%-7s", pid)), reach))
 	}
 	u.Blank()
+	if stoppable > 0 {
+		u.Warn("Stopping a port stops the program behind it. Unsaved work in it can be lost, and apps that rely on it may misbehave until it starts again.")
+	}
+	if len(guarded) > 0 {
+		u.Note("Never stopped from here, because the system needs them: " + strings.Join(guarded, ", ") + ".")
+	}
 	switch {
 	case stoppable == 0:
 		u.Say("  " + u.Dim("None of these can be stopped from here: they belong to the system or another user."))
-	case a.inSession:
-		u.Say("  " + u.Accent("i") + "  " + u.Dim("Press s to choose one and stop it. It is asked to quit first."))
-		a.outcome.Actions = append(a.outcome.Actions, session.Action{Key: "s", Label: "stop one", Title: "Ports", Args: []string{"ports", "stop"}})
-	default:
+	case !a.inSession:
 		u.Say("  " + u.Accent("i") + "  " + u.Dim("To stop one: ") + "catalyst ports stop" + u.Dim("  or  ") + "catalyst ports kill " + u.Accent("PORT"))
 	}
 	u.Blank()
 	return ExitOK
+}
+
+// portDetails is everything known about one listener, for the screen a row opens.
+func (a *App) portDetails(l host.Listener) {
+	u := a.U
+	u.Hdr(fmt.Sprintf("Port %d", l.Port))
+	u.Row("Program", u.Bold(orDash(l.Command)))
+	if l.PID > 0 {
+		u.Row("Process", strconv.Itoa(l.PID))
+	}
+	if l.User != "" {
+		u.Row("Runs as", l.User)
+	}
+	reach := "this machine only, at " + l.Address
+	if wide(l) {
+		reach = u.Orange("every network this machine is on")
+	}
+	u.Row("Reachable from", reach)
+	if l.PID > 0 {
+		if s, ok := a.E.Out("ps", "-o", "lstart=", "-p", strconv.Itoa(l.PID)); ok && s != "" {
+			u.Row("Started", strings.Join(strings.Fields(s), " "))
+		}
+		if s, ok := a.E.Out("ps", "-o", "command=", "-p", strconv.Itoa(l.PID)); ok && s != "" {
+			u.Row("Command", s)
+		}
+		if dir := a.E.Folder(l.PID); dir != "" {
+			u.Row("Working in", a.E.Tilde(dir))
+		}
+	}
+	u.Blank()
+	switch {
+	case protectedProcs[l.Command]:
+		u.Note(l.Command + " is part of the system, so Catalyst never stops it.")
+	case a.canStop(l):
+		u.Hint("Stopping it quits " + l.Command + ". It is asked to quit first, and only forced if you say so.")
+		a.outcome.Actions = append(a.outcome.Actions, goTo("s", "stop it", "Ports", "ports", "kill", strconv.Itoa(l.Port)))
+	default:
+		u.Note("It belongs to another user, so it can only be stopped as root.")
+	}
+	a.outcome.Actions = append(a.outcome.Actions, a.urlKey("w", "open in browser", fmt.Sprintf("http://localhost:%d", l.Port)),
+		a.copyKey("y", "copy address", fmt.Sprintf("localhost:%d", l.Port), "the address"))
+	u.Blank()
+}
+
+func orDash(s string) string {
+	if s == "" {
+		return "unknown"
+	}
+	return s
 }
 
 // wide says whether a listener answers on every network the machine is on, not only to itself.
@@ -399,9 +468,11 @@ func (a *App) killPort(port int) int {
 	if dir := a.E.Folder(l.PID); dir != "" {
 		u.Hint("running in " + a.E.Tilde(dir))
 	}
+	u.Hint("Stopping it quits " + l.Command + ". Unsaved work in it can be lost.")
 	if !u.Ask("Stop it?") {
 		return ExitOK
 	}
+	a.outcome.Changed = true
 	batch := journal.NewBatch(a.E.Now())
 	proc, err := os.FindProcess(l.PID)
 	if err == nil {
@@ -460,12 +531,16 @@ func cmdStartup(a *App, args []string) int {
 		}
 		return emit(a, items)
 	}
+	a.outcome.Refresh = true
 	u.Hdr("What starts by itself")
 	if len(items) == 0 {
 		u.Say("  " + u.Dim("Nothing found."))
+	} else {
+		u.Say("  " + u.Green("●") + u.Dim(" running   ") + u.Dim("-") + u.Dim(" not running now   ") + u.Red("✗") + u.Dim(" its program is gone"))
 	}
 	group := ""
 	for _, it := range items {
+		it := it
 		if it.Kind != group {
 			group = it.Kind
 			u.Blank()
@@ -478,7 +553,14 @@ func cmdStartup(a *App, args []string) int {
 		if it.Broken {
 			mark = u.Red("✗")
 		}
-		line := "  " + mark + " " + ui.Fit(it.Name, u.Width()-6)
+		keys := []session.Action{a.page("⏎", "details", it.Name, func() { a.startupDetails(it) })}
+		if it.Path != "" {
+			keys = append(keys, a.revealKey(it.Path))
+		}
+		if a.E.Mac() || it.Kind == "User service" || it.Kind == "System service" {
+			keys = append(keys, goTo("t", "turn off", "Startup", "startup", "disable", it.Name))
+		}
+		line := "  " + a.row(keys...) + mark + " " + ui.Fit(it.Name, u.Width()-6)
 		if it.Broken {
 			line += u.Red("  its program is gone")
 		}
@@ -487,9 +569,54 @@ func cmdStartup(a *App, args []string) int {
 	if a.E.Mac() {
 		u.Blank()
 		u.Say("  " + u.Dim("Apps you added under Login Items are in System Settings, General, Login Items."))
+		if a.inSession {
+			a.outcome.Actions = append(a.outcome.Actions, a.urlKey("L", "Login Items", settingsLoginItems))
+		}
 	}
 	u.Blank()
 	return ExitOK
+}
+
+// startupDetails is one startup item on its own screen.
+func (a *App) startupDetails(it host.StartupItem) {
+	u := a.U
+	u.Hdr(it.Name)
+	u.Row("Kind", it.Kind)
+	state := u.Dim("not running now")
+	if it.Loaded {
+		state = u.Green("running")
+	}
+	u.Row("Now", state)
+	if it.Program != "" {
+		p := a.E.Tilde(it.Program)
+		if it.Broken {
+			p += u.Red("  (gone)")
+		}
+		u.Row("Runs", p)
+	}
+	if it.Path != "" {
+		u.Row("Defined in", a.E.Tilde(it.Path))
+		a.outcome.Actions = append(a.outcome.Actions, a.revealKey(it.Path), a.editKey(it.Path, 0))
+	}
+	who := "you"
+	if !it.Mine {
+		who = "the system (changing it needs your password)"
+	}
+	u.Row("Changed by", who)
+	u.Blank()
+	switch {
+	case it.Broken:
+		u.Warn("What it starts no longer exists, so it fails at every login. Turning it off is safe.")
+	case a.E.Mac() && strings.HasPrefix(it.Name, "com.apple."):
+		u.Note("This is part of macOS. Leave it on.")
+	default:
+		u.Hint("Turning it off stops it now and at every login. It is recorded, and you can turn it on again here or with: catalyst startup enable " + it.Name)
+	}
+	if a.E.Mac() || strings.Contains(it.Kind, "service") {
+		a.outcome.Actions = append(a.outcome.Actions, goTo("t", "turn off", "Startup", "startup", "disable", it.Name),
+			goTo("n", "turn on", "Startup", "startup", "enable", it.Name))
+	}
+	u.Blank()
 }
 
 func (a *App) toggleStartup(items []host.StartupItem, action, name string) int {
@@ -505,13 +632,7 @@ func (a *App) toggleStartup(items []host.StartupItem, action, name string) int {
 		return ExitUsage
 	}
 	if !it.Mine {
-		u.Stop(name + " belongs to the system, so changing it needs root.")
-		if a.E.Mac() {
-			u.Hint("sudo launchctl " + action + " system/" + name)
-		} else {
-			u.Hint("sudo systemctl " + action + " " + name)
-		}
-		return ExitIssues
+		return a.toggleSystemStartup(it, action)
 	}
 	var cmds [][]string
 	switch {
@@ -543,7 +664,52 @@ func (a *App) toggleStartup(items []host.StartupItem, action, name string) int {
 		}
 		a.Journal.Add(journal.Entry{Time: a.E.Now(), Batch: batch, Kind: journal.KindRun, Title: action + " " + name, Command: c})
 	}
+	a.outcome.Changed = true
 	u.Ok(strings.ToUpper(action[:1]) + action[1:] + "d " + name)
+	return ExitOK
+}
+
+// toggleSystemStartup changes an item that belongs to the system. Each command is shown first and runs only on a yes,
+// through sudo's own password prompt.
+func (a *App) toggleSystemStartup(it *host.StartupItem, action string) int {
+	u := a.U
+	var cmds [][]string
+	switch {
+	case a.E.Mac() && strings.HasPrefix(it.Name, "com.apple."):
+		u.Stop(it.Name + " is part of macOS, so Catalyst leaves it alone.")
+		return ExitIssues
+	case a.E.Mac():
+		domain := "system/"
+		cmds = append(cmds, []string{"launchctl", action, domain + it.Name})
+		if action == "disable" {
+			cmds = append(cmds, []string{"launchctl", "bootout", domain + it.Name})
+		}
+	case it.Kind == "System service":
+		cmds = append(cmds, []string{"systemctl", action, "--now", it.Name})
+	default:
+		u.Stop("Change this one by hand: " + it.Kind + " items are not managed here.")
+		return ExitIssues
+	}
+	u.Say("  " + it.Name + u.Dim(" belongs to the system. This needs admin rights:"))
+	for _, c := range cmds {
+		u.Hint("sudo " + strings.Join(c, " "))
+	}
+	if !u.Ask(strings.ToUpper(action[:1]) + action[1:] + " " + it.Name + "?") {
+		return ExitOK
+	}
+	if !a.sudoReady() {
+		return ExitIssues
+	}
+	batch := journal.NewBatch(a.E.Now())
+	for _, c := range cmds {
+		if !a.asRoot(c...) && c[1] != "bootout" {
+			u.Stop("That did not work, so it was left as it was.")
+			return ExitIssues
+		}
+		a.Journal.Add(journal.Entry{Time: a.E.Now(), Batch: batch, Kind: journal.KindRun, Title: action + " " + it.Name, Command: append([]string{"sudo"}, c...)})
+	}
+	a.outcome.Changed = true
+	u.Ok(strings.ToUpper(action[:1]) + action[1:] + "d " + it.Name)
 	return ExitOK
 }
 
@@ -578,15 +744,17 @@ func cmdSSH(a *App, args []string) int {
 		u.Say("  " + u.Dim("No keys in ~/.ssh."))
 	}
 	for _, k := range keys {
+		k := k
+		mark := a.row(a.sshKeys(k, false)...)
 		detail := strings.TrimSpace(fmt.Sprintf("%s %d", k.Type, k.Bits))
 		safe := true
 		if k.Private != "" && k.Mode&0o077 != 0 {
 			safe = false
-			u.Stop(fmt.Sprintf("%s  %s  other users can read it (%o)", k.Name, u.Dim(detail), k.Mode))
+			u.Stop(fmt.Sprintf("%s%s  %s  other users can read it (%o)", mark, k.Name, u.Dim(detail), k.Mode))
 			code = ExitIssues
 		} else if k.Weak {
 			safe = false
-			u.Warn(fmt.Sprintf("%s  %s  weak, make a new one", k.Name, u.Dim(detail)))
+			u.Warn(fmt.Sprintf("%s%s  %s  weak, make a new one", mark, k.Name, u.Dim(detail)))
 			code = ExitIssues
 		}
 		if safe {
@@ -594,14 +762,102 @@ func cmdSSH(a *App, args []string) int {
 			if k.Private == "" {
 				kind = u.Dim("  public half only")
 			}
-			u.Ok(k.Name + "  " + u.Dim(detail) + kind)
+			u.Ok(mark + k.Name + "  " + u.Dim(detail) + kind)
 		}
 		if k.Fingerprint != "" {
 			u.Hint(k.Fingerprint)
 		}
 	}
+	if a.inSession && len(keys) > 0 {
+		u.Blank()
+		u.Say("  " + u.Dim("Public keys can be copied. Private keys never are: nothing should ask for one, and a copied private key can reach your other devices through the clipboard."))
+	}
 	u.Blank()
 	return code
+}
+
+// sshKeys are the keys for one key pair. details is true on the key's own screen, where Enter would open nothing new.
+func (a *App) sshKeys(k host.SSHKey, details bool) []session.Action {
+	var keys []session.Action
+	if !details {
+		keys = append(keys, a.page("⏎", "details", k.Name, func() { a.sshDetails(k) }))
+	}
+	if k.Public != "" {
+		if b, err := os.ReadFile(k.Public); err == nil {
+			keys = append(keys, a.copyKey("y", "copy public key", strings.TrimSpace(string(b)), "the public key of "+k.Name))
+		}
+	}
+	if k.Fingerprint != "" {
+		keys = append(keys, a.copyKey("f", "copy fingerprint", k.Fingerprint, "the fingerprint"))
+	}
+	target := k.Private
+	if target == "" {
+		target = k.Public
+	}
+	return append(keys, a.revealKey(target))
+}
+
+// sshDetails is one key pair on its own screen: what it is, where it lives, and where it is used.
+func (a *App) sshDetails(k host.SSHKey) {
+	u := a.U
+	u.Hdr(k.Name)
+	u.Row("Kind", strings.TrimSpace(fmt.Sprintf("%s, %d bits", k.Type, k.Bits)))
+	if k.Fingerprint != "" {
+		u.Row("Fingerprint", k.Fingerprint)
+	}
+	if k.Comment != "" {
+		u.Row("Label", k.Comment)
+	}
+	if k.Private != "" {
+		perm := u.Green(fmt.Sprintf("%o, only you can read it", k.Mode))
+		if k.Mode&0o077 != 0 {
+			perm = u.Red(fmt.Sprintf("%o, other users can read it", k.Mode))
+		}
+		u.Row("Private half", a.E.Tilde(k.Private))
+		u.Row("Permissions", perm)
+	}
+	if k.Public != "" {
+		u.Row("Public half", a.E.Tilde(k.Public))
+	}
+	hosts := sshHosts(a.E.Path(".ssh", "config"), a.E.Home, k)
+	if len(hosts) > 0 {
+		u.Row("Used for", strings.Join(hosts, ", "))
+	} else {
+		u.Row("Used for", u.Dim("no Host in ~/.ssh/config names it"))
+	}
+	u.Blank()
+	if k.Public != "" {
+		u.Hint("To use it on GitHub, copy the public key and add it under Settings, SSH and GPG keys.")
+		a.outcome.Actions = append(a.outcome.Actions, a.urlKey("g", "GitHub keys page", "https://github.com/settings/keys"))
+	}
+	a.outcome.Actions = append(a.sshKeys(k, true), a.outcome.Actions...)
+	u.Blank()
+}
+
+// sshHosts reads ~/.ssh/config for the Host blocks whose IdentityFile is this key.
+func sshHosts(config, home string, k host.SSHKey) []string {
+	b, err := os.ReadFile(config)
+	if err != nil {
+		return nil
+	}
+	var out, current []string
+	for _, line := range strings.Split(string(b), "\n") {
+		f := strings.Fields(strings.TrimSpace(line))
+		if len(f) < 2 {
+			continue
+		}
+		switch strings.ToLower(f[0]) {
+		case "host":
+			current = f[1:]
+		case "identityfile":
+			p := strings.Trim(f[1], `"`)
+			p = strings.Replace(p, "~", home, 1)
+			if p == k.Private || p+".pub" == k.Public || p == k.Public {
+				out = append(out, current...)
+			}
+		}
+	}
+	return out
 }
 
 func cmdPath(a *App, args []string) int {
@@ -656,40 +912,104 @@ func cmdPath(a *App, args []string) int {
 
 func (a *App) showPath() int {
 	u := a.U
+	a.outcome.Refresh = true
 	u.Hdr("Your PATH, in the order it is searched")
+	type entry struct {
+		dir, note, src string
+		line           int
+		mark           string
+	}
 	seen := map[string]bool{}
 	dead, dupes := 0, 0
-	for i, p := range a.E.Entries {
+	var rows []entry
+	dirW := 6
+	for _, p := range a.E.Entries {
 		clean := filepath.Clean(p)
 		st, err := os.Stat(p)
-		mark := u.Green("✓")
-		note := ""
+		e := entry{dir: p, mark: u.Green("✓")}
 		switch {
 		case seen[clean]:
-			mark, note = u.Yellow("!"), u.Yellow("  listed twice")
+			e.mark, e.note = u.Yellow("!"), "listed twice, so the second one does nothing"
 			dupes++
 		case err != nil || !st.IsDir():
-			mark, note = u.Yellow("!"), u.Yellow("  does not exist")
+			e.mark, e.note = u.Yellow("!"), "does not exist"
 			dead++
 		}
 		seen[clean] = true
-		src := a.pathSource(p)
-		if src != "" && note != "" {
-			note += u.Dim("  added in " + src)
+		e.src, e.line = a.pathSource(p)
+		rows = append(rows, e)
+		if n := len(a.E.Tilde(p)); n > dirW {
+			dirW = n
 		}
-		u.Say(fmt.Sprintf("  %s %s %s%s", u.Dim(fmt.Sprintf("%2d", i+1)), mark, a.E.Tilde(p), note))
+	}
+	srcW := u.Width() - 2 - 3 - 2 - 2
+	if dirW > srcW-14 {
+		dirW = srcW - 14
+	}
+	srcW -= dirW
+	u.Say("  " + u.Faint(fmt.Sprintf("%3s   %-*s  %s", "#", dirW, "FOLDER", "ADDED BY")))
+	for i, e := range rows {
+		keys := []session.Action{a.copyKey("y", "copy", e.dir, a.E.Tilde(e.dir))}
+		if host.Exists(e.dir) {
+			keys = append([]session.Action{a.revealKey(e.dir)}, keys...)
+		}
+		if e.src != "" && !strings.HasPrefix(e.src, "/etc/") {
+			keys = append(keys, a.editKey(e.src, e.line))
+		}
+		src := u.Dim(ui.Fit(a.E.Tilde(e.src), srcW))
+		if e.src == "" {
+			src = u.Faint("macOS or the shell")
+		}
+		dir := ui.Fit(a.E.Tilde(e.dir), dirW)
+		dir += strings.Repeat(" ", max(0, dirW-ui.Visible(dir)))
+		u.Say(fmt.Sprintf("  %s%s %s %s  %s", a.row(keys...), u.Dim(fmt.Sprintf("%2d", i+1)), e.mark, dir, src))
+		if e.note != "" {
+			u.Say("        " + u.Yellow(e.note))
+		}
+	}
+	if dead > 0 {
+		u.Blank()
+		u.Note("A folder that does not exist only slows each search a little. It is safe to leave.")
+		u.Hint("To remove one you added, take it out of the file named beside it. One from /etc/paths.d was put there by an installer.")
 	}
 	u.Sect("Tools hidden by an earlier folder")
 	shadows := a.shadows()
 	if len(shadows) == 0 {
 		u.Ok("Nothing is hidden")
 	}
-	for i, s := range shadows {
+	type group struct {
+		tool, winner string
+		hidden       []string
+	}
+	var groups []*group
+	byTool := map[string]*group{}
+	for _, sh := range shadows {
+		g, ok := byTool[sh.tool]
+		if !ok {
+			g = &group{tool: sh.tool, winner: sh.winner}
+			byTool[sh.tool] = g
+			groups = append(groups, g)
+		}
+		g.hidden = append(g.hidden, a.E.Tilde(filepath.Dir(sh.hidden)))
+	}
+	toolW := 4
+	for _, g := range groups {
+		if len(g.tool) > toolW {
+			toolW = len(g.tool)
+		}
+	}
+	for i, g := range groups {
 		if i == 12 {
-			u.Hint(fmt.Sprintf("and %d more", len(shadows)-12))
+			u.Hint(fmt.Sprintf("and %d more", len(groups)-12))
 			break
 		}
-		u.Say("  " + u.Bold(s.tool) + " runs from " + a.E.Tilde(s.winner) + u.Dim(", hiding "+a.E.Tilde(s.hidden)))
+		pad := strings.Repeat(" ", toolW+2)
+		u.Say("  " + a.row(a.copyKey("y", "copy path", g.winner, "the path")) + u.Bold(fmt.Sprintf("%-*s", toolW, g.tool)) + "  " + u.Dim("runs   ") + a.E.Tilde(g.winner))
+		u.Say("  " + pad + u.Dim("hides  "+strings.Join(g.hidden, ", ")))
+	}
+	if len(groups) > 0 {
+		u.Blank()
+		u.Hint("The first folder on the list wins. That is usually what you want. If not, move the folder you prefer earlier in your startup file.")
 	}
 	u.Blank()
 	if dead+dupes > 0 {
@@ -698,23 +1018,34 @@ func (a *App) showPath() int {
 	return ExitOK
 }
 
-// pathSource finds which startup file names a folder, so a dead entry can actually be fixed.
-func (a *App) pathSource(dir string) string {
+// pathSource finds which startup file names a folder, and on which line, so an entry can actually be found and fixed.
+// macOS's own lists in /etc/paths and /etc/paths.d count too.
+func (a *App) pathSource(dir string) (string, int) {
 	short := strings.Replace(dir, a.E.Home, "$HOME", 1)
 	tilde := a.E.Tilde(dir)
-	for _, rc := range a.E.RCFiles() {
+	files := a.E.RCFiles()
+	if a.E.Mac() {
+		files = append(files, "/etc/paths")
+		extra, _ := filepath.Glob("/etc/paths.d/*")
+		files = append(files, extra...)
+	}
+	for _, rc := range files {
 		b, err := os.ReadFile(rc)
 		if err != nil {
 			continue
 		}
-		text := string(b)
-		for _, needle := range []string{dir, short, tilde} {
-			if strings.Contains(text, needle) {
-				return a.E.Tilde(rc)
+		for n, line := range strings.Split(string(b), "\n") {
+			if strings.HasPrefix(strings.TrimSpace(line), "#") {
+				continue
+			}
+			for _, needle := range []string{dir, short, tilde} {
+				if strings.Contains(line, needle) {
+					return rc, n + 1
+				}
 			}
 		}
 	}
-	return ""
+	return "", 0
 }
 
 type shadow struct{ tool, winner, hidden string }

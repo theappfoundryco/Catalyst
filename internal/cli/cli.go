@@ -35,6 +35,9 @@ type App struct {
 	inSession bool
 	outcome   session.Outcome // what the session should do once this command returns
 	reaction  reaction        // what Kit and the home screen say about it
+	rowID     int             // rows marked by the command running now
+	pages     map[string]func()
+	pageID    int
 }
 
 // reaction is the home screen's response to what just ran. It is how a command shows up in Kit's mood, since Kit stays home.
@@ -123,7 +126,13 @@ func (a *App) session() int {
 	return session.Run(session.Config{
 		UI: a.U, Items: a.homeItems, Header: a.header,
 		Run: func(args []string) session.Outcome {
-			a.outcome, a.reaction = session.Outcome{}, reaction{}
+			a.outcome, a.reaction, a.rowID = session.Outcome{}, reaction{}, 0
+			if len(args) == 2 && args[0] == "__page" {
+				if show, ok := a.pages[args[1]]; ok {
+					show()
+				}
+				return a.outcome
+			}
 			a.dispatch(args)
 			return a.outcome
 		},
