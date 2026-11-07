@@ -156,6 +156,7 @@ Cat + alyst. Kit lives in one place, the top of the home screen, and never follo
 | | |
 |---|---|
 | Project page | [theappfoundry.co/catalyst](https://theappfoundry.co/catalyst) |
+| Install guide and docs | [theappfoundry.co/catalyst/install](https://theappfoundry.co/catalyst/install) and [/docs](https://theappfoundry.co/catalyst/docs) |
 | Questions and ideas | [Discussions](https://github.com/theappfoundryco/catalyst/discussions) and [Discord](https://discord.gg/CtxC3ADy76) |
 | Bugs and check ideas | [Issues](https://github.com/theappfoundryco/catalyst/issues/new/choose) |
 | Security problems | Report privately, see [SECURITY.md](SECURITY.md) |
@@ -165,6 +166,10 @@ Cat + alyst. Kit lives in one place, the top of the home screen, and never follo
 
 A check is one small file, a sweep rule is one line, and both are tested with recorded output, so you can work on Linux checks from a Mac and the other way round. Start with [CONTRIBUTING.md](CONTRIBUTING.md), and please follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 
+## Important notice
+
+Catalyst is a tool for your own machine, not a security audit, and its findings can be wrong. It changes things only when you say yes, and some changes cannot be undone, so keep backups. Read [docs/DISCLAIMER.md](docs/DISCLAIMER.md).
+
 ## Licence
 
-[MIT](LICENSE). Made by [The App Foundry](https://theappfoundry.co) · [Terms](https://theappfoundry.co/terms) · [Privacy policy](https://theappfoundry.co/privacy)
+[MIT](LICENSE). Made by [The App Foundry](https://theappfoundry.co) · [Terms](https://theappfoundry.co/catalyst/terms) · [Privacy policy](https://theappfoundry.co/catalyst/privacy)
