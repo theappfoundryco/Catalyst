@@ -38,10 +38,12 @@ func cmdSystem(a *App, args []string) int {
 		return emit(a, sysdata.Scan(a.E, sys, nil))
 	}
 	u.Hdr("System Data")
-	u.Warning("Careful: these are your Mac's own areas",
-		"Removing the wrong thing here can stop apps, or your Mac, from starting. Catalyst only offers what Apple or the app that made it supports, shows every command first, and asks for your password through macOS. Have a recent backup before you go on.")
-	if !a.E.Mac() {
-		u.Hint("On Linux these are the system's package caches and logs. The same rules apply.")
+	if a.E.Mac() {
+		u.Warning("Careful: these are your Mac's own areas",
+			"Removing the wrong thing here can stop apps, or your Mac, from starting. Catalyst only offers what Apple or the app that made it supports, shows every command first, and asks for your password through macOS. Have a recent backup before you go on.")
+	} else {
+		u.Warning("Careful: these are the system's own areas",
+			"Removing the wrong thing here can break programs, or stop this machine from starting. Catalyst only offers what your package manager supports, shows every command first, and lets sudo ask for your password. Have a recent backup before you go on.")
 	}
 	u.Blank()
 	if a.E.Mac() {
@@ -131,8 +133,11 @@ func cmdSystem(a *App, args []string) int {
 }
 
 func sizeOr(ar sysdata.Area) string {
-	if ar.Bytes == 0 && ar.Count > 0 {
+	switch {
+	case ar.Bytes == 0 && ar.Count > 0:
 		return strconv.Itoa(ar.Count)
+	case ar.Bytes == 0:
+		return ""
 	}
 	return ui.Size(ar.Bytes)
 }
@@ -167,7 +172,7 @@ func (a *App) reclaim(picked []sysdata.Area) int {
 	}
 	before, _ := a.E.HomeVolume()
 	batch := journal.NewBatch(a.E.Now())
-	done := 0
+	done, trashed := 0, 0
 	for _, ar := range picked {
 		switch ar.Way {
 		case sysdata.Trash:
@@ -176,6 +181,7 @@ func (a *App) reclaim(picked []sysdata.Area) int {
 				continue
 			}
 			u.Ok("Moved " + ar.Name + " to the Trash")
+			trashed++
 		case sysdata.Owner:
 			u.Say("  " + u.Faint("$ "+strings.Join(ar.Command, " ")))
 			if _, code := run.Attached(false, ar.Command[0], ar.Command[1:]...); code != 0 {
@@ -203,7 +209,7 @@ func (a *App) reclaim(picked []sysdata.Area) int {
 		u.Blank()
 		u.Say("  " + u.Bold("About "+ui.Size(after.Free-before.Free)+" is free again.") + u.Dim("  "+ui.Size(after.Free)+" free now."))
 		a.reaction = reaction{kit.Happy, u.Green("Gave back about " + ui.Size(after.Free-before.Free) + ".")}
-	} else if done > 0 {
+	} else if trashed > 0 {
 		u.Blank()
 		u.Hint("What went to the Trash comes back as free space once the Trash is emptied.")
 	}

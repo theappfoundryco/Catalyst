@@ -165,6 +165,9 @@ func (a *App) homeItems() []session.Item {
 	if a.oldAppPresent() {
 		more = append(more, item("legacy", "Old app", false))
 	}
+	if !a.E.Mac() {
+		helps["system"] = "system caches and logs, and what can safely go"
+	}
 	undo := item("undo", "Undo", false)
 	if last := a.Journal.LastUndoable(); len(last) == 0 {
 		undo.Help, undo.Disabled = "nothing to undo yet", true

@@ -236,3 +236,49 @@ func TestMenuFramesNeverHoldTwoBlankLinesInARow(t *testing.T) {
 		}
 	}
 }
+
+func TestLockedRowsCannotBeTicked(t *testing.T) {
+	m := &Menu{Items: []Item{{Label: "a"}, {Label: "b", Locked: true}}}
+	m.key("a")
+	if !m.Items[0].Picked || m.Items[1].Picked {
+		t.Fatalf("%+v", m.Items)
+	}
+	m.key("down")
+	m.key(" ")
+	if m.Items[1].Picked {
+		t.Fatal("a locked row was ticked")
+	}
+}
+
+func TestMenuKeysActInPlace(t *testing.T) {
+	got := -1
+	m := &Menu{Items: []Item{{Label: "a"}, {Label: "b"}}, Keys: []MenuKey{{Key: "o", Label: "open", Do: func(i int) string { got = i; return "opened" }}}}
+	m.key("down")
+	if done := m.key("o"); done || got != 1 || m.flash != "opened" {
+		t.Fatal(done, got, m.flash)
+	}
+}
+
+func TestMarksOnlyInASession(t *testing.T) {
+	u := Plain(nil, 80)
+	if u.Mark(3) != "" {
+		t.Fatal("a mark outside a session")
+	}
+	u.Marks = true
+	if m := u.Mark(3); m != "\033[3;7770z" || Visible(m) != 0 {
+		t.Fatalf("%q", m)
+	}
+}
+
+func TestHealthDotColoursByScore(t *testing.T) {
+	u := &UI{Color: true, Colors256: true}
+	if u.HealthDot(95, 1) == u.HealthDot(30, 1) {
+		t.Fatal("a clean bill and trouble look the same")
+	}
+	if Breath(95) <= Breath(30) {
+		t.Fatal("trouble should breathe faster")
+	}
+	if !strings.Contains(u.HealthDot(-1, 1), "○") {
+		t.Fatal("no checkup should be a hollow dot")
+	}
+}

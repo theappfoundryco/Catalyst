@@ -4,8 +4,9 @@ Mistakes that already happened in this project or the Mac app before it, so they
 
 ## Changing a machine
 - **Killing by port without checking who is listening.** `lsof -i :3000 -t | xargs kill -9` also kills anything connected to that port, which can be your browser. Find the listener only, show it, send TERM, wait, and ask before KILL.
-- **Writing downloaded shell code into startup files.** The Mac app did this without showing it. Nothing Catalyst runs or writes is downloaded. Anything it writes ships in the release itself.
-- **Keeping a password.** The Mac app saved the admin password so people "authenticate once". Catalyst never sees one. If something needs root, print the command.
+- **Writing downloaded shell code into startup files.** The Mac app did this without showing it. Nothing Catalyst writes is downloaded, and the only downloaded thing it runs is Homebrew's own installer, shown in full first and run only on a yes. Anything it writes ships in the release itself.
+- **Keeping a password.** The Mac app saved the admin password so people "authenticate once". Catalyst never sees one. If something needs root, show the command, ask, and let `sudo` ask for the password on the terminal itself. Its own few-minute memory is the only "once", and a changed password just means sudo asks again.
+- **Running sudo from a program with no terminal.** `su -c`, a pipe, or `internal/run` (its own session) leaves sudo nowhere to ask. Root steps go through `run.Attached`, in the foreground, and the session ignores the Ctrl-C meant for them.
 - **A delete that skips the Trash.** Every removal goes through `internal/trash`, including small ones like a plist. If the journal cannot record it, the move is put back.
 - **Editing a startup file without a way back.** Back up first, have the shell parse the result, and restore if it objects.
 - **Listing `~/.Trash`.** On a Mac, a terminal without Full Disk Access cannot list it, though it can stat a path and rename in and out. Do only those two things.
@@ -39,6 +40,7 @@ Mistakes that already happened in this project or the Mac app before it, so they
 - **A background key reader.** It steals the keys meant for a command's own menu. Wait for input with `select`, and read only when a key is ready.
 - **Raw logs on screen.** Long steps show a spinner. Details appear only when something fails.
 - **A question after a long step has started.** Ask first, then work.
+- **A result you can only read.** A finding, a port or a folder on screen should offer what you would do next: details, open it, copy it, fix it. Rows carry their own keys, and Esc returns to the screen they came from, measured again if something changed.
 - **A list and a prompt on one screen.** 0.1.0 showed a list you could arrow through with a box to type in, and Enter only obeyed the box. Pick one way to choose. The session is a list.
 - **Kit on every screen.** Repeated Kits stacked up the scrollback and meant nothing. Kit is drawn once, on the home screen, and reacts there.
 - **Kit in a pipe.** Kit and colour are for a person at a terminal. Never in `--json`, CI, `NO_COLOR` or narrow windows.
@@ -51,7 +53,8 @@ Mistakes that already happened in this project or the Mac app before it, so they
 - **Wrapping what developers already do.** The Mac app had nine screens over `pip` and `brew`, and that is what people called overkill. Catalyst diagnoses those tools. It does not manage them.
 - **Cleaning what is not a cache.** Clean takes app caches and old logs, which rebuild themselves, and nothing else. Models, virtual machines, backups and simulators are someone's chosen data: show them with their own tool's way to remove them.
 - **Cleaning under a running app.** An app writing to its cache while it disappears can lose work or crash. Leave an open app's cache, and say so.
-- **Touching Apple's caches or admin areas.** macOS manages `com.apple.*`, `/Library/Caches` and its logs. Measure and explain them. Where a command helps, print it.
+- **Touching Apple's caches or admin areas by hand.** macOS manages `com.apple.*`, `/Library/Caches`, `/private/var/folders`, its logs and its downloaded assets. Measure and explain them, locked. Offer only what has a supported way out (Time Machine's `tmutil`, Wallpaper or Software Update settings, an app's own command), and run that way.
+- **Calling macOS clearable.** The sealed system, Preboot and Recovery can never be cleared, and swap only shrinks by itself. Say so on screen, every time someone looks.
 - **Promising space that the Trash still holds.** Moving to the Trash frees nothing until it is emptied. Say so, and offer to empty only what was just moved, as a separate, final step.
 
 ## Process

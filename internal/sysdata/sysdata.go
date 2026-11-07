@@ -192,7 +192,7 @@ func Scan(e *host.Env, sys *space.System, size Measure) Report {
 			{"/boot", "Kernels", "What the machine starts from. Old kernels go with apt autoremove."},
 		} {
 			if _, err := os.Stat(l.path); err == nil {
-				out = append(out, Area{Name: l.name, Path: l.path, Bytes: size(l.path), Way: Locked, About: l.about})
+				add(Area{Name: l.name, Path: l.path, Bytes: size(l.path), Way: Locked, About: l.about}, 1)
 			}
 		}
 	}

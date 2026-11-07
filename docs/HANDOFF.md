@@ -21,6 +21,7 @@ internal/doctor/checks/   one file per check
 internal/sweep/       rules table, walker, git safety, real sizes
 internal/clean/       app caches and logs outside projects, open-app detection, admin areas explained
 internal/space/       where the disk goes: home, apps, macOS's own volumes, named landmarks
+internal/sysdata/     System Data area by area, each with its supported way out, or locked
 internal/trash/       moves to the system Trash, by rename only (macOS and the freedesktop spec)
 internal/journal/     records every change, for undo and log
 internal/state/       settings and health history, under the XDG folders
@@ -38,6 +39,8 @@ Ideas that hold it together:
 - **One way to draw anything.** `internal/ui`. No command prints on its own.
 - **Parsers are plain functions over text**, so both systems test anywhere.
 - **One list, no prompt.** Bare `catalyst` is arrows and Enter only. Rows are rebuilt after every command, so Undo can say what it would reverse, or sit dimmed and skipped when there is nothing. Anything with arguments belongs in the shell. Commands reach the home screen through `App.reaction`, and offer next steps through `session.Outcome`.
+- **Rows you can act on.** A command marks a line with `a.row(keys...)` (an invisible `ui.Mark`), and the session puts a cursor on it. Keys either open a screen (`goTo`, or `a.page` for one drawn from data already in hand) or act in place (`Do`, such as copy or show in Finder). The session keeps a stack, so Esc returns to the screen a key came from, and `Outcome.Changed` makes that screen measure again. `Refresh` and `Live` give `r` and `l`.
+- **Root through sudo's own prompt.** `run.Attached` gives a program the terminal, so sudo asks for the password itself. The session ignores Ctrl-C while it runs.
 - **Two dependencies**, both from the Go project.
 
 Files on a person's machine: the program in `~/.local/bin`, `~/.local/state/catalyst` (health history, journal, last sweep), `~/.config/catalyst/config.json`, and at most one marked line in a shell startup file.
@@ -77,12 +80,18 @@ As of 0.1.0, built and run on Apple silicon macOS 15 and ARM64 Linux containers:
 - `space` and `clean --dry-run` read-only on a real Mac. The separate screen opening and closing, checked in the raw output, including a Ctrl-C while a question waits.
 - A rename into and out of `~/.Trash` on a Mac whose terminal has no Full Disk Access.
 - `get.sh` against a local server, including refusing a bad or missing checksum.
+- After the interactive rows: Ports, PATH, SSH, Startup, Doctor guides, Space, the macOS explainer, System Data, Status live, Battery, Disk, Network and an address test, all driven read-only on a real Mac through a pseudo-terminal.
+- In an Ubuntu container: stopping a port from its row, then Esc, lands on Ports measured again without it. System Data ran `sudo apt-get autoremove` after sudo itself asked for the password, as a normal user with a real terminal.
+- The health dot breathes: 31 distinct shades in 3.5 seconds of raw output for a score of 70.
 
 ## What has not been verified
 
 - **Intel Macs and x86 Linux.** The archives build, but the checks have run only on Apple silicon and ARM64 Linux containers.
 - **A real systemd machine, and a real laptop on Linux.** Containers have no systemd, so failed units, user services and Linux batteries are covered by recorded output only.
-- **`smartctl`.** Parsed from recorded output. Not installed on the development Mac.
+- **`smartctl`.** Parsed from recorded output. Not installed on the development Mac, and Helpers has not installed it for real there.
+- **System Data's Mac steps.** `tmutil deletelocalsnapshots`, `colima delete`, `docker system prune`, `xcrun simctl delete` and moving an installer to the Trash are tested as data and through the Linux sudo path, not run on a real Mac, on purpose.
+- **Homebrew's installer from Helpers.** Shown and wired, not run, since the development Mac already has Homebrew.
+- **Opening System Settings pages.** The URLs are Apple's, for macOS 13 and later. Not opened during testing, so as not to take over the maintainer's screen.
 - **The startup commands.** `startup disable` and `enable` have not been run for real, on purpose: they change a real machine.
 - **`catalyst legacy` on a Mac with the old app installed.** The zshrc edit is tested. The Keychain and app paths have not run against a real install.
 - **Other volumes.** Trash on an external disk (`.Trashes`, `.Trash-UID`) is written to the spec but has not run on a real second disk.

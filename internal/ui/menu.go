@@ -121,7 +121,10 @@ func (m *Menu) frame(u *UI, cols, rows int) []string {
 		label := Fit(it.Label, avail)
 		label += strings.Repeat(" ", max(0, avail-Visible(label)))
 		size := ""
-		if sized {
+		switch {
+		case sized && it.Size == 0:
+			size = strings.Repeat(" ", 8) // a row with no size, such as a command, leaves the column empty
+		case sized:
 			size = fmt.Sprintf("%8s", Size(it.Size))
 		}
 		right := ""

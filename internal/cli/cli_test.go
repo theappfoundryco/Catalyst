@@ -483,3 +483,60 @@ func TestOnlyOwnNonSystemPortsCanBeStopped(t *testing.T) {
 		t.Fatal("wide")
 	}
 }
+
+func TestGreetingFollowsTheClock(t *testing.T) {
+	at := func(h int) time.Time { return time.Date(2026, 11, 7, h, 0, 0, 0, time.Local) }
+	for h, want := range map[int]string{8: "Good morning, Alex", 14: "Good afternoon, Alex", 20: "Good evening, Alex", 2: "Up late, Alex?"} {
+		if got := greeting("Alex", at(h)); got != want {
+			t.Errorf("%d: %q", h, got)
+		}
+	}
+	if got := greeting("", at(8)); got != "Good morning" {
+		t.Fatal(got)
+	}
+}
+
+func TestSayingNoToAHelperIsRemembered(t *testing.T) {
+	a, _ := testApp(t, "linux")
+	a.decline("smartmontools")
+	a.decline("smartmontools")
+	c := a.Store.LoadConfig()
+	if !c.Declined("smartmontools") || len(c.NoHelpers) != 1 {
+		t.Fatalf("%+v", c)
+	}
+}
+
+func TestSSHHostsUsingAKey(t *testing.T) {
+	home := t.TempDir()
+	cfg := filepath.Join(home, ".ssh", "config")
+	put(t, cfg, "Host github.com\n  IdentityFile ~/.ssh/id_work\nHost box\n  IdentityFile \"~/.ssh/id_home\"\n")
+	k := host.SSHKey{Private: filepath.Join(home, ".ssh", "id_work"), Public: filepath.Join(home, ".ssh", "id_work.pub")}
+	if got := sshHosts(cfg, home, k); len(got) != 1 || got[0] != "github.com" {
+		t.Fatal(got)
+	}
+}
+
+func TestEveryRowOnPortsHasKeysAndProtectedOnesCannotStop(t *testing.T) {
+	a, _ := testApp(t, "linux")
+	a.inSession = true
+	a.U.Marks = true
+	a.E.Run = &run.Fake{Replies: map[string]run.Result{
+		"ss -tlnpH": {Stdout: `LISTEN 0 128 127.0.0.1:3000 0.0.0.0:* users:(("node",pid=4242,fd=20))
+LISTEN 0 128 0.0.0.0:22 0.0.0.0:* users:(("sshd",pid=1,fd=3))`},
+	}}
+	cmdPorts(a, nil)
+	if len(a.outcome.Rows) != 2 || !a.outcome.Refresh {
+		t.Fatalf("%+v", a.outcome)
+	}
+	stops := func(r session.Row) bool {
+		for _, k := range r.Keys {
+			if k.Key == "s" {
+				return true
+			}
+		}
+		return false
+	}
+	if !stops(a.outcome.Rows[1]) || stops(a.outcome.Rows[0]) { // sorted by port: 22 is sshd, 3000 is node
+		t.Fatalf("%+v", a.outcome.Rows)
+	}
+}

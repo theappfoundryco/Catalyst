@@ -71,6 +71,9 @@ func cmdSpace(a *App, args []string) int {
 		}
 	}
 	u.Say("  " + u.Faint("WHAT TAKES THE SPACE"))
+	if len(rows) == 0 {
+		u.Say("  " + u.Dim("Nothing in your home folder takes more than 100 MB."))
+	}
 	for _, x := range rows {
 		bar := int(x.bytes * 16 / biggest)
 		if bar < 1 {

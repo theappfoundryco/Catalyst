@@ -2,6 +2,7 @@ package session
 
 import (
 	"bytes"
+	"io"
 	"strings"
 	"testing"
 
@@ -216,5 +217,31 @@ func TestCtrlCOnceWarnsTwiceLeaves(t *testing.T) {
 	s.armed = s.armed.Add(-3 * twice)
 	if s.ctrlC() {
 		t.Fatal("a press long after the first counted as the second")
+	}
+}
+
+func TestMarksFindTheirLinesAndNeverReachTheTerminal(t *testing.T) {
+	s := newScreen()
+	s.Write([]byte("\n\n  heading\n  \033[1;7770z✓ first\n  \033[2;7770z✓ second\n"))
+	lines, marks := s.Page()
+	if len(lines) != 3 || marks[1] != 1 || marks[2] != 2 {
+		t.Fatalf("%q %v", lines, marks)
+	}
+	if strings.Contains(lines[1], "7770") {
+		t.Fatalf("a mark was kept in the text: %q", lines[1])
+	}
+	var term strings.Builder
+	tt := &tee{term: &term, copy: io.Discard}
+	tt.Write([]byte("  \033[3;7770zrow\n"))
+	if term.String() != "  row\n" {
+		t.Fatalf("the terminal got %q", term.String())
+	}
+}
+
+func TestRowsComeInTheOrderTheyArePrinted(t *testing.T) {
+	p := &page{out: Outcome{Rows: []Row{{ID: 2}, {ID: 1}, {ID: 9}}}, marks: map[int]int{1: 4, 2: 7}}
+	rs := p.rows()
+	if len(rs) != 2 || rs[0].row.ID != 1 || rs[1].row.ID != 2 {
+		t.Fatalf("%+v", rs) // row 9 was never printed, so it is not a row
 	}
 }
