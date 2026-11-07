@@ -54,7 +54,8 @@ func commands() []command {
 		{"sweep", "[paths] [--older-than 14d] [--deep] [--dry-run] [--json]", "reclaim space from build artifacts", cmdSweep},
 		{"clean", "[--dry-run] [--json] [--yes]", "app caches and old logs, which rebuild themselves", cmdClean},
 		{"status", "[--json]", "one-glance health of this machine", cmdStatus},
-		{"space", "[--json]", "where your storage goes, and what can go", cmdSpace},
+		{"space", "[--in PATH] [--json]", "where your storage goes, and what can go", cmdSpace},
+		{"system", "[--dry-run] [--admin] [--json]", "what macOS calls System Data, and what can safely go", cmdSystem},
 		{"undo", "[--yes]", "reverse the last change Catalyst made", cmdUndo},
 		{"log", "[-n 20]", "everything Catalyst has changed", cmdLog},
 		{"disk", "[--folders] [--json]", "volumes, drive health and wear", cmdDisk},
@@ -64,7 +65,9 @@ func commands() []command {
 		{"startup", "[disable NAME | enable NAME] [--json]", "what starts by itself", cmdStartup},
 		{"ssh", "[--json]", "your keys and whether they are safe", cmdSSH},
 		{"path", "[add | remove | status]", "your PATH: dead folders, repeats and shadows", cmdPath},
-		{"config", "[set mascot on|off]", "show or change settings", cmdConfig},
+		{"config", "[set name NAME | set mascot on|off | set animations on|off]", "show or change settings", cmdConfig},
+		{"helpers", "[install NAME]", "tools that let Catalyst see more, such as smartmontools", cmdHelpers},
+		{"setup", "", "the welcome: your name, and helpers worth having", cmdSetup},
 		{"legacy", "[--yes]", "clean up after the old Catalyst Mac app", cmdLegacy},
 		{"update", "[--check]", "move to the newest release", cmdUpdate},
 		{"uninstall", "[--yes]", "remove Catalyst from this machine", cmdUninstall},
@@ -136,7 +139,17 @@ func (a *App) session() int {
 			a.dispatch(args)
 			return a.outcome
 		},
+		First:  a.first(),
+		Motion: a.Store.LoadConfig().MotionOn(),
 	})
+}
+
+// first is the welcome, the first time the list opens.
+func (a *App) first() []string {
+	if a.Store.LoadConfig().SetupDone {
+		return nil
+	}
+	return []string{"setup"}
 }
 
 // homeItems is the list on the home screen. The most-used things come first, and what is rare waits under More.
@@ -148,7 +161,7 @@ func (a *App) homeItems() []session.Item {
 	item := func(name, label string, gap bool) session.Item {
 		return session.Item{Name: label, Help: helps[name], Args: []string{name}, Gap: gap}
 	}
-	more := []session.Item{item("log", "History", false), item("config", "Settings", false), item("update", "Update", false), item("uninstall", "Uninstall", false)}
+	more := []session.Item{item("log", "History", false), item("config", "Settings", false), item("helpers", "Helpers", false), item("update", "Update", false), item("uninstall", "Uninstall", false)}
 	if a.oldAppPresent() {
 		more = append(more, item("legacy", "Old app", false))
 	}
@@ -164,6 +177,7 @@ func (a *App) homeItems() []session.Item {
 		item("clean", "Clean", false),
 		item("status", "Status", false),
 		item("space", "Space", false),
+		item("system", "System", false),
 		undo,
 		item("disk", "Disk", false),
 		item("battery", "Battery", false),
@@ -172,7 +186,7 @@ func (a *App) homeItems() []session.Item {
 		item("startup", "Startup", false),
 		item("ssh", "SSH keys", false),
 		item("path", "PATH", false),
-		{Name: "More", Help: "history, settings, update, uninstall", Gap: true, Sub: more},
+		{Name: "More", Help: "history, settings, helpers, update, uninstall", Gap: true, Sub: more},
 	}
 }
 

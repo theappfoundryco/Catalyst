@@ -205,6 +205,8 @@ func cmdUninstall(a *App, args []string) int {
 	u.Hint("Catalyst's line in your shell startup file, if it added one")
 	u.Hint(a.E.Tilde(a.Store.Dir) + " and " + a.E.Tilde(a.Store.ConfigDir))
 	u.Hint("What is in the Trash stays there. Anything it moved is yours to keep or empty.")
+	u.Sect("This stays")
+	u.Hint("Homebrew, and everything installed with it, such as smartmontools. Catalyst never removes them.")
 	if !u.Ask("Remove Catalyst?") {
 		return ExitOK
 	}
@@ -221,7 +223,7 @@ func cmdUninstall(a *App, args []string) int {
 	}
 	u.Ok("Catalyst is gone.")
 	a.outcome.Quit = true
-	a.outcome.Farewell = []string{"  Catalyst is gone. What it moved to the Trash is still there."}
+	a.outcome.Farewell = []string{"  Catalyst is gone. What it moved to the Trash is still there, and Homebrew is untouched."}
 	u.Blank()
 	return ExitOK
 }

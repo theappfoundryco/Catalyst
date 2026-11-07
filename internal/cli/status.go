@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/theappfoundryco/catalyst/internal/kit"
 	"github.com/theappfoundryco/catalyst/internal/session"
@@ -21,10 +22,10 @@ func (a *App) header() session.Header {
 		s := a.E.Shell
 		shell = ", " + s[strings.LastIndex(s, "/")+1:]
 	}
-	lines := []string{
-		u.Bold("Catalyst") + " " + u.Dim("v"+strings.TrimPrefix(version.Version, "v")),
-		u.Dim(a.E.OSName() + ", " + a.E.Arch + shell),
-		"",
+	about := "v" + strings.TrimPrefix(version.Version, "v") + " · " + a.E.OSName() + ", " + a.E.Arch + shell
+	lines := []string{u.Bold("Catalyst") + " " + u.Dim("v"+strings.TrimPrefix(version.Version, "v")), u.Dim(a.E.OSName() + ", " + a.E.Arch + shell), ""}
+	if name := a.Store.LoadConfig().Nickname(); name != "" {
+		lines = []string{u.Bold(greeting(name, a.E.Now())), u.Dim("Catalyst " + about), ""}
 	}
 	mood := a.reaction.mood
 	if mood == "" {
@@ -32,22 +33,25 @@ func (a *App) header() session.Header {
 	}
 	h := a.Store.History()
 	if len(h) == 0 {
-		line := a.reaction.line
-		if line == "" {
-			line = u.Dim("No checkup yet. Doctor is a good start.")
+		lines = append(lines, session.Dot+" "+u.Dim("No checkup yet. Doctor is a good start."))
+		if a.reaction.line != "" {
+			lines = append(lines, a.reaction.line)
 		}
-		return session.Header{Mood: mood, Lines: append(lines, line)}
+		return session.Header{Mood: mood, Lines: lines, Health: -1}
 	}
 	last := h[len(h)-1]
-	health := u.ScoreStyle(last.Score)(fmt.Sprintf("Health %d", last.Score))
+	fresh := a.E.Now().Sub(last.Date) < 24*time.Hour
+	health := session.Dot + " " + u.ScoreStyle(last.Score)(fmt.Sprintf("Health %d", last.Score))
 	if change, since, ok := state.Trend(h); ok {
 		health += " " + u.Dim(trendWords(change, since, a.E.Now()))
 	} else {
 		health += " " + u.Dim("from "+ui.When(last.Date))
 	}
 	lines = append(lines, health)
+	hdr := session.Header{Mood: mood, Health: last.Score, Fresh: fresh}
 	if a.reaction.line != "" {
-		return session.Header{Mood: mood, Lines: append(lines, a.reaction.line)}
+		hdr.Lines = append(lines, a.reaction.line)
+		return hdr
 	}
 	var bits []string
 	if last.Critical > 0 {
@@ -55,13 +59,17 @@ func (a *App) header() session.Header {
 	} else if last.Issues > 0 {
 		bits = append(bits, u.Yellow(ui.Count(last.Issues, "thing", "things")+" worth a look"))
 	}
+	if !fresh {
+		bits = append(bits, u.Dim("checked "+ui.Ago(last.Date, a.E.Now())))
+	}
 	if s, ok := a.Store.LastSweep(); ok && s.Bytes > 0 {
 		bits = append(bits, u.Cyan("about "+ui.Size(s.Bytes))+" "+u.Dim("to sweep"))
 	}
 	if len(bits) > 0 {
 		lines = append(lines, strings.Join(bits, u.Dim("  ·  ")))
 	}
-	return session.Header{Mood: mood, Lines: lines}
+	hdr.Lines = lines
+	return hdr
 }
 
 type statusReport struct {

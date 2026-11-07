@@ -1079,34 +1079,72 @@ func (a *App) shadows() []shadow {
 }
 
 func cmdConfig(a *App, args []string) int {
-	fs := a.flags("config", "[set mascot on|off]")
+	fs := a.flags("config", "[set name NAME | set mascot on|off | set animations on|off]")
 	if code, ok := a.parse(fs, args); !ok {
 		return code
 	}
 	u := a.U
 	c := a.Store.LoadConfig()
+	onOff := func(on bool) string {
+		if on {
+			return "on"
+		}
+		return "off"
+	}
 	if fs.NArg() == 0 {
 		u.Hdr("Settings")
-		v := "on"
-		if !c.MascotOn() {
-			v = "off"
+		name := c.Nickname()
+		if name == "" {
+			name = u.Dim("not set")
 		}
-		u.Row("mascot", v)
-		u.Row("files", a.E.Tilde(a.Store.ConfigDir))
-		u.Row("history", a.E.Tilde(a.Store.Dir))
+		u.Row("Your name", a.row(goTo("⏎", "change", "Settings", "config", "set", "name"))+name)
+		u.Row("Kit", a.row(goTo("⏎", "turn "+onOff(!c.MascotOn()), "Settings", "config", "set", "mascot", onOff(!c.MascotOn())))+onOff(c.MascotOn()))
+		u.Row("Animations", a.row(goTo("⏎", "turn "+onOff(!c.MotionOn()), "Settings", "config", "set", "animations", onOff(!c.MotionOn())))+onOff(c.MotionOn())+u.Dim("  Kit's wag and the health dot's pulse"))
+		u.Row("Files", a.E.Tilde(a.Store.ConfigDir))
+		u.Row("History", a.E.Tilde(a.Store.Dir))
 		u.Blank()
 		return ExitOK
 	}
-	if fs.NArg() != 3 || fs.Arg(0) != "set" || fs.Arg(1) != "mascot" || (fs.Arg(2) != "on" && fs.Arg(2) != "off") {
+	if fs.Arg(0) != "set" || fs.NArg() < 2 {
 		fs.Usage()
 		return ExitUsage
 	}
-	on := fs.Arg(2) == "on"
-	c.Mascot = &on
+	switch key := fs.Arg(1); key {
+	case "name":
+		name := strings.TrimSpace(strings.Join(fs.Args()[2:], " "))
+		if fs.NArg() == 2 {
+			name = strings.TrimSpace(u.Text("What should I call you? " + u.Dim("(Enter for no name) ")))
+		}
+		if len(name) > 24 {
+			name = name[:24]
+		}
+		c.Name = &name
+		if name == "" {
+			u.Ok("No name. Catalyst just says hello.")
+		} else {
+			u.Ok("Hello, " + name + ".")
+		}
+	case "mascot", "animations":
+		if fs.NArg() != 3 || (fs.Arg(2) != "on" && fs.Arg(2) != "off") {
+			fs.Usage()
+			return ExitUsage
+		}
+		on := fs.Arg(2) == "on"
+		if key == "mascot" {
+			c.Mascot = &on
+			u.Ok("Kit is " + fs.Arg(2) + ".")
+		} else {
+			c.Motion = &on
+			u.Ok("Animations are " + fs.Arg(2) + ". This takes effect the next time Catalyst opens.")
+		}
+	default:
+		fs.Usage()
+		return ExitUsage
+	}
 	if err := a.Store.SaveConfig(c); err != nil {
 		u.Stop(err.Error())
 		return ExitFailed
 	}
-	u.Ok("Kit is " + fs.Arg(2) + ".")
+	a.outcome.Changed = true
 	return ExitOK
 }

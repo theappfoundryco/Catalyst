@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/theappfoundryco/catalyst/internal/clean"
 	"github.com/theappfoundryco/catalyst/internal/journal"
@@ -54,17 +55,22 @@ func cmdClean(a *App, args []string) int {
 	u.Blank()
 	items := make([]ui.Item, len(r.Items))
 	for i, it := range r.Items {
-		items[i] = ui.Item{Label: it.Name, About: it.About, Size: it.Bytes, Picked: true}
+		items[i] = ui.Item{Label: it.Name, About: it.About, Size: it.Bytes, Picked: true, Path: a.E.Tilde(it.Path)}
 	}
 	if *dry {
 		for _, it := range r.Items {
 			u.Say(fmt.Sprintf("  %8s  %s", ui.Size(it.Bytes), it.Name))
+			u.Hint("   " + a.E.Tilde(it.Path))
 		}
 		u.Blank()
 		u.Say("  " + u.Dim("Dry run: nothing was moved."))
 		return ExitOK
 	}
-	m := &ui.Menu{Items: items, Noun: "folder", Nouns: "folders", Action: "clean", Note: "everything goes to the Trash first"}
+	m := &ui.Menu{Items: items, Noun: "folder", Nouns: "folders", Action: "clean", Note: "everything goes to the Trash first",
+		Keys: []ui.MenuKey{
+			{Key: "o", Label: "open", Do: func(i int) string { return a.reveal(r.Items[i].Path) }},
+			{Key: "y", Label: "copy path", Do: func(i int) string { return a.copyText(r.Items[i].Path, "the path") }},
+		}}
 	if a.inSession {
 		m.Cancel = "back"
 	}
@@ -100,6 +106,7 @@ func cmdClean(a *App, args []string) int {
 		a.outcome.SkipWait = len(r.Items) > 0
 		return ExitFailed
 	}
+	a.outcome.Changed = true
 	u.Blank()
 	u.Say("  " + u.Bold(ui.Count(len(moved), "folder", "folders")+" moved") + u.Dim(", about ") + u.Bold(ui.Size(freed)) + u.Dim(" in the Trash."))
 	// The space only comes back when the Trash is emptied. Offer to empty exactly these, and say plainly it is final.
@@ -136,20 +143,7 @@ func (a *App) openNote(r clean.Report) {
 	if len(r.Open) == 0 {
 		return
 	}
-	names := r.Open
-	more := ""
-	if len(names) > 4 {
-		more = fmt.Sprintf(" and %d more", len(names)-4)
-		names = names[:4]
-	}
-	list := ""
-	for i, n := range names {
-		if i > 0 {
-			list += ", "
-		}
-		list += n
-	}
-	a.U.Say("  " + a.U.Dim("Left alone because they are open: "+list+more+". Quit them to include their caches."))
+	a.U.Say("  " + a.U.Dim("Left alone because they are open: "+strings.Join(r.Open, ", ")+". Quit them to include their caches."))
 }
 
 // cleanNotes ends a clean with what it found but will not touch, and why, so nothing big goes unexplained.
@@ -162,6 +156,12 @@ func (a *App) cleanNotes(r clean.Report) {
 			u.Say(fmt.Sprintf("  %8s  %s", ui.Size(o.Bytes), o.Name))
 			u.Hint("     " + o.How)
 		}
+	}
+	if a.inSession {
+		u.Blank()
+		u.Say("  " + u.Dim("Models, virtual machines and the system's own areas are on the System Data screen, each with its safe way out."))
+		a.outcome.Actions = append(a.outcome.Actions, goTo("x", "System Data", "System Data", "system"))
+		return
 	}
 	if len(r.Admin) > 0 {
 		u.Blank()
