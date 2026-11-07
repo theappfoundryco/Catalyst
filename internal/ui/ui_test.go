@@ -187,8 +187,9 @@ func TestSqueezeKeepsOneBlankLine(t *testing.T) {
 	}
 	b.Reset()
 	w = Squeeze(&b)
-	w.Write([]byte("\n\nfirst\n")) // nothing above it, so no blank lines are owed
-	if b.String() != "first\n" {
+	w.Write([]byte("\n\nfirst\n"))               // nothing above it, so no blank lines are owed
+	w.Write([]byte("\n\033[H\033[2J\nsecond\n")) // a fresh screen keeps the blank line at its top
+	if b.String() != "first\n\n\033[H\033[2J\nsecond\n" {
 		t.Fatalf("%q", b.String())
 	}
 }
@@ -217,6 +218,21 @@ func TestReadKey(t *testing.T) {
 	for in, want := range cases {
 		if got := ReadKey([]byte(in)); got != want {
 			t.Errorf("%q: got %q", in, got)
+		}
+	}
+}
+
+func TestMenuFramesNeverHoldTwoBlankLinesInARow(t *testing.T) {
+	for _, single := range []bool{false, true} {
+		m := testMenu()
+		m.Single = single
+		for _, rows := range []int{12, 24, 40} {
+			lines := m.frame(Plain(&bytes.Buffer{}, 80), 80, rows)
+			for i := 1; i < len(lines); i++ {
+				if lines[i] == "" && lines[i-1] == "" {
+					t.Fatalf("single=%v rows=%d: two blank lines at %d", single, rows, i)
+				}
+			}
 		}
 	}
 }

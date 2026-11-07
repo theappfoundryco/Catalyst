@@ -136,10 +136,24 @@ func (m *Menu) frame(u *UI, cols, rows int) []string {
 	if cancel == "" {
 		cancel = "cancel"
 	}
+	keys := u.KeyBar("↑↓", "move", "space", "select", "a", "all", "⏎", m.Action, "esc", cancel)
 	if m.Single {
-		return append(out, u.KeyBar("↑↓", "move", "⏎", m.Action, "esc", cancel)...)
+		keys = u.KeyBar("↑↓", "move", "⏎", m.Action, "esc", cancel)
 	}
-	return append(out, u.KeyBar("↑↓", "move", "space", "select", "a", "all", "⏎", m.Action, "esc", cancel)...)
+	return oneBlank(append(out, keys...))
+}
+
+// oneBlank drops a blank line that follows another. The session prints through Squeeze, which would drop it anyway, and
+// a redraw that counts lines the terminal never got draws each frame one line lower than the last.
+func oneBlank(lines []string) []string {
+	out := lines[:0]
+	for i, l := range lines {
+		if l == "" && i > 0 && lines[i-1] == "" {
+			continue
+		}
+		out = append(out, l)
+	}
+	return out
 }
 
 // key applies one key press. It returns true when the menu is finished.

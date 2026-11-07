@@ -415,6 +415,9 @@ func (s *squeeze) Write(p []byte) (int, error) {
 		case s.inEsc:
 			if c >= 0x40 && c != '[' {
 				s.inEsc = false
+				if c == 'H' { // the cursor went to the top of a cleared screen: nothing is above it to double up with
+					s.newlines = 0
+				}
 			}
 		case c == 27:
 			s.inEsc = true

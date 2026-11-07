@@ -462,3 +462,24 @@ func TestWhenSaid(t *testing.T) {
 		}
 	}
 }
+
+func TestOnlyOwnNonSystemPortsCanBeStopped(t *testing.T) {
+	a, _ := testApp(t, "linux")
+	cases := []struct {
+		l    host.Listener
+		want bool
+	}{
+		{host.Listener{Port: 3000, PID: 4242, Command: "node"}, true},
+		{host.Listener{Port: 53, PID: 0, Command: ""}, false}, // another user's: no process number to signal
+		{host.Listener{Port: 5000, PID: 88, Command: "ControlCenter"}, false},
+		{host.Listener{Port: 9, PID: os.Getpid(), Command: "catalyst"}, false},
+	}
+	for _, c := range cases {
+		if got := a.canStop(c.l); got != c.want {
+			t.Errorf("%+v: got %v", c.l, got)
+		}
+	}
+	if !wide(host.Listener{Address: "*"}) || !wide(host.Listener{Address: "0.0.0.0"}) || wide(host.Listener{Address: "127.0.0.1"}) {
+		t.Fatal("wide")
+	}
+}

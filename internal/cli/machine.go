@@ -14,6 +14,7 @@ import (
 
 	"github.com/theappfoundryco/catalyst/internal/host"
 	"github.com/theappfoundryco/catalyst/internal/journal"
+	"github.com/theappfoundryco/catalyst/internal/session"
 	"github.com/theappfoundryco/catalyst/internal/shellpath"
 	"github.com/theappfoundryco/catalyst/internal/sweep"
 	"github.com/theappfoundryco/catalyst/internal/ui"
@@ -239,13 +240,16 @@ func localIP() string {
 var protectedProcs = map[string]bool{"launchd": true, "loginwindow": true, "systemd": true, "sshd": true, "ControlCenter": true, "Finder": true, "Dock": true, "init": true, "tailscaled": true, "mDNSResponder": true, "rapportd": true}
 
 func cmdPorts(a *App, args []string) int {
-	fs := a.flags("ports", "[kill PORT] [--yes] [--json]")
+	fs := a.flags("ports", "[stop | kill PORT] [--yes] [--json]")
 	asJSON := fs.Bool("json", false, "")
 	yes := fs.Bool("yes", false, "")
 	if code, ok := a.parse(fs, args); !ok {
 		return code
 	}
 	a.U.Yes = a.U.Yes || *yes
+	if fs.NArg() == 1 && fs.Arg(0) == "stop" {
+		return a.pickPort()
+	}
 	if fs.NArg() >= 1 && fs.Arg(0) == "kill" {
 		if fs.NArg() != 2 {
 			fs.Usage()
@@ -272,25 +276,101 @@ func cmdPorts(a *App, args []string) int {
 		u.Blank()
 		return ExitOK
 	}
+	open, stoppable := 0, 0
+	for _, l := range list {
+		if wide(l) {
+			open++
+		}
+		if a.canStop(l) {
+			stoppable++
+		}
+	}
+	head := u.Bold(ui.Count(len(list), "program is listening", "programs are listening"))
+	if open > 0 {
+		head += u.Faint("  ·  ") + u.Orange(fmt.Sprintf("%d can be reached from your network", open))
+	}
+	u.Say("  " + head)
+	u.Blank()
+	nameW := 8
+	for _, l := range list {
+		if n := len(l.Command); n > nameW {
+			nameW = n
+		}
+	}
+	if nameW > 24 {
+		nameW = 24
+	}
+	u.Say("  " + u.Faint(fmt.Sprintf("%-7s %-*s  %s", "PORT", nameW, "PROGRAM", "REACHABLE FROM")))
 	for _, l := range list {
 		name := l.Command
 		if name == "" {
-			name = u.Dim("(another user's)")
+			name = "(another user's)"
 		}
-		scope := "this machine only"
-		if l.Address == "*" || l.Address == "0.0.0.0" || l.Address == "[::]" {
-			scope = u.Yellow("your whole network")
+		reach := u.Faint("● ") + u.Dim("this machine only")
+		if wide(l) {
+			reach = u.Orange("● your whole network")
 		}
-		u.Say(fmt.Sprintf("  %s  %-22s %s", u.Cyan(fmt.Sprintf("%-6d", l.Port)), ui.Fit(name, 22), u.Dim(scope)))
+		u.Say(fmt.Sprintf("  %s %s  %s", u.Accent(fmt.Sprintf("%-7d", l.Port)), fmt.Sprintf("%-*s", nameW, ui.Fit(name, nameW)), reach))
 	}
 	u.Blank()
-	u.Say("  " + u.Dim("Stop one safely: catalyst ports kill PORT"))
+	switch {
+	case stoppable == 0:
+		u.Say("  " + u.Dim("None of these can be stopped from here: they belong to the system or another user."))
+	case a.inSession:
+		u.Say("  " + u.Accent("i") + "  " + u.Dim("Press s to choose one and stop it. It is asked to quit first."))
+		a.outcome.Actions = append(a.outcome.Actions, session.Action{Key: "s", Label: "stop one", Title: "Ports", Args: []string{"ports", "stop"}})
+	default:
+		u.Say("  " + u.Accent("i") + "  " + u.Dim("To stop one: ") + "catalyst ports stop" + u.Dim("  or  ") + "catalyst ports kill " + u.Accent("PORT"))
+	}
 	u.Blank()
 	return ExitOK
 }
 
-// killPort stops only the process listening on the port, never anything merely connected to it. The old app killed both,
-// which could take your browser down with it. TERM first, and KILL only after asking.
+// wide says whether a listener answers on every network the machine is on, not only to itself.
+func wide(l host.Listener) bool {
+	return l.Address == "*" || l.Address == "0.0.0.0" || l.Address == "[::]" || l.Address == "::"
+}
+
+// canStop is true for what this user may stop: their own process, not part of the system, and not Catalyst.
+func (a *App) canStop(l host.Listener) bool {
+	return l.PID > 0 && !protectedProcs[l.Command] && l.PID != os.Getpid()
+}
+
+// pickPort lists what can be stopped and stops the one chosen, the same careful way as ports kill.
+func (a *App) pickPort() int {
+	u := a.U
+	var can []host.Listener
+	for _, l := range a.E.Listeners() {
+		if a.canStop(l) {
+			can = append(can, l)
+		}
+	}
+	if len(can) == 0 {
+		u.Say("  " + u.Dim("Nothing here can be stopped by this user."))
+		return ExitOK
+	}
+	u.Say("  " + u.Bold("Which one should stop?") + u.Faint("  ·  ") + u.Dim("it is asked to quit, and only forced if you say so"))
+	u.Blank()
+	items := make([]ui.Item, len(can))
+	for i, l := range can {
+		about := fmt.Sprintf("Process %d", l.PID)
+		if dir := a.E.Folder(l.PID); dir != "" {
+			about += ", running in " + a.E.Tilde(dir)
+		}
+		reach := "this machine only"
+		if wide(l) {
+			reach = "your whole network"
+		}
+		items[i] = ui.Item{Label: fmt.Sprintf("%-6d %s", l.Port, l.Command), Right: reach, About: about}
+	}
+	m := &ui.Menu{Items: items, Single: true, Action: "stop", Cancel: "back"}
+	if !m.Run(u) {
+		a.outcome.SkipWait = true
+		return ExitOK
+	}
+	return a.killPort(can[m.Chosen].Port)
+}
+
 func (a *App) killPort(port int) int {
 	u := a.U
 	find := func() *host.Listener {
