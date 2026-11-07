@@ -161,7 +161,7 @@ func Scan(e *host.Env, sys *space.System, size Measure) Report {
 			if _, err := os.Stat(l.path); err != nil {
 				continue
 			}
-			out = append(out, Area{Name: l.name, Path: l.path, Way: Locked, Bytes: size(l.path), About: l.about, Admin: true})
+			add(Area{Name: l.name, Path: l.path, Way: Locked, Bytes: size(l.path), About: l.about, Admin: true}, 50_000_000)
 		}
 	} else {
 		if s, ok := e.Out("journalctl", "--disk-usage"); ok {

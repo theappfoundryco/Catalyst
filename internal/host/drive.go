@@ -19,7 +19,13 @@ type Drive struct {
 	TemperatureC int    `json:"temperature_c,omitempty"`
 	PowerOnHours int    `json:"power_on_hours,omitempty"`
 	BytesWritten int64  `json:"bytes_written,omitempty"`
+	BytesRead    int64  `json:"bytes_read,omitempty"`
+	Spare        int    `json:"available_spare_percent,omitempty"`
+	SpareLimit   int    `json:"spare_threshold_percent,omitempty"`
+	Unsafe       int64  `json:"unsafe_shutdowns,omitempty"`
+	PowerCycles  int64  `json:"power_cycles,omitempty"`
 	MediaErrors  int64  `json:"media_errors"`
+	NoTool       bool   `json:"-"` // smartctl is not installed
 	Note         string `json:"note,omitempty"`
 }
 
@@ -74,6 +80,7 @@ func (e *Env) DriveHealth() Drive {
 		} else {
 			d.Note = "For wear and temperature: install smartmontools"
 		}
+		d.NoTool = true
 		return d
 	}
 	r := e.Run.Run(15*time.Second, "smartctl", "-j", "-a", d.Device)
@@ -99,6 +106,11 @@ func ParseSmartctl(text string, d *Drive) bool {
 		NVMe *struct {
 			Used        int   `json:"percentage_used"`
 			Written     int64 `json:"data_units_written"`
+			Read        int64 `json:"data_units_read"`
+			Spare       int   `json:"available_spare"`
+			SpareLimit  int   `json:"available_spare_threshold"`
+			Unsafe      int64 `json:"unsafe_shutdowns"`
+			Cycles      int64 `json:"power_cycles"`
 			MediaErrors int64 `json:"media_errors"`
 		} `json:"nvme_smart_health_information_log"`
 	}
@@ -116,6 +128,9 @@ func ParseSmartctl(text string, d *Drive) bool {
 	if s.NVMe != nil {
 		d.WearPercent = s.NVMe.Used
 		d.BytesWritten = s.NVMe.Written * 512000 // NVMe counts in units of 1000 sectors
+		d.BytesRead = s.NVMe.Read * 512000
+		d.Spare, d.SpareLimit = s.NVMe.Spare, s.NVMe.SpareLimit
+		d.Unsafe, d.PowerCycles = s.NVMe.Unsafe, s.NVMe.Cycles
 		d.MediaErrors = s.NVMe.MediaErrors
 	}
 	return true

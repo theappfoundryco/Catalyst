@@ -106,7 +106,7 @@ func cmdSystem(a *App, args []string) int {
 			return a.copyText(r.Areas[i].Path, "the path")
 		}},
 	}
-	m := &ui.Menu{Items: items, Noun: "area", Nouns: "areas", Action: "continue", Note: "each step is shown before it runs", Keys: keys}
+	m := &ui.Menu{Items: items, Noun: "area", Nouns: "areas", Action: "continue", Note: "each step is shown before it runs", Keys: keys, Reserve: 10}
 	if a.inSession {
 		m.Cancel = "back"
 	}

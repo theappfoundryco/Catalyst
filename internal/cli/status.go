@@ -139,6 +139,8 @@ func cmdStatus(a *App, args []string) int {
 	if u.Width() < 60 {
 		bar = 10
 	}
+	a.outcome.Refresh = true
+	a.outcome.Live = 2 * time.Second
 	u.Hdr("Status")
 	u.Row("Machine", name+"  "+u.Dim(a.E.OSName()))
 	if len(h) > 0 {
@@ -163,6 +165,16 @@ func cmdStatus(a *App, args []string) int {
 			}
 			u.Row("Swap", swap+"  "+u.Dim("disk standing in for memory"))
 		}
+		if p, ok := a.E.Pressure(); ok {
+			switch p {
+			case "normal":
+				u.Row("Pressure", u.Green("normal")+u.Dim("  memory is keeping up"))
+			case "warning":
+				u.Row("Pressure", u.Orange("high")+u.Dim("  apps are waiting for memory"))
+			default:
+				u.Row("Pressure", u.Red("critical")+u.Dim("  quit something big"))
+			}
+		}
 	}
 	if volOK {
 		u.Row("Disk", u.Bar(vol.UsedPercent, bar, diskWarn, diskCrit)+"  "+u.Dim(ui.Size(vol.Free)+" free"))
@@ -172,7 +184,24 @@ func cmdStatus(a *App, args []string) int {
 		if bat.Charging {
 			note = "charging"
 		}
+		if bat.TimeLeft != "" {
+			note += ", " + bat.TimeLeft + " left"
+		}
 		u.Row("Battery", u.Green(fmt.Sprintf("%d%%", bat.Percent))+"  "+u.Dim(note))
+	}
+	if t := a.E.Thermal(); t != "" {
+		if t == "normal" {
+			u.Row("Heat", u.Green("normal")+u.Dim("  running at full speed"))
+		} else {
+			u.Row("Heat", u.Orange(t))
+		}
+	}
+	if up, ok := a.E.Uptime(); ok {
+		note := ""
+		if up > 14*24*time.Hour {
+			note = u.Dim("  a restart now and then clears swap and stuck processes")
+		}
+		u.Row("Up for", upFor(up)+note)
 	}
 	if s, ok := a.Store.LastSweep(); ok && s.Bytes > 0 {
 		if a.inSession {
@@ -190,6 +219,16 @@ func cmdStatus(a *App, args []string) int {
 			u.Row("Docker", ui.Count(n, "container", "containers")+" running")
 		}
 	}
+	if cpu := a.E.TopProcs(3, false); len(cpu) > 0 && !*asJSON {
+		u.Sect("Busiest right now")
+		for _, p := range cpu {
+			u.Say(fmt.Sprintf("  %6.0f%%  %s", p.CPU, ui.Fit(p.Name, u.Width()-12)))
+		}
+		u.Say("  " + u.Faint("BY MEMORY"))
+		for _, p := range a.E.TopProcs(3, true) {
+			u.Say(fmt.Sprintf("  %7s  %s", ui.RAM(p.RSS), ui.Fit(p.Name, u.Width()-12)))
+		}
+	}
 	problems, allClear := statusVerdict(loadPct, mem.Percent(), vol.UsedPercent, memOK, volOK, mem.SwapUsed)
 	if len(problems) > 0 {
 		u.Blank()
@@ -202,5 +241,27 @@ func cmdStatus(a *App, args []string) int {
 	} else {
 		u.Blank()
 	}
+	if a.inSession && a.E.Mac() {
+		a.outcome.Actions = append(a.outcome.Actions, session.Action{Key: "a", Label: "Activity Monitor", Do: func() string {
+			if a.E.Run.Run(0, "open", "-a", "Activity Monitor").OK() {
+				return "Opened Activity Monitor."
+			}
+			return "Could not open Activity Monitor."
+		}})
+	}
 	return ExitOK
+}
+
+// upFor is how long the machine has been running, in the largest unit that reads naturally.
+func upFor(d time.Duration) string {
+	days := int(d.Hours()) / 24
+	switch {
+	case days >= 2:
+		return fmt.Sprintf("%d days", days)
+	case days == 1:
+		return fmt.Sprintf("1 day, %d hours", int(d.Hours())-24)
+	case d >= time.Hour:
+		return fmt.Sprintf("%d hours", int(d.Hours()))
+	}
+	return fmt.Sprintf("%d minutes", int(d.Minutes()))
 }

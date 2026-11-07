@@ -38,6 +38,7 @@ type Menu struct {
 	Single    bool   // pick one row with Enter, instead of ticking several
 	Chosen    int    // with Single: the row picked
 	Keys      []MenuKey
+	Reserve   int    // lines printed above the menu, beyond a title, that must stay in view
 	flash     string // what the last extra key did, shown until the next key
 	cur, top  int
 	cancelled bool
@@ -68,6 +69,7 @@ func (m *Menu) frame(u *UI, cols, rows int) []string {
 	if hasPath {
 		view--
 	}
+	view -= m.Reserve
 	for _, it := range m.Items { // a long note takes more lines under the list
 		if Visible(it.About) > cols-8 {
 			view -= 2

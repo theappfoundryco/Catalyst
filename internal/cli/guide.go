@@ -106,7 +106,11 @@ func (a *App) guideFor(r doctor.Result) guide {
 				}
 			}
 			g.why = "A folder on your PATH that does not exist is searched for nothing every time you run a command. It is harmless, only slower, and often left behind by something you uninstalled."
-			g.steps = []string{"Open the file named beside the folder, and delete the line or the part of it that adds the folder.", "A folder added by /etc/paths.d came with an installer. It is safe to leave."}
+			if g.file != "" {
+				g.steps = []string{fmt.Sprintf("Open %s at line %d, and delete the line or the part of it that adds the folder.", a.E.Tilde(g.file), g.line), "Open a new terminal to check."}
+			} else {
+				g.steps = []string{"None of your startup files adds it: macOS or an installer did. It is harmless, so the safe choice is to leave it."}
+			}
 			g.screen, g.label = []string{"path"}, "PATH screen"
 		case strings.Contains(t, "relative folder"):
 			g.why = "A relative folder such as . means \"wherever you are\". A program in a downloaded folder could then run in place of the real one with the same name."
@@ -342,7 +346,13 @@ func (a *App) showGuide(r doctor.Result) {
 				continue
 			}
 			n++
-			u.Say(fmt.Sprintf("  %3d. %s", n, st))
+			for i, l := range u.Wrap(st, u.Width()-8) {
+				if i == 0 {
+					u.Say(fmt.Sprintf("  %3d. %s", n, l))
+				} else {
+					u.Say("       " + l)
+				}
+			}
 		}
 	}
 	if r.Fix != nil && r.Fix.Kind != doctor.FixManual {
