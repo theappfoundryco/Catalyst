@@ -49,6 +49,7 @@ func commands() []command {
 	return []command{
 		{"doctor", "[--fix] [--only group] [--json] [-v]", "find what is wrong and fix what is safe", cmdDoctor},
 		{"sweep", "[paths] [--older-than 14d] [--deep] [--dry-run] [--json]", "reclaim space from build artifacts", cmdSweep},
+		{"clean", "[--dry-run] [--json] [--yes]", "app caches and old logs, which rebuild themselves", cmdClean},
 		{"status", "[--json]", "one-glance health of this machine", cmdStatus},
 		{"space", "[--json]", "where your storage goes, and what can go", cmdSpace},
 		{"undo", "[--yes]", "reverse the last change Catalyst made", cmdUndo},
@@ -151,6 +152,7 @@ func (a *App) homeItems() []session.Item {
 	return []session.Item{
 		item("doctor", "Doctor", false),
 		item("sweep", "Sweep", false),
+		item("clean", "Clean", false),
 		item("status", "Status", false),
 		item("space", "Space", false),
 		undo,

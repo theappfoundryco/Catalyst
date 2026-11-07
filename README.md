@@ -36,15 +36,17 @@ None of that is hard to fix. It is hard to notice. Catalyst looks at the machine
 
 | Command | What it does |
 |---|---|
-| `catalyst` | Opens one list: where things stand, and everything below. Arrow keys move, Enter opens. |
+| `catalyst` | Opens one list on its own screen, so nothing piles up in your scrollback. Arrow keys move, Enter opens, Ctrl-C twice leaves. |
 | `catalyst doctor` | Runs every check at once and gives a health score and a trend. `--fix` shows each change before it happens. |
 | `catalyst sweep` | Reclaims space from build artifacts, and only the ones git confirms are disposable. |
+| `catalyst clean` | App caches and old logs, which rebuild themselves. Open apps are left alone, Apple's own caches are left to macOS, and you can empty just what it moved from the Trash. |
+| `catalyst space` | Where your storage goes, including what macOS counts as itself, and the right way to shrink each big thing. It removes nothing. |
 | `catalyst undo` | Reverses the last change. `catalyst log` lists everything Catalyst ever changed. |
 | `catalyst status` | A one-glance card: load, memory, disk, battery, Docker. |
 | `catalyst disk` | Volumes, drive health and wear. |
 | `catalyst battery` | Charge, cycles and condition. |
 | `catalyst net` | Router, DNS and latency, so you can tell which one is the problem. |
-| `catalyst ports` | What is listening. `ports kill 3000` stops only the listener, never what is connected to it. |
+| `catalyst ports` | What is listening, and from where. `ports stop` lets you choose one, and `ports kill 3000` stops only the listener, never what is connected to it. |
 | `catalyst startup` | What starts by itself, and which of it is broken. |
 | `catalyst ssh` | Your keys, and whether they are safe. |
 | `catalyst path` | Your PATH: dead folders, repeats, what hides what, and which file added each. |
@@ -66,6 +68,7 @@ None of that is hard to fix. It is hard to notice. Catalyst looks at the machine
 
 - **Reading never needs permission. Changing always does.** `doctor` and `sweep` change nothing unless you say so.
 - **Everything is undoable or stated.** Removals go to the system Trash, never `rm`. Every change lands in a journal. What cannot be undone says so first.
+- **Clean's rule.** Only what rebuilds itself, and an app's cache only while the app is closed. Models, virtual machines and backups are big but yours: they are shown with their own tool's way to remove them. Anything that needs admin rights is explained, and where a command helps it is printed for you to run.
 - **Sweep's rule.** A folder has to pass four tests: a marker file proves what kind of project it is, it cannot be a symlink, git must confirm it is ignored and tracks nothing in it, and the project must have been idle for 14 days. With `--yes`, only what rebuilds by itself is taken.
 - **It never sees your password.** If something needs root, Catalyst prints the command for you to run.
 - **No remote code.** Nothing it runs or writes is downloaded. There is no backend, no catalog and no telemetry. The only network calls are `catalyst net` and `catalyst update`, when you ask.

@@ -14,10 +14,11 @@ import (
 
 // The kinds of change.
 const (
-	KindTrash = "trash"  // moved From to To
-	KindChmod = "chmod"  // changed Path's mode from OldMode to NewMode
-	KindRun   = "run"    // ran a command; cannot be undone
-	KindUndo  = "undone" // Batch was reversed
+	KindTrash = "trash"   // moved From to To
+	KindChmod = "chmod"   // changed Path's mode from OldMode to NewMode
+	KindRun   = "run"     // ran a command; cannot be undone
+	KindUndo  = "undone"  // Batch was reversed
+	KindEmpty = "emptied" // Batch was emptied from the Trash, so it can no longer be undone
 )
 
 // Entry is one change.
@@ -86,7 +87,7 @@ func (j *Journal) LastUndoable() []Entry {
 	all := j.All()
 	undone := map[string]bool{}
 	for _, e := range all {
-		if e.Kind == KindUndo {
+		if e.Kind == KindUndo || e.Kind == KindEmpty {
 			undone[e.Batch] = true
 		}
 	}

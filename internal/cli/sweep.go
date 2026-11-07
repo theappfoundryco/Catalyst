@@ -320,6 +320,8 @@ func cmdLog(a *App, args []string) int {
 		switch e.Kind {
 		case journal.KindUndo:
 			what = u.Dim("Undid the change before this")
+		case journal.KindEmpty:
+			what = u.Dim(e.Title)
 		case journal.KindRun:
 			what += u.Dim("  (" + strings.Join(e.Command, " ") + ")")
 		case journal.KindChmod:

@@ -49,7 +49,10 @@ Mistakes that already happened in this project or the Mac app before it, so they
 
 ## Scope
 - **Wrapping what developers already do.** The Mac app had nine screens over `pip` and `brew`, and that is what people called overkill. Catalyst diagnoses those tools. It does not manage them.
-- **Becoming a system cleaner.** Only developer artifacts and developer caches. Other apps and the OS are not ours to clean.
+- **Cleaning what is not a cache.** Clean takes app caches and old logs, which rebuild themselves, and nothing else. Models, virtual machines, backups and simulators are someone's chosen data: show them with their own tool's way to remove them.
+- **Cleaning under a running app.** An app writing to its cache while it disappears can lose work or crash. Leave an open app's cache, and say so.
+- **Touching Apple's caches or admin areas.** macOS manages `com.apple.*`, `/Library/Caches` and its logs. Measure and explain them. Where a command helps, print it.
+- **Promising space that the Trash still holds.** Moving to the Trash frees nothing until it is emptied. Say so, and offer to empty only what was just moved, as a separate, final step.
 
 ## Process
 - **Pushing to `main`.** Use a branch and a pull request.

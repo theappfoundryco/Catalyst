@@ -83,9 +83,10 @@ type Report struct {
 
 // Options control a measure. Floor hides anything smaller from the landmark list.
 type Options struct {
-	Env      *host.Env
-	Floor    int64
-	Progress func(path string)
+	Env           *host.Env
+	Floor         int64
+	Progress      func(path string)
+	LandmarksOnly bool // skip the whole home folder and the apps, for when only the named places matter
 }
 
 // Measure walks the home folder, the apps and the known landmarks. Folders it may not read are counted, never guessed.
@@ -115,6 +116,9 @@ func Measure(o Options) Report {
 			mu.Unlock()
 		}()
 	}
+	if o.LandmarksOnly {
+		entries = nil
+	}
 	for _, ent := range entries {
 		p := filepath.Join(e.Home, ent.Name())
 		if !ent.IsDir() {
@@ -127,7 +131,7 @@ func Measure(o Options) Report {
 		name := ent.Name()
 		measure(p, func(n int64) { r.Home = append(r.Home, Entry{Path: p, Name: name, Bytes: n}) })
 	}
-	if e.Mac() {
+	if e.Mac() && !o.LandmarksOnly {
 		measure("/Applications", func(n int64) { r.Apps = n })
 	}
 	// Landmarks sit inside the home folder, so they get their own pass with a fresh inode set: shared hard links
@@ -158,7 +162,7 @@ func Measure(o Options) Report {
 	sort.Slice(r.Home, func(i, j int) bool { return r.Home[i].Bytes > r.Home[j].Bytes })
 	sort.Slice(r.Landmarks, func(i, j int) bool { return r.Landmarks[i].Bytes > r.Landmarks[j].Bytes })
 	r.Unreadable = sizer.denied
-	if e.Mac() {
+	if e.Mac() && !o.LandmarksOnly {
 		if out, ok := e.Out("diskutil", "apfs", "list"); ok {
 			s := ParseAPFS(out, r.Disk.Name)
 			if s.Total() > 0 {

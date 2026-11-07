@@ -56,7 +56,7 @@ make test
 - A check that could not run reports that. Only a check that ran can pass.
 - Missing tools must never crash anything. A check says skipped with a reason. Never show a stack trace.
 - Do not add a dependency without a clear need. Today there are two, both from the Go project (`golang.org/x/term` and `x/sys`).
-- Do not grow beyond what this tool is for. It diagnoses and cleans dev environments. It does not install or manage your packages, and it does not clean the system or other apps.
+- Do not grow beyond what this tool is for. It diagnoses dev environments and frees space safely: build artifacts, and caches that rebuild themselves. It does not install or manage your packages, and it never deletes someone's data or the system's.
 
 **Style**
 - No em dashes anywhere (code comments, docs, output, commits). Use commas or parentheses.

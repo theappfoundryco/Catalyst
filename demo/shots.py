@@ -134,7 +134,7 @@ def main():
     t.send(b"\x1b[B", 0.2)
     t.send(b" ", 0.3)
     t.save("sweep.png", "catalyst sweep")
-    t = Term([demo], env, cols=88, rows=24)  # the invented machine has a health history, so the header has something to say
+    t = Term([demo], env, cols=88, rows=30)  # the invented machine has a health history, so the header has something to say
     t.pump(1.0)
     t.save("session.png", "catalyst")
     os.write(t.fd, b"\x03")
