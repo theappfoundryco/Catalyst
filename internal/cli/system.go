@@ -60,7 +60,7 @@ func cmdSystem(a *App, args []string) int {
 		if n, ok := sizes[p]; ok {
 			return n
 		}
-		return defaultSize(p)
+		return a.sizeOf(p)
 	})
 	sp.Stop()
 	if len(r.Areas) == 0 {
@@ -237,3 +237,10 @@ func (a *App) measureAsRoot() map[string]int64 {
 }
 
 func defaultSize(p string) int64 { return sweep.DirSize(p, sweep.NewSeen()) }
+
+func (a *App) sizeOf(p string) int64 {
+	if a.SizeOf != nil {
+		return a.SizeOf(p)
+	}
+	return defaultSize(p)
+}

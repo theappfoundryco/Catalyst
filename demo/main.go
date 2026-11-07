@@ -16,6 +16,7 @@ import (
 	"github.com/theappfoundryco/catalyst/internal/journal"
 	"github.com/theappfoundryco/catalyst/internal/run"
 	"github.com/theappfoundryco/catalyst/internal/state"
+	"github.com/theappfoundryco/catalyst/internal/sysdata"
 	"github.com/theappfoundryco/catalyst/internal/ui"
 	"github.com/theappfoundryco/catalyst/internal/version"
 )
@@ -79,8 +80,46 @@ func main() {
 		"docker images -q -f dangling=true":       {},
 		"launchctl list":                          {},
 		"/usr/libexec/java_home":                  {Code: 1},
+		// Status, Battery and Ports, all invented.
+		"sw_vers -productVersion":                       {Stdout: "15.3"},
+		"sysctl -n hw.ncpu":                             {Stdout: "10"},
+		"sysctl -n vm.loadavg":                          {Stdout: "{ 2.84 2.61 2.40 }"},
+		"sysctl -n kern.memorystatus_vm_pressure_level": {Stdout: "1"},
+		"sysctl -n kern.boottime":                       {Stdout: fmt.Sprintf("{ sec = %d, usec = 0 }", now.Add(-77*time.Hour).Unix())},
+		"pmset -g batt":                                 {Stdout: "Now drawing from 'Battery Power'\n -InternalBattery-0 (id=1)\t82%; discharging; 6:40 remaining present: true"},
+		"pmset -g":                                      {Stdout: " lowpowermode         0\n"},
+		"pmset -g therm":                                {Stdout: "Note: No thermal warning level has been recorded\n"},
+		"system_profiler -json SPPowerDataType":         {Stdout: `{"SPPowerDataType":[{"sppower_battery_health_info":{"sppower_battery_cycle_count":212,"sppower_battery_health":"Good","sppower_battery_health_maximum_capacity":"94%"}}]}`},
+		"ioreg -rn AppleSmartBattery":                   {Stdout: "\"Temperature\" = 2980\n\"DesignCapacity\" = 6075\n\"AppleRawMaxCapacity\" = 5710\n\"DesignCycleCount9C\" = 1000\n\"Voltage\" = 12410\n\"InstantAmperage\" = 18446744073709550916\n\"BatteryData\" = {\"CellVoltage\"=(4137,4136,4137)}\n"},
+		"ps -Aceo pcpu=,rss=,comm=":                     {Stdout: " 38.0 2400000 Xcode\n 22.0 1800000 Google Chrome\n  9.0  300000 Google Chrome Helper (Renderer)\n 14.0  900000 node\n  3.0 1100000 Slack\n  1.0  200000 Terminal\n"},
+		"docker ps -q":                                  {Stdout: "a1\nb2\n"},
+		"lsof -nP -iTCP -sTCP:LISTEN -F pcun +c 0":      {Stdout: "p4120\ncnode\nu501\nn127.0.0.1:3000\np4188\ncpostgres\nu501\nn127.0.0.1:5432\np5020\ncredis-server\nu501\nn127.0.0.1:6379\np6230\ncPython\nu501\nn*:8000\np377\ncrapportd\nu501\nn*:49152\n"},
+		"ps -o lstart= -p 4120":                         {Stdout: "Thu Mar 12 08:55:10 2026"},
+		"ps -o command= -p 4120":                        {Stdout: "node /Users/alex/Developer/shop-api/node_modules/.bin/next dev"},
+		// System Data: macOS's own volumes and the snapshots, invented.
+		"diskutil apfs list":          {Stdout: "APFS Volume Disk (Role):   disk3s1 (System)\nCapacity Consumed:         11258822656 B\nAPFS Volume Disk (Role):   disk3s2 (Preboot)\nCapacity Consumed:         7381000000 B\nAPFS Volume Disk (Role):   disk3s3 (Recovery)\nCapacity Consumed:         1043000000 B\nAPFS Volume Disk (Role):   disk3s6 (VM)\nCapacity Consumed:         3221225472 B\n"},
+		"tmutil listlocalsnapshots /": {Stdout: "Snapshots for disk /:\ncom.apple.TimeMachine.2026-03-12-080011.local\ncom.apple.TimeMachine.2026-03-12-090014.local\ncom.apple.TimeMachine.2026-03-12-093002.local\n"},
 	}
-	tools := map[string]string{"zsh": "/bin/zsh", "git": bin + "git", "node": bin + "node", "npm": bin + "npm", "python3": bin + "python3", "pip3": bin + "pip3", "docker": bin + "docker"}
+	tools := map[string]string{"zsh": "/bin/zsh", "git": bin + "git", "node": bin + "node", "npm": bin + "npm", "python3": bin + "python3", "pip3": bin + "pip3", "docker": bin + "docker", "colima": bin + "colima", "huggingface-cli": bin + "huggingface-cli"}
+	for _, d := range []string{".colima", ".cache/huggingface", "Library/Developer/Xcode/DerivedData"} {
+		os.MkdirAll(filepath.Join(home, d), 0o700)
+	}
+	// What System Data measures outside the home folder is invented too, so no real machine reaches a screenshot.
+	sizes := map[string]int64{
+		".colima": 9_400_000_000, ".cache/huggingface": 6_800_000_000, "Library/Developer/Xcode/DerivedData": 4_100_000_000,
+		"/Applications/Install macOS Sequoia.app": 15_200_000_000, "/Library/Application Support/com.apple.idleassetsd/Customer": 2_900_000_000,
+		"/private/var/folders": 1_400_000_000, "/private/var/db/diagnostics": 1_100_000_000, "/private/var/db/uuidtext": 640_000_000,
+		"/System/Library/AssetsV2": 3_600_000_000, "/Library/Developer/CommandLineTools": 2_300_000_000, "/Library/Caches": 410_000_000,
+	}
+	sysdata.Exists = func(p string) bool {
+		if strings.HasPrefix(p, home) {
+			_, err := os.Stat(p)
+			return err == nil
+		}
+		_, ok := sizes[p]
+		return ok
+	}
+	sysdata.Glob = func(string) ([]string, error) { return []string{"/Applications/Install macOS Sequoia.app"}, nil }
 	e := host.ForTest(home, "darwin", slowRunner{&run.Fake{Replies: replies}, &clock})
 	e.SetCLT(true)
 	e.Shell = "/bin/zsh"
@@ -95,9 +134,18 @@ func main() {
 	}
 	store := state.New(home, nil)
 	store.Record(state.Health{Date: now.AddDate(0, 0, -2), Score: 44, Issues: 6})
+	store.Record(state.Health{Date: now.Add(-40 * time.Minute), Score: 72, Issues: 4})
+	name := "Alex"
+	store.SaveConfig(state.Config{Name: &name, SetupDone: true})
 	u := ui.New()
 	u.Mascot = true
-	a := &cli.App{U: u, E: e, Store: store, Journal: journal.New(store.Dir)}
+	e.Hostname = func() string { return "alex-mbp" }
+	a := &cli.App{U: u, E: e, Store: store, Journal: journal.New(store.Dir), SizeOf: func(p string) int64 {
+		if n, ok := sizes[strings.TrimPrefix(p, home+"/")]; ok {
+			return n
+		}
+		return sizes[p]
+	}}
 	fmt.Fprint(os.Stdout, "")
 	cli.Dispatch(a, os.Args[1:])
 }

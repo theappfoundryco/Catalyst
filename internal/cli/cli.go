@@ -33,9 +33,10 @@ type App struct {
 	Journal *journal.Journal
 
 	inSession bool
-	outcome   session.Outcome // what the session should do once this command returns
-	reaction  reaction        // what Kit and the home screen say about it
-	rowID     int             // rows marked by the command running now
+	outcome   session.Outcome         // what the session should do once this command returns
+	reaction  reaction                // what Kit and the home screen say about it
+	rowID     int                     // rows marked by the command running now
+	SizeOf    func(path string) int64 // how big a folder is; the demo replaces it
 	pages     map[string]func()
 	pageID    int
 }

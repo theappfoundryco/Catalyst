@@ -25,6 +25,7 @@ type Env struct {
 	Entries  []string // the PATH a new terminal gets, in order
 	JavaHome string   // JAVA_HOME as a new terminal sees it
 	NvmDir   string   // NVM_DIR as a new terminal sees it
+	Hostname func() string
 	hasCLT   *bool
 }
 
@@ -35,6 +36,7 @@ func New() *Env {
 	e := &Env{
 		OS: runtime.GOOS, Arch: runtime.GOARCH, Home: home, Shell: os.Getenv("SHELL"),
 		Run: run.Real{}, Look: exec.LookPath, Getenv: os.Getenv, Now: time.Now,
+		Hostname: func() string { n, _ := os.Hostname(); return n },
 	}
 	e.Entries = splitPath(os.Getenv("PATH"))
 	e.JavaHome = os.Getenv("JAVA_HOME")
@@ -159,7 +161,8 @@ func (e *Env) RCFiles() []string {
 func ForTest(home, goos string, r run.Runner) *Env {
 	return &Env{
 		OS: goos, Arch: "arm64", Home: home, Run: r,
-		Look: func(string) (string, error) { return "", exec.ErrNotFound },
-		Now:  time.Now,
+		Look:     func(string) (string, error) { return "", exec.ErrNotFound },
+		Now:      time.Now,
+		Hostname: func() string { return "alex-laptop" },
 	}
 }

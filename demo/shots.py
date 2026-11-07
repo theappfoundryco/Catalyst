@@ -57,7 +57,21 @@ class Term:
                 last = y
         return last + 1
 
+    def settle(self):
+        # The health dot redraws the screen ten times a second. A frame arrives in pieces within a moment of each other,
+        # so a short silence means the last one is complete and the picture is whole.
+        end = time.time() + 2
+        while time.time() < end:
+            r, _, _ = select.select([self.fd], [], [], 0.03)
+            if not r:
+                return
+            try:
+                self.stream.feed(os.read(self.fd, 65536))
+            except OSError:
+                return
+
     def save(self, name, title):
+        self.settle()
         rows = self.used_rows()
         pad, bar = 28, 52
         img = Image.new("RGB", (self.cols * CW + pad * 2, rows * CH + pad * 2 + bar), BG)
@@ -137,7 +151,30 @@ def main():
     t = Term([demo], env, cols=88, rows=30)  # the invented machine has a health history, so the header has something to say
     t.pump(1.0)
     t.save("session.png", "catalyst")
-    os.write(t.fd, b"\x03")
+    t.send(b"\r", 5)  # Doctor, then Enter on its first finding opens the guide
+    t.send(b"\r", 2)
+    t.save("guide.png", "catalyst")
+    os.write(t.fd, b"\x03\x03")
+    t = Term([demo], env, cols=88, rows=26)
+    t.pump(1.0)
+    for _ in range(9):
+        t.send(b"\x1b[B", 0.05)
+    t.send(b"\r", 2)
+    t.send(b"\x1b[B", 0.2)
+    t.save("ports.png", "catalyst")
+    os.write(t.fd, b"\x03\x03")
+    t = Term([demo, "status"], env, cols=88, rows=34)
+    t.pump(2)
+    t.save("status.png", "catalyst status")
+    t = Term([demo, "battery"], env, cols=88, rows=24)
+    t.pump(2)
+    t.save("battery.png", "catalyst battery")
+    t = Term([demo, "system"], env, cols=88, rows=46)
+    t.pump(3)
+    t.send(b"\x1b[B", 0.2)
+    t.send(b" ", 0.3)
+    t.save("system.png", "catalyst system")
+    os.write(t.fd, b"\x1b")
     shutil.rmtree(home, ignore_errors=True)
     shutil.rmtree(tmp, ignore_errors=True)
     art()

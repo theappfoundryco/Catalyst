@@ -49,6 +49,12 @@ type Report struct {
 	Areas []Area `json:"areas"`
 }
 
+// Exists and Glob look at the machine. The demo replaces them, so a screenshot never shows a real one.
+var (
+	Exists = func(p string) bool { _, err := os.Stat(p); return err == nil }
+	Glob   = filepath.Glob
+)
+
 // Measure is how big a folder is. Tests replace it.
 type Measure func(path string) int64
 
@@ -74,8 +80,7 @@ func Scan(e *host.Env, sys *space.System, size Measure) Report {
 		if strings.HasPrefix(p, "~/") {
 			p = e.Path(strings.Split(p[2:], "/")...)
 		}
-		_, err := os.Stat(p)
-		return p, err == nil
+		return p, Exists(p)
 	}
 	look := func(tool string) bool { _, err := e.Look(tool); return err == nil }
 	const big = 300_000_000
@@ -112,7 +117,7 @@ func Scan(e *host.Env, sys *space.System, size Measure) Report {
 		if p, ok := at("~/Library/Developer/Xcode/DerivedData"); ok {
 			add(Area{Name: "Xcode build data", Path: p, Way: Trash, Bytes: size(p), About: "Xcode's build products and indexes. They are made again on the next build.", Cost: "The next build of each project takes longer."}, big)
 		}
-		installers, _ := filepath.Glob("/Applications/Install macOS*.app")
+		installers, _ := Glob("/Applications/Install macOS*.app")
 		for _, p := range installers {
 			add(Area{Name: strings.TrimSuffix(filepath.Base(p), ".app"), Path: p, Way: Trash, Bytes: size(p), About: "A full macOS installer, left after an upgrade or downloaded by hand.", Cost: "Only needed to make a bootable installer. It can be downloaded again."}, 1)
 		}
@@ -158,7 +163,7 @@ func Scan(e *host.Env, sys *space.System, size Measure) Report {
 			{"/Library/Developer/CommandLineTools", "Command Line Tools", "git, make and the compilers come from here. Removing it breaks them."},
 			{"/Library/Caches", "System caches", "Caches for the system's own services. macOS clears them when it needs to."},
 		} {
-			if _, err := os.Stat(l.path); err != nil {
+			if !Exists(l.path) {
 				continue
 			}
 			add(Area{Name: l.name, Path: l.path, Way: Locked, Bytes: size(l.path), About: l.about, Admin: true}, 50_000_000)
@@ -191,7 +196,7 @@ func Scan(e *host.Env, sys *space.System, size Measure) Report {
 			{"/usr", "Installed programs", "Everything your package manager installed. Remove programs with it, never by hand."},
 			{"/boot", "Kernels", "What the machine starts from. Old kernels go with apt autoremove."},
 		} {
-			if _, err := os.Stat(l.path); err == nil {
+			if Exists(l.path) {
 				add(Area{Name: l.name, Path: l.path, Bytes: size(l.path), Way: Locked, About: l.about}, 1)
 			}
 		}

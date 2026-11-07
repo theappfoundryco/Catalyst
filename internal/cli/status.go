@@ -2,7 +2,6 @@ package cli
 
 import (
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -119,7 +118,7 @@ func cmdStatus(a *App, args []string) int {
 		return code
 	}
 	u := a.U
-	name, _ := os.Hostname()
+	name := a.E.Hostname()
 	load, threads := a.E.Load()
 	mem, memOK := a.E.Memory()
 	vol, volOK := a.E.HomeVolume()
