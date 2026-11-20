@@ -1,6 +1,8 @@
 package checks
 
 import (
+	"strings"
+
 	d "github.com/theappfoundryco/catalyst/internal/doctor"
 	"github.com/theappfoundryco/catalyst/internal/host"
 )
@@ -16,7 +18,7 @@ func buildTools(e *host.Env) []d.Result {
 				With("git, python3 and most compilers need them. Apple's installer opens a window.").
 				Manual("xcode-select", "--install")}
 		}
-		return []d.Result{d.Pass("Apple's Command Line Tools are installed")}
+		return xcodeState(e, host.Exists)
 	}
 	var missing []string
 	for _, t := range []string{"cc", "make"} {
@@ -45,4 +47,26 @@ func asRoot(e *host.Env, cmd []string) []string {
 		return cmd
 	}
 	return append([]string{"sudo"}, cmd...)
+}
+
+// xcodeState catches the two ways a macOS or Xcode update leaves compilers broken while the tools look installed, both
+// as brew doctor finds them: xcode-select pointing at a folder that is gone (an Xcode deleted or renamed), and an Xcode
+// whose licence nobody has agreed to, which makes every compiler refuse to run. xcrun is only run once the tools exist,
+// since without them it opens Apple's install dialog.
+func xcodeState(e *host.Env, exists func(string) bool) []d.Result {
+	dir, ok := e.Out("xcode-select", "-p")
+	if ok && dir != "" && !exists(dir+"/usr/bin") {
+		return []d.Result{d.Crit("xcode-select points at "+dir+", which is gone").
+			With("git, make and compilers fail until it points at real tools. Reset it to the default:").
+			Manual("sudo", "xcode-select", "--reset")}
+	}
+	if strings.Contains(dir, ".app/") {
+		r := e.Run.Run(0, "xcrun", "--find", "clang")
+		if !r.OK() && strings.Contains(strings.ToLower(r.Stdout+r.Stderr), "license") {
+			return []d.Result{d.Crit("Xcode's licence has not been agreed to, so its compilers refuse to run").
+				With("Open Xcode once and agree, or read and agree in the terminal:").
+				Manual("sudo", "xcodebuild", "-license")}
+		}
+	}
+	return []d.Result{d.Pass("Apple's Command Line Tools are installed")}
 }
