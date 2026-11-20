@@ -1402,6 +1402,9 @@ func (a *App) showPath() int {
 		src := u.Dim(ui.Fit(a.E.Tilde(e.src), srcW))
 		if e.src == "" {
 			src = u.Faint("macOS or the shell")
+			if !a.E.Mac() {
+				src = u.Faint("the system or the shell")
+			}
 		}
 		dir := ui.Fit(a.E.Tilde(e.dir), dirW)
 		dir += strings.Repeat(" ", max(0, dirW-ui.Visible(dir)))
@@ -1482,13 +1485,33 @@ func (a *App) pathSource(dir string) (string, int) {
 				continue
 			}
 			for _, needle := range []string{dir, short, tilde} {
-				if strings.Contains(line, needle) {
+				if NamesFolder(line, needle) {
 					return rc, n + 1
 				}
 			}
 		}
 	}
 	return "", 0
+}
+
+// NamesFolder says whether a startup file line puts this folder on PATH. The folder has to end where a path ends,
+// so "/usr/bin/lesspipe" does not count as adding /usr/bin. Homebrew's shellenv line names brew inside the folder,
+// and it is what adds it, so that one counts.
+func NamesFolder(line, dir string) bool {
+	for i := 0; ; {
+		j := strings.Index(line[i:], dir)
+		if j < 0 {
+			return false
+		}
+		end := i + j + len(dir)
+		if end == len(line) || strings.ContainsRune(":\"' );}\t", rune(line[end])) {
+			return true
+		}
+		if line[end] == '/' && strings.Contains(line, "shellenv") {
+			return true
+		}
+		i = end
+	}
 }
 
 type shadow struct{ tool, winner, hidden string }
