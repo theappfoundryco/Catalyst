@@ -54,6 +54,10 @@ func cmdDoctor(a *App, args []string) int {
 	sp := u.Spin("Reading what a new terminal sees")
 	a.E.LoadShell()
 	sp.Stop()
+	snap := make(chan state.Snapshot, 1)
+	if len(filter) == 0 {
+		go func() { snap <- a.snapshot(0) }() // alongside the checks, so it adds no time
+	}
 	scan := doctor.Start(a.E, doctor.All(), filter)
 	if len(scan.Checks) == 0 {
 		u.Stop("No check matches " + *only + ".")
@@ -64,6 +68,9 @@ func cmdDoctor(a *App, args []string) int {
 	counts := doctor.Count(all)
 	if len(filter) == 0 {
 		a.Store.Record(state.Health{Date: a.E.Now(), Score: score, Issues: counts.Critical + counts.Warning + counts.Info, Critical: counts.Critical})
+		s := <-snap // what catalyst changes compares with, later
+		s.Score = score
+		a.Store.SaveSnapshot(s)
 	}
 	u.Blank()
 	a.verdict(all, score, counts, *fix)
