@@ -131,6 +131,17 @@ func Scan(e *host.Env, sys *space.System, size Measure) Report {
 		if p, ok := at("~/Library/Developer/Xcode/DerivedData"); ok {
 			add(Area{Name: "Xcode build data", Path: p, Way: Trash, Bytes: size(p), About: "Xcode's build products and indexes. They are made again on the next build.", Cost: "The next build of each project takes longer."}, big)
 		}
+		// Debug symbols Xcode copies from each iPhone, Watch or TV you plug in, one folder per OS version, never pruned.
+		for _, d := range []struct{ dir, device string }{{"iOS DeviceSupport", "iPhone or iPad"}, {"watchOS DeviceSupport", "Apple Watch"}, {"tvOS DeviceSupport", "Apple TV"}, {"visionOS DeviceSupport", "Vision Pro"}} {
+			if p, ok := at("~/Library/Developer/Xcode/" + d.dir); ok {
+				add(Area{Name: "Xcode " + d.dir, Path: p, Way: Trash, Bytes: size(p), About: "Debugging files Xcode copied from each " + d.device + " you connected, one set per system version.",
+					Cost: "Xcode copies them again the next time that device connects, which takes a few minutes."}, big)
+			}
+		}
+		if p, ok := at("~/Library/Developer/Xcode/Archives"); ok {
+			add(Area{Name: "Xcode archives", Path: p, Way: Locked, Bytes: size(p), About: "Builds you archived to ship, with what is needed to read their crash reports.",
+				Cost: "These are yours to choose. Delete old ones in Xcode, Window, Organizer, Archives."}, big)
+		}
 		installers, _ := Glob("/Applications/Install macOS*.app")
 		for _, p := range installers {
 			add(Area{Name: strings.TrimSuffix(filepath.Base(p), ".app"), Path: p, Way: Trash, Bytes: size(p), About: "A full macOS installer, left after an upgrade or downloaded by hand.", Cost: "Only needed to make a bootable installer. It can be downloaded again."}, 1)
