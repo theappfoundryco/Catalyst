@@ -450,7 +450,7 @@ func archName(a string) string {
 	return a
 }
 
-// Package names that differ by family, for Install. "" is the name everywhere else.
+// Names of packages that differ by family, for Install. "" is the name everywhere else.
 var (
 	BuildToolsPkgs = map[string]string{"debian": "build-essential", "fedora": "@development-tools", "rhel": "@development",
 		"suse": "-t pattern devel_basis", "arch": "base-devel", "alpine": "build-base", "void": "base-devel", "gentoo": "sys-devel/gcc", "": "gcc make"}
