@@ -27,8 +27,15 @@ func startupItems(e *host.Env) []d.Result {
 		}
 		return out
 	}
+	p := e.Platform()
+	if p.InContainer() && p.Init == "" { // a system container (LXC, Incus) runs its own init and its own services
+		return []d.Result{d.Skip("No service check inside a container: the host runs the services")}
+	}
 	_, err := e.Look("systemctl")
 	if err != nil {
+		if p.Init != "" && p.Init != "systemd" {
+			return []d.Result{d.Skip("Services here are run by " + p.Init + ", not systemd")}
+		}
 		return []d.Result{d.Skip("No systemd here")}
 	}
 	seen := 0

@@ -22,6 +22,9 @@ func firewall(e *host.Env) []d.Result {
 		}
 		return []d.Result{d.Note("The firewall is off").With("Fine on a trusted network. Turn it on in System Settings, Network, Firewall.")}
 	}
+	if p := e.Platform(); p.InContainer() {
+		return []d.Result{d.Skip("No firewall check inside a container: the host's firewall is what counts")}
+	}
 	if _, err := e.Look("firewall-cmd"); err == nil {
 		if s, ok := e.Out("firewall-cmd", "--state"); ok && s == "running" {
 			return []d.Result{d.Pass("The firewall (firewalld) is on")}
