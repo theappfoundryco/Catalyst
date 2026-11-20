@@ -1494,8 +1494,8 @@ func (a *App) pathSource(dir string) (string, int) {
 	return "", 0
 }
 
-// NamesFolder says whether a startup file line puts this folder on PATH. The folder has to end where a path ends,
-// so "/usr/bin/lesspipe" does not count as adding /usr/bin. Homebrew's shellenv line names brew inside the folder,
+// NamesFolder says whether a startup file line puts this folder on PATH. The folder has to start and end where a path
+// does, so neither "/usr/bin/lesspipe" nor "/opt/a/bin" counts as adding /usr/bin or /bin. Homebrew's shellenv line names brew inside the folder,
 // and it is what adds it, so that one counts.
 func NamesFolder(line, dir string) bool {
 	for i := 0; ; {
@@ -1503,14 +1503,18 @@ func NamesFolder(line, dir string) bool {
 		if j < 0 {
 			return false
 		}
-		end := i + j + len(dir)
+		start, end := i+j, i+j+len(dir)
+		i = end
+		// It has to start where a path starts too, so "/opt/a/bin" does not count as /bin.
+		if start > 0 && !strings.ContainsRune(":=\"' (\t", rune(line[start-1])) {
+			continue
+		}
 		if end == len(line) || strings.ContainsRune(":\"' );}\t", rune(line[end])) {
 			return true
 		}
 		if line[end] == '/' && strings.Contains(line, "shellenv") {
 			return true
 		}
-		i = end
 	}
 }
 
