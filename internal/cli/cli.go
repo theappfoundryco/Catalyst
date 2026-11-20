@@ -66,6 +66,7 @@ func commands() []command {
 		{"startup", "[disable NAME | enable NAME] [--json]", "what starts by itself", cmdStartup},
 		{"ssh", "[--json]", "your keys and whether they are safe", cmdSSH},
 		{"path", "[add | remove | status]", "your PATH: dead folders, repeats and shadows", cmdPath},
+		{"why", "NAME [--json]", "which copy of a program runs, and why that one", cmdWhy},
 		{"config", "[set name NAME | set mascot on|off | set animations on|off]", "show or change settings", cmdConfig},
 		{"helpers", "[install NAME]", "tools that let Catalyst see more, such as smartmontools", cmdHelpers},
 		{"setup", "", "the welcome: your name, and helpers worth having", cmdSetup},
