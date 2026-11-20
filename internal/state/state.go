@@ -37,6 +37,17 @@ type Config struct {
 	Name      *string  `json:"name,omitempty"`             // what to call the person; set but empty means they chose not to say
 	NoHelpers []string `json:"declined_helpers,omitempty"` // helper tools the person said no to, so setup stops offering them
 	SetupDone bool     `json:"setup_done,omitempty"`
+	Muted     []string `json:"muted_checks,omitempty"` // doctor checks whose issues the person chose to stop hearing about
+}
+
+// IsMuted says whether a doctor check is muted.
+func (c Config) IsMuted(check string) bool {
+	for _, m := range c.Muted {
+		if m == check {
+			return true
+		}
+	}
+	return false
 }
 
 // MascotOn says whether Kit may appear. On unless turned off.
