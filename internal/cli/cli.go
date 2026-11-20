@@ -55,6 +55,7 @@ func commands() []command {
 		{"sweep", "[paths] [--older-than 14d] [--deep] [--dry-run] [--json]", "reclaim space from build artifacts", cmdSweep},
 		{"clean", "[--dry-run] [--json] [--yes]", "app caches and old logs, which rebuild themselves", cmdClean},
 		{"status", "[--json]", "one-glance health of this machine", cmdStatus},
+		{"project", "[DIR] [--json]", "the repository you are in: pinned versions, lockfiles, .env and hooks", cmdProject},
 		{"space", "[--in PATH] [--json]", "where your storage goes, and what can go", cmdSpace},
 		{"system", "[--dry-run] [--admin] [--json]", "what macOS calls System Data, and what can safely go", cmdSystem},
 		{"undo", "[--yes]", "reverse the last change Catalyst made", cmdUndo},
