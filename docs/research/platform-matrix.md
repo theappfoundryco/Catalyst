@@ -65,6 +65,36 @@ Score is people who hit it (1 to 5) x time it wastes (1 to 5) x how quietly it c
 
 ## Per image
 
-Filled in from the container runs in `.cache/matrix/`. Each row: what was detected, what ran, what skipped and why, and anything wrong.
+Every read-only command, run with `scripts/distro-matrix.sh` on the build of `overnight/2026-11-21` (all PRs together), as root. The same images as uid 1000 gave the same platform, and no run crashed or printed a stack trace: 38 of 38 runs passed. "Ran" counts checks that passed or found something; "Skipped" includes every check that does not apply inside a container, each with its reason. Images have almost nothing installed, which is why git and a compiler are missing everywhere.
 
-(see the tables appended below by the matrix run)
+| Image | Detected | Family | libc | Init | Container | Package managers | Ran | Skipped | Issues found | Errors |
+|---|---|---|---|---|---|---|---|---|---|---|
+| `almalinux_8` | AlmaLinux 8.10 (Cerulean Leopard) | rhel | glibc 2.28 | - | docker | dnf | 7 | 18 | No compiler or make here, so packages that build from source will fail; git is not installed | - |
+| `alpine_3.18` | Alpine Linux v3.18 | alpine | musl | - | docker | apk | 6 | 19 | No compiler or make here, so packages that build from source will fail; git is not installed; Your PATH has 1 folder that does not exist | - |
+| `alpine_3.20` | Alpine Linux v3.20 | alpine | musl | - | docker | apk | 6 | 19 | No compiler or make here, so packages that build from source will fail; git is not installed; Your PATH has 1 folder that does not exist | - |
+| `amazonlinux_2023` | Amazon Linux 2023.12.20261117 | rhel | glibc 2.34 | - | docker | dnf | 8 | 17 | No compiler or make here, so packages that build from source will fail; git is not installed | - |
+| `archlinux_latest` | Arch Linux | arch | glibc 2.44 | - | docker | pacman | 6 | 19 | No compiler or make here, so packages that build from source will fail; git is not installed | - |
+| `debian_11` | Debian GNU/Linux 11 (bullseye) | debian | glibc 2.31 | - | docker | apt | 7 | 18 | No compiler or make here, so packages that build from source will fail; git is not installed | - |
+| `debian_13` | Debian GNU/Linux 13 (trixie) | debian | glibc 2.41 | - | docker | apt | 7 | 18 | No compiler or make here, so packages that build from source will fail; git is not installed | - |
+| `fedora_40` | Fedora Linux 40 (Container Image) | fedora | glibc 2.39 | - | docker | dnf | 9 | 16 | No compiler or make here, so packages that build from source will fail; git is not installed | - |
+| `fedora_41` | Fedora Linux 41 (Container Image) | fedora | glibc 2.40 | - | docker | dnf | 7 | 18 | No compiler or make here, so packages that build from source will fail; git is not installed | - |
+| `ghcr.io_void-linux_void-glibc_latest` | Void Linux | void | glibc 2.41 | - | docker | xbps | 6 | 19 | No compiler or make here, so packages that build from source will fail; git is not installed | - |
+| `golang_1.27` | Debian GNU/Linux 13 (trixie) | debian | glibc 2.41 | - | docker | apt | 10 | 15 | git does not know your name and email, so commits will fail or look wrong | - |
+| `nixos_nix_latest` | Linux | unknown | ? | - | docker | nix | 8 | 17 | No compiler or make here, so packages that build from source will fail; git does not know your name and email, so commits will fail or look wrong | - |
+| `opensuse_leap_15.6` | openSUSE Leap 15.6 | suse | glibc 2.38 | - | docker | zypper | 7 | 18 | No compiler or make here, so packages that build from source will fail; git is not installed | - |
+| `opensuse_tumbleweed` | openSUSE Tumbleweed | suse | glibc 2.44 | - | docker | zypper | 6 | 19 | No compiler or make here, so packages that build from source will fail; git is not installed | - |
+| `rockylinux_9` | Rocky Linux 9.9 (Blue Onyx) | rhel | glibc 2.34 | - | docker | dnf | 9 | 16 | No compiler or make here, so packages that build from source will fail; git is not installed | - |
+| `ubuntu_20.04` | Ubuntu 20.04.6 LTS | debian | glibc 2.31 | - | docker | apt | 7 | 18 | No compiler or make here, so packages that build from source will fail; git is not installed | - |
+| `ubuntu_22.04` | Ubuntu 22.04.5 LTS | debian | glibc 2.35 | - | docker | apt | 7 | 18 | No compiler or make here, so packages that build from source will fail; git is not installed | - |
+| `ubuntu_24.04` | Ubuntu 24.04.5 LTS | debian | glibc 2.39 | - | docker | apt | 7 | 18 | No compiler or make here, so packages that build from source will fail; git is not installed | - |
+
+Not a problem, but worth knowing: `nixos/nix` is not NixOS and has no os-release, so it reads as "Linux, unknown family", and nothing is guessed. Alpine's default PATH names `/usr/local/sbin`, which does not exist in the image, so `shell.path` notes one missing folder there.
+
+Also run:
+
+| Where | What | Result |
+|---|---|---|
+| x86_64 Ubuntu 24.04 desktop (native, read only) | every read-only command, and the new why, project, report, changes | Ubuntu 24.04.5 LTS, x86_64, glibc 2.39, systemd; apt, snap, brew. No crash. Doctor 1.4 s. Bugs found and fixed: `path` crediting the wrong startup line (#59), "your 0 keys" (#46), `/bin` and `/usr/bin` listed twice in `why` |
+| `jrei/systemd-debian:12`, privileged, `/sbin/init` | doctor with one failing unit | First run skipped services "inside a container", which is wrong for a system container. Fixed in #45; afterwards the unit was reported for root and `nobody`, and the journal read |
+| macos-15-intel, macos-15, macos-latest (26.7) runners | test suite and every read-only command | Intel macOS 15.7.9 reads as x86_64, Apple silicon as ARM64; launchd; brew. No crash |
+| Each family's image | install suggestions in simulate mode | All resolve. openSUSE Leap's `devel_basis` conflicts on libncurses6 inside the image itself |
