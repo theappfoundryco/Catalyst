@@ -91,11 +91,25 @@ func Scan(e *host.Env, sys *space.System, size Measure) Report {
 		cmd                     []string
 		os                      string
 	}
+	goMod := "~/go/pkg/mod" // GOMODCACHE moves it, as the golang images do
+	if look("go") {
+		if v, ok := e.Out("go", "env", "GOMODCACHE"); ok && v != "" {
+			goMod = v
+		}
+	}
 	for _, o := range []owned{
 		{"~/.colima", "Colima's virtual machine", "The Linux machine Colima runs Docker in, with its images and containers.", "Its containers, images and volumes go with it. colima start makes a fresh one.", []string{"colima", "delete"}, ""},
 		{"~/Library/Containers/com.docker.docker", "Docker Desktop's disk", "Docker Desktop's images, containers and build cache.", "Removes stopped containers, unused images and the build cache. It asks first.", []string{"docker", "system", "prune"}, "darwin"},
 		{"~/.local/share/containers", "Podman's images", "Podman's images and containers.", "Removes what no container uses. It asks first.", []string{"podman", "system", "prune"}, "linux"},
 		{"~/.cache/huggingface", "Hugging Face models", "Models downloaded by Python libraries such as transformers.", "You choose which models go. They download again when a script needs them.", []string{"huggingface-cli", "delete-cache"}, ""},
+		// Developer tool caches that only their own tool should remove: Go's module cache is read-only on disk, and pnpm,
+		// uv and bun keep stores that projects link into, which a plain delete would break.
+		{goMod, "Go module cache", "Every module version your Go builds have downloaded.", "They download again on the next build that needs them.", []string{"go", "clean", "-modcache"}, ""},
+		{"~/.local/share/pnpm/store", "pnpm store", "The one copy of each package that your pnpm projects link to.", "Removes only packages no project uses.", []string{"pnpm", "store", "prune"}, "linux"},
+		{"~/Library/pnpm/store", "pnpm store", "The one copy of each package that your pnpm projects link to.", "Removes only packages no project uses.", []string{"pnpm", "store", "prune"}, "darwin"},
+		{"~/.cache/uv", "uv cache", "Python packages and interpreters uv has downloaded.", "Removes only what no environment uses.", []string{"uv", "cache", "prune"}, ""},
+		{"~/.bun/install/cache", "bun cache", "Packages bun has downloaded.", "They download again on the next bun install.", []string{"bun", "pm", "cache", "rm"}, ""},
+		{"~/Library/Caches/CocoaPods", "CocoaPods cache", "Pods CocoaPods has downloaded.", "They download again on the next pod install.", []string{"pod", "cache", "clean", "--all"}, "darwin"},
 		{"~/Library/Developer/CoreSimulator", "iOS simulators", "Simulated iPhones and iPads for Xcode.", "Removes only simulators your Xcode can no longer run.", []string{"xcrun", "simctl", "delete", "unavailable"}, "darwin"},
 	} {
 		if o.os != "" && o.os != e.OS {
