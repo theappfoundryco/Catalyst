@@ -43,13 +43,25 @@ type Runner interface {
 type Real struct{}
 
 // Run starts name with args and waits for it, up to the time limit.
-func (Real) Run(timeout time.Duration, name string, args ...string) Result {
+func (r Real) Run(timeout time.Duration, name string, args ...string) Result {
+	return r.RunIn("", timeout, name, args...)
+}
+
+// InDir is a Runner that can also start a program in a given folder. Version shims (mise, asdf, pyenv, rbenv) pick
+// a version by the folder they run in, so asking from inside a project is the only honest answer.
+type InDir interface {
+	RunIn(dir string, timeout time.Duration, name string, args ...string) Result
+}
+
+// RunIn is Run, started in dir ("" for here).
+func (Real) RunIn(dir string, timeout time.Duration, name string, args ...string) Result {
 	if timeout <= 0 {
 		timeout = Default
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), "LC_ALL=C", "GIT_OPTIONAL_LOCKS=0", "GIT_TERMINAL_PROMPT=0")
 	var out, errb bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &out, &errb
@@ -86,6 +98,16 @@ func (Real) Run(timeout time.Duration, name string, args ...string) Result {
 type Fake struct {
 	Calls   []string
 	Replies map[string]Result
+}
+
+// RunIn answers as Run does, keyed by "cd DIR && " and the command line when that is listed, else the line alone.
+func (f *Fake) RunIn(dir string, t time.Duration, name string, args ...string) Result {
+	line := strings.TrimSpace(fmt.Sprintf("cd %s && %s %s", dir, name, strings.Join(args, " ")))
+	if r, ok := f.Replies[line]; ok {
+		f.Calls = append(f.Calls, line)
+		return r
+	}
+	return f.Run(t, name, args...)
 }
 
 // Run looks the command line up in Replies.
