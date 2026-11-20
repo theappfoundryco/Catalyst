@@ -167,7 +167,7 @@ func (a *App) homeItems() []session.Item {
 	item := func(name, label string, gap bool) session.Item {
 		return session.Item{Name: label, Help: helps[name], Args: []string{name}, Gap: gap}
 	}
-	more := []session.Item{item("log", "History", false), item("config", "Settings", false), item("helpers", "Helpers", false), item("update", "Update", false), item("uninstall", "Uninstall", false)}
+	more := []session.Item{item("log", "History", false), item("changes", "Changes", false), item("report", "Report", false), item("config", "Settings", false), item("helpers", "Helpers", false), item("update", "Update", false), item("uninstall", "Uninstall", false)}
 	if a.oldAppPresent() {
 		more = append(more, item("legacy", "Old app", false))
 	}
@@ -182,6 +182,7 @@ func (a *App) homeItems() []session.Item {
 	}
 	return []session.Item{
 		item("doctor", "Doctor", false),
+		item("project", "Project", false),
 		item("sweep", "Sweep", false),
 		item("clean", "Clean", false),
 		item("status", "Status", false),
@@ -195,7 +196,7 @@ func (a *App) homeItems() []session.Item {
 		item("startup", "Startup", false),
 		item("ssh", "SSH keys", false),
 		item("path", "PATH", false),
-		{Name: "More", Help: "history, settings, helpers, update, uninstall", Gap: true, Sub: more},
+		{Name: "More", Help: "history, what changed, report, settings, helpers, update, uninstall", Gap: true, Sub: more},
 	}
 }
 

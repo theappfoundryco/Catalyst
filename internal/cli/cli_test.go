@@ -335,8 +335,8 @@ func TestEveryCommandIsReachableFromTheList(t *testing.T) {
 	}
 	walk(a.homeItems())
 	// legacy appears only where the old app left something. why takes a name and completion writes a script, and anything
-	// with arguments belongs in the shell. project, report and changes get their rows once the home list change is approved.
-	skip := map[string]bool{"help": true, "version": true, "legacy": true, "setup": true, "why": true, "completion": true, "project": true, "report": true, "changes": true}
+	// with arguments belongs in the shell (why is a key on PATH's hidden tools instead).
+	skip := map[string]bool{"help": true, "version": true, "legacy": true, "setup": true, "why": true, "completion": true}
 	for _, c := range commands() {
 		if !skip[c.Name] && !reach[c.Name] {
 			t.Errorf("%s is not on the list", c.Name)
