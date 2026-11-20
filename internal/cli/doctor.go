@@ -142,6 +142,9 @@ func (a *App) printResult(r doctor.Result, verbose bool, took time.Duration, fir
 		if r.Fix != nil && r.Fix.Kind != doctor.FixManual {
 			keys = append(keys, goTo("f", "fix it", "Doctor", "doctor", "--fix", "--only", r.Check))
 		}
+		if r.State == doctor.Issue {
+			keys = append(keys, goTo("m", "mute", "Doctor", "doctor", "--mute", r.Check))
+		}
 		title = a.row(keys...) + title
 	}
 	if r.Muted {
