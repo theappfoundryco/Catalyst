@@ -1,0 +1,129 @@
+name: Matrix
+# Every supported system, each night and on demand: the test suite and every read-only command, as root and as a
+# normal user. Pull requests run the quick spread in ci.yml, and this file only when it or the script changes.
+on:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+  pull_request:
+    paths: [".github/workflows/matrix.yml", "scripts/distro-matrix.sh"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: the program and one test binary per package, with no C library dependency
+        run: |
+          CGO_ENABLED=0 go build -o out/catalyst ./cmd/catalyst
+          # Named after the package's folder, with / as _, so a container needs no find to know where to run it.
+          for p in $(go list ./internal/...); do
+            rel=${p#github.com/theappfoundryco/catalyst/}
+            CGO_ENABLED=0 go test -c -o "out/$(echo "$rel" | tr / _).test" "$p"
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-binaries
+          path: out/
+
+  linux:
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { image: "debian:11", family: debian }
+          - { image: "debian:12", family: debian }
+          - { image: "debian:13", family: debian }
+          - { image: "ubuntu:20.04", family: debian }
+          - { image: "ubuntu:22.04", family: debian }
+          - { image: "ubuntu:24.04", family: debian }
+          - { image: "fedora:40", family: fedora }
+          - { image: "fedora:41", family: fedora }
+          - { image: "rockylinux:9", family: rhel }
+          - { image: "almalinux:8", family: rhel }
+          - { image: "amazonlinux:2023", family: rhel }
+          - { image: "opensuse/leap:15.6", family: suse }
+          - { image: "opensuse/tumbleweed", family: suse }
+          - { image: "archlinux:latest", family: arch }
+          - { image: "alpine:3.18", family: alpine }
+          - { image: "alpine:3.20", family: alpine }
+          - { image: "ghcr.io/void-linux/void-glibc:latest", family: void }
+          - { image: "nixos/nix:latest", family: "-" }  # not NixOS, and no os-release: must say Linux and not guess
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-binaries
+          path: out
+      - run: chmod +x out/*
+      - name: the test suite, as root and as a normal user
+        run: |
+          for who in "" "--user 1000:1000 -e HOME=/tmp"; do
+            docker run --rm $who -v "$PWD:/src:ro" --entrypoint /bin/sh "${{ matrix.image }}" -c '
+              fail=0
+              for t in /src/out/*.test; do
+                d=$(basename "$t" .test | tr _ /)
+                cd "/src/$d" && "$t" > /tmp/o.txt 2>&1 || { echo "FAIL $d"; cat /tmp/o.txt; fail=1; }
+              done
+              exit $fail'
+          done
+      - name: every read-only command, as root and as a normal user
+        run: CATALYST_BIN="$PWD/out/catalyst" scripts/distro-matrix.sh "${{ matrix.image }}" "${{ matrix.family }}"
+      - name: what each run printed
+        if: always()
+        run: cat .cache/matrix/out/*.txt || true
+
+  systemd:
+    # A container with systemd as PID 1, so failed units and the journal are real rather than recorded.
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: linux-binaries
+          path: out
+      - name: a failing unit is reported, for root and for a normal user
+        run: |
+          docker run -d --name sd --privileged --cgroupns=host -v /sys/fs/cgroup:/sys/fs/cgroup:rw jrei/systemd-debian:12
+          sleep 8
+          docker cp out/catalyst sd:/usr/local/bin/catalyst
+          docker exec sd sh -c 'chmod +x /usr/local/bin/catalyst; printf "[Service]\nExecStart=/bin/false\n" > /etc/systemd/system/broken.service; systemctl daemon-reload; systemctl start broken.service || true'
+          docker exec -e NO_COLOR=1 sd sh -c 'cd /tmp; catalyst doctor -v' | tee root.txt || true
+          docker exec -e NO_COLOR=1 -u nobody -e HOME=/tmp sd sh -c 'cd /tmp; catalyst doctor -v' | tee user.txt || true
+          grep -q "broken.service has failed" root.txt
+          grep -q "broken.service has failed" user.txt
+          grep -q "logs are a normal size" root.txt
+
+  macos:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-15-intel, macos-latest]  # macos-14 runners are retired
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: git config --global user.name CI && git config --global user.email ci@example.com
+      - run: go test ./...
+      - name: every read-only command, and the platform it reports
+        run: |
+          set +e  # each command's exit code is judged below, not by the shell
+          go build -o catalyst ./cmd/catalyst
+          export NO_COLOR=1
+          for c in "doctor -v" "status" "space" "clean --dry-run" "ports" "path" "ssh" "disk" "startup" "battery" "sweep --dry-run"; do
+            echo "=== $c"; ./catalyst $c > out.txt 2>&1; code=$?; cat out.txt
+            if grep -q -e "^goroutine " -e "panic:" out.txt; then echo "stack trace from $c"; exit 1; fi
+            [ $code -le 1 ] || [ $code -eq 3 ] || { echo "exit $code from $c"; exit 1; }
+          done
+          set -e
+          ./catalyst status --json | python3 -c 'import json,sys; p=json.load(sys.stdin)["platform"]; print(p); assert p["family"]=="macos" and p["init"]=="launchd"'
