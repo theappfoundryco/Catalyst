@@ -61,6 +61,7 @@ func commands() []command {
 		{"undo", "[--yes]", "reverse the last change Catalyst made", cmdUndo},
 		{"log", "[-n 20]", "everything Catalyst has changed", cmdLog},
 		{"report", "[--out FILE]", "a summary of this machine to share, with your names taken out", cmdReport},
+		{"changes", "[--json]", "what changed in your tools since an earlier day", cmdChanges},
 		{"disk", "[--folders] [--json]", "volumes, drive health and wear", cmdDisk},
 		{"battery", "[--json]", "charge, cycles and condition", cmdBattery},
 		{"net", "[host]", "connection, DNS and latency", cmdNet},
