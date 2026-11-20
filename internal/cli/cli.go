@@ -59,6 +59,7 @@ func commands() []command {
 		{"system", "[--dry-run] [--admin] [--json]", "what macOS calls System Data, and what can safely go", cmdSystem},
 		{"undo", "[--yes]", "reverse the last change Catalyst made", cmdUndo},
 		{"log", "[-n 20]", "everything Catalyst has changed", cmdLog},
+		{"report", "[--out FILE]", "a summary of this machine to share, with your names taken out", cmdReport},
 		{"disk", "[--folders] [--json]", "volumes, drive health and wear", cmdDisk},
 		{"battery", "[--json]", "charge, cycles and condition", cmdBattery},
 		{"net", "[host]", "connection, DNS and latency", cmdNet},
