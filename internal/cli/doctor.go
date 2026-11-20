@@ -31,14 +31,19 @@ type doctorReport struct {
 }
 
 func cmdDoctor(a *App, args []string) int {
-	fs := a.flags("doctor", "[--fix] [--only group] [--json] [-v]")
+	fs := a.flags("doctor", "[--fix] [--only group] [--json] [-v] [--mute CHECK | --unmute CHECK]")
 	fix := fs.Bool("fix", false, "")
 	asJSON := fs.Bool("json", false, "")
 	only := fs.String("only", "", "")
 	verbose := fs.Bool("v", false, "")
 	yes := fs.Bool("yes", false, "")
+	mute := fs.String("mute", "", "")
+	unmute := fs.String("unmute", "", "")
 	if code, ok := a.parse(fs, args); !ok {
 		return code
+	}
+	if *mute != "" || *unmute != "" {
+		return a.setMuted(*mute, *unmute)
 	}
 	a.U.Yes = a.U.Yes || *yes
 	var filter []string
@@ -94,6 +99,7 @@ func (a *App) doctorJSON(filter []string) int {
 	for i := range scan.Checks {
 		all = append(all, scan.Wait(i)...)
 	}
+	doctor.Mute(all, a.Store.LoadConfig().IsMuted)
 	c := doctor.Count(all)
 	emit(a, doctorReport{Schema: 1, Version: version.Version, OS: a.E.OS, Score: doctor.Score(all), Counts: c, Results: all, Platform: a.E.Platform()})
 	switch {
@@ -117,9 +123,10 @@ func (a *App) showScan(scan *doctor.Run, verbose bool) []doctor.Result {
 			}
 			sp := u.Spin(c.Name)
 			rs := scan.Wait(i)
+			doctor.Mute(rs, a.Store.LoadConfig().IsMuted)
 			took := sp.Stop()
 			for j, r := range rs {
-				if r.State == doctor.Skipped && !verbose {
+				if (r.State == doctor.Skipped || r.Muted) && !verbose {
 					continue
 				}
 				if first { // a heading only once something will sit under it
@@ -145,7 +152,15 @@ func (a *App) printResult(r doctor.Result, verbose bool, took time.Duration, fir
 		if r.Fix != nil && r.Fix.Kind != doctor.FixManual {
 			keys = append(keys, goTo("f", "fix it", "Doctor", "doctor", "--fix", "--only", r.Check))
 		}
+		if r.State == doctor.Issue {
+			keys = append(keys, goTo("m", "mute", "Doctor", "doctor", "--mute", r.Check))
+		}
 		title = a.row(keys...) + title
+	}
+	if r.Muted {
+		u.Skip("muted: " + r.Title)
+		u.Hint("Hear about it again: catalyst doctor --unmute " + r.Check)
+		return
 	}
 	switch r.State {
 	case doctor.Passed:
@@ -197,6 +212,9 @@ func (a *App) verdict(all []doctor.Result, score int, c doctor.Counts, fixing bo
 	}
 	if c.Failed > 0 {
 		parts = append(parts, fmt.Sprintf("%d could not run", c.Failed))
+	}
+	if c.Muted > 0 {
+		parts = append(parts, fmt.Sprintf("%d muted", c.Muted))
 	}
 	u.Say("  " + head)
 	u.Say("  " + u.Dim(strings.Join(parts, ", ")))
@@ -339,4 +357,44 @@ func (a *App) moveToTrash(path, title, batch string, size int64) error {
 		return fmt.Errorf("could not record the move, so it was put back: %v", err)
 	}
 	return nil
+}
+
+// setMuted mutes or unmutes one check by its ID, as doctor --json and catalyst doctor -v name them.
+func (a *App) setMuted(mute, unmute string) int {
+	u := a.U
+	id := mute + unmute
+	known := false
+	for _, c := range doctor.All() {
+		if c.ID == id {
+			known = true
+		}
+	}
+	if !known {
+		u.Stop("There is no check called " + id + ".")
+		u.Hint("Each finding's check is in catalyst doctor --json, as \"check\".")
+		return ExitUsage
+	}
+	c := a.Store.LoadConfig()
+	var keep []string
+	for _, m := range c.Muted {
+		if m != id {
+			keep = append(keep, m)
+		}
+	}
+	if mute != "" {
+		keep = append(keep, id)
+	}
+	c.Muted = keep
+	if err := a.Store.SaveConfig(c); err != nil {
+		u.Stop("Could not save the setting: " + err.Error())
+		return ExitFailed
+	}
+	a.outcome.Changed = true
+	if mute != "" {
+		u.Ok("Muted " + id + ". Doctor still checks it, and lists it with -v, but it no longer counts against your score.")
+		u.Hint("Hear about it again: catalyst doctor --unmute " + id)
+	} else {
+		u.Ok("Unmuted " + id + ".")
+	}
+	return ExitOK
 }

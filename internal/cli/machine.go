@@ -1566,6 +1566,9 @@ func cmdConfig(a *App, args []string) int {
 		u.Row("Your name", a.row(goTo("⏎", "change", "Settings", "config", "set", "name"))+name)
 		u.Row("Kit", a.row(goTo("⏎", "turn "+onOff(!c.MascotOn()), "Settings", "config", "set", "mascot", onOff(!c.MascotOn())))+onOff(c.MascotOn()))
 		u.Row("Animations", a.row(goTo("⏎", "turn "+onOff(!c.MotionOn()), "Settings", "config", "set", "animations", onOff(!c.MotionOn())))+onOff(c.MotionOn())+u.Dim("  Kit's wag and the health dot's pulse"))
+		for _, m := range c.Muted {
+			u.Row("Muted", a.row(goTo("⏎", "unmute", "Settings", "doctor", "--unmute", m))+m+u.Dim("  doctor no longer counts it"))
+		}
 		u.Row("Files", a.E.Tilde(a.Store.ConfigDir))
 		u.Row("History", a.E.Tilde(a.Store.Dir))
 		u.Blank()
