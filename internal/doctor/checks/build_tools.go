@@ -25,8 +25,24 @@ func buildTools(e *host.Env) []d.Result {
 		}
 	}
 	if len(missing) > 0 {
-		return []d.Result{d.Note("No compiler or make here, so packages that build from source will fail").
-			With("Debian or Ubuntu: sudo apt install build-essential. Fedora: sudo dnf group install development-tools.")}
+		r := d.Note("No compiler or make here, so packages that build from source will fail")
+		cmd, advice := e.Platform().Install(host.BuildToolsPkgs)
+		if cmd == nil {
+			return []d.Result{r.With(advice)}
+		}
+		if p := e.Platform(); !p.Root && !p.Sudo {
+			r = r.With("Run it as root: sudo is not installed here.")
+		}
+		return []d.Result{r.Manual(asRoot(e, cmd)...)}
 	}
 	return []d.Result{d.Pass("Compiler and make are installed")}
+}
+
+// asRoot puts sudo in front of a command that needs root, unless this already is root (often so in a container) or
+// there is no sudo to put there.
+func asRoot(e *host.Env, cmd []string) []string {
+	if p := e.Platform(); p.Root || !p.Sudo {
+		return cmd
+	}
+	return append([]string{"sudo"}, cmd...)
 }

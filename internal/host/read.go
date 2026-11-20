@@ -229,20 +229,8 @@ func (e *Env) Load() (float64, int) {
 	return 0, cores
 }
 
-// OSName is a person's name for this system, like "macOS 15.6".
-func (e *Env) OSName() string {
-	if e.Mac() {
-		if v, ok := e.Out("sw_vers", "-productVersion"); ok {
-			return "macOS " + v
-		}
-		return "macOS"
-	}
-	b, err := os.ReadFile("/etc/os-release")
-	if err == nil {
-		return ParseOSRelease(string(b))
-	}
-	return "Linux"
-}
+// OSName is a person's name for this system, like "macOS 15.6" or "Debian GNU/Linux 12 (bookworm)".
+func (e *Env) OSName() string { return e.Platform().Pretty }
 
 // ParseOSRelease pulls PRETTY_NAME out of /etc/os-release.
 func ParseOSRelease(text string) string {

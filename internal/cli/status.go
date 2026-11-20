@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/theappfoundryco/catalyst/internal/host"
 	"github.com/theappfoundryco/catalyst/internal/kit"
 	"github.com/theappfoundryco/catalyst/internal/session"
 	"github.com/theappfoundryco/catalyst/internal/state"
@@ -80,6 +81,8 @@ type statusReport struct {
 	Disk    int     `json:"disk_percent"`
 	Battery *int    `json:"battery_percent,omitempty"`
 	Health  *int    `json:"health,omitempty"`
+	// Platform is what this machine is and what it can do, so a script can tell why a check skipped.
+	Platform host.Platform `json:"platform"`
 }
 
 // heavySwap is where the doctor's memory check starts to warn, so the two never disagree.
@@ -125,7 +128,7 @@ func cmdStatus(a *App, args []string) int {
 	bat := a.E.Battery()
 	h := a.Store.History()
 	if *asJSON {
-		r := statusReport{Host: name, OS: a.E.OSName(), Load: load, Threads: threads, Memory: mem.Percent(), Disk: vol.UsedPercent}
+		r := statusReport{Host: name, OS: a.E.OSName(), Load: load, Threads: threads, Memory: mem.Percent(), Disk: vol.UsedPercent, Platform: a.E.Platform()}
 		if bat.Present {
 			r.Battery = &bat.Percent
 		}
@@ -142,6 +145,11 @@ func cmdStatus(a *App, args []string) int {
 	a.outcome.Live = 2 * time.Second
 	u.Hdr("Status")
 	u.Row("Machine", name+"  "+u.Dim(a.E.OSName()))
+	plat := a.E.Platform()
+	u.Row("Platform", u.Dim(plat.Details()))
+	if len(plat.Managers) > 0 {
+		u.Row("Packages", u.Dim(strings.Join(plat.Managers, ", ")))
+	}
 	if len(h) > 0 {
 		last := h[len(h)-1]
 		u.Row("Health", u.ScoreStyle(last.Score)(fmt.Sprintf("%d", last.Score))+"  "+u.Dim("from "+ui.When(last.Date)))

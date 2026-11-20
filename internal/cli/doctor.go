@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/theappfoundryco/catalyst/internal/doctor"
+	"github.com/theappfoundryco/catalyst/internal/host"
 	"github.com/theappfoundryco/catalyst/internal/journal"
 	"github.com/theappfoundryco/catalyst/internal/kit"
 	"github.com/theappfoundryco/catalyst/internal/session"
@@ -25,6 +26,8 @@ type doctorReport struct {
 	Score   int             `json:"score"`
 	Counts  doctor.Counts   `json:"counts"`
 	Results []doctor.Result `json:"results"`
+	// Platform says what this machine is, so a reader can tell why a check did not apply.
+	Platform host.Platform `json:"platform"`
 }
 
 func cmdDoctor(a *App, args []string) int {
@@ -85,7 +88,7 @@ func (a *App) doctorJSON(filter []string) int {
 		all = append(all, scan.Wait(i)...)
 	}
 	c := doctor.Count(all)
-	emit(a, doctorReport{Schema: 1, Version: version.Version, OS: a.E.OS, Score: doctor.Score(all), Counts: c, Results: all})
+	emit(a, doctorReport{Schema: 1, Version: version.Version, OS: a.E.OS, Score: doctor.Score(all), Counts: c, Results: all, Platform: a.E.Platform()})
 	switch {
 	case c.Critical+c.Warning > 0:
 		return ExitIssues

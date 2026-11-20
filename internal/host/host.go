@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/theappfoundryco/catalyst/internal/run"
@@ -27,6 +28,8 @@ type Env struct {
 	NvmDir   string   // NVM_DIR as a new terminal sees it
 	Hostname func() string
 	hasCLT   *bool
+	platMu   sync.Mutex
+	plat     *Platform
 }
 
 // New reads the real machine. It asks a login shell for the environment, because a tool started from anywhere
@@ -164,5 +167,15 @@ func ForTest(home, goos string, r run.Runner) *Env {
 		Look:     func(string) (string, error) { return "", exec.ErrNotFound },
 		Now:      time.Now,
 		Hostname: func() string { return "alex-laptop" },
+		plat:     testPlatform(goos),
 	}
+}
+
+// testPlatform keeps tests from reading the machine they run on. Tests that care set their own with SetPlatform.
+func testPlatform(goos string) *Platform {
+	p := Platform{OS: goos, Arch: "arm64", Pretty: "Linux", Family: "unknown", Sudo: true, Managers: []string{}}
+	if goos == "darwin" {
+		p.Pretty, p.Family, p.Init = "macOS 15.1", "macos", "launchd"
+	}
+	return &p
 }
