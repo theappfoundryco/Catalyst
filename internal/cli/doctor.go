@@ -28,8 +28,9 @@ type doctorReport struct {
 }
 
 func cmdDoctor(a *App, args []string) int {
-	fs := a.flags("doctor", "[--fix] [--only group] [--json] [-v] [--mute CHECK | --unmute CHECK]")
+	fs := a.flags("doctor", "[--fix [--all-safe]] [--only group] [--json] [-v] [--mute CHECK | --unmute CHECK]")
 	fix := fs.Bool("fix", false, "")
+	allSafe := fs.Bool("all-safe", false, "")
 	asJSON := fs.Bool("json", false, "")
 	only := fs.String("only", "", "")
 	verbose := fs.Bool("v", false, "")
@@ -70,7 +71,7 @@ func cmdDoctor(a *App, args []string) int {
 	u.Blank()
 	a.verdict(all, score, counts, *fix)
 	if *fix {
-		a.applyFixes(all)
+		a.applyFixes(all, *allSafe)
 	}
 	u.Blank()
 	switch {
@@ -256,16 +257,57 @@ func trendWords(change int, since, now time.Time) string {
 }
 
 // applyFixes offers each fix in turn. Every one is shown before it runs, and none happens without a yes.
-func (a *App) applyFixes(all []doctor.Result) {
+// undoable is a fix the journal can reverse: a mode change or a move to the Trash.
+func undoable(f *doctor.Fix) bool {
+	return f != nil && (f.Kind == doctor.FixChmod || f.Kind == doctor.FixTrash)
+}
+
+// applyFixes offers each fix in turn. With allSafe, every fix that can be undone is shown together and asked once,
+// and only those that cannot be undone are still asked one by one.
+func (a *App) applyFixes(all []doctor.Result, allSafe bool) {
 	u := a.U
 	batch := journal.NewBatch(a.E.Now())
 	any, changed := false, false
-	for _, r := range all {
-		if r.State != doctor.Issue || r.Fix == nil {
+	done := map[int]bool{}
+	if allSafe {
+		var safe []int
+		for i, r := range all {
+			if r.State == doctor.Issue && !r.Muted && undoable(r.Fix) {
+				safe = append(safe, i)
+			}
+		}
+		if len(safe) > 0 {
+			u.Sect("Fixes that can be undone")
+			for _, i := range safe {
+				u.Say("  " + all[i].Title)
+				u.Hint(all[i].Fix.Preview())
+			}
+			u.Blank()
+			if u.Ask(fmt.Sprintf("Make %s? Undo reverses them all at once.", ui.Count(len(safe), "this change", "these changes"))) {
+				for _, i := range safe {
+					if err := a.applyFix(*all[i].Fix, batch); err != nil {
+						u.Stop(all[i].Title + ": that did not work: " + err.Error())
+						continue
+					}
+					changed = true
+					a.outcome.Changed = true
+				}
+				if changed {
+					u.Ok("Done")
+				}
+			}
+			for _, i := range safe {
+				done[i] = true
+			}
+			any = true
+		}
+	}
+	for i, r := range all {
+		if r.State != doctor.Issue || r.Fix == nil || r.Muted || done[i] {
 			continue
 		}
 		f := *r.Fix
-		if !any {
+		if !any || (allSafe && i == firstLeft(all, done)) {
 			u.Sect("Fixes")
 			any = true
 		}
@@ -387,4 +429,14 @@ func (a *App) setMuted(mute, unmute string) int {
 		u.Ok("Unmuted " + id + ".")
 	}
 	return ExitOK
+}
+
+// firstLeft is the first fix still to offer one by one, so its section heading prints once.
+func firstLeft(all []doctor.Result, done map[int]bool) int {
+	for i, r := range all {
+		if r.State == doctor.Issue && r.Fix != nil && !r.Muted && !done[i] {
+			return i
+		}
+	}
+	return -1
 }
