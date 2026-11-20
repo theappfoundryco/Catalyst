@@ -1450,7 +1450,7 @@ func (a *App) showPath() int {
 			break
 		}
 		pad := strings.Repeat(" ", toolW+2)
-		u.Say("  " + a.row(a.copyKey("y", "copy path", g.winner, "the path")) + u.Bold(fmt.Sprintf("%-*s", toolW, g.tool)) + "  " + u.Dim("runs   ") + a.E.Tilde(g.winner))
+		u.Say("  " + a.row(goTo("w", "why", "PATH", "why", g.tool), a.copyKey("y", "copy path", g.winner, "the path")) + u.Bold(fmt.Sprintf("%-*s", toolW, g.tool)) + "  " + u.Dim("runs   ") + a.E.Tilde(g.winner))
 		u.Say("  " + pad + u.Dim("hides  "+strings.Join(g.hidden, ", ")))
 	}
 	if len(groups) > 0 {
