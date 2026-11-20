@@ -72,6 +72,7 @@ func commands() []command {
 		{"legacy", "[--yes]", "clean up after the old Catalyst Mac app", cmdLegacy},
 		{"update", "[--check]", "move to the newest release", cmdUpdate},
 		{"uninstall", "[--yes]", "remove Catalyst from this machine", cmdUninstall},
+		{"completion", "bash|zsh|fish", "tab completion for your shell", cmdCompletion},
 		{"version", "", "show the version", cmdVersion},
 		{"help", "", "show this list", cmdHelp},
 	}
