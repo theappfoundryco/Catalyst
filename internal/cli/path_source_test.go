@@ -14,6 +14,9 @@ func TestNamesFolder(t *testing.T) {
 		{`fish_add_path ~/.local/bin`, "~/.local/bin", true},
 		{`alias ll="/usr/local/bin/eza -l"`, "/usr/local/bin", false},
 		{`PATH=/usr/local/bin/extra:/usr/local/bin`, "/usr/local/bin", true},
+		{`export PATH=/opt/a/bin:$PATH`, "/bin", false},
+		{`export PATH=/opt/a/bin:/bin:$PATH`, "/bin", true},
+		{`set -gx PATH "$HOME/go/bin" $PATH`, "$HOME/go/bin", true},
 	}
 	for _, c := range cases {
 		if got := NamesFolder(c.line, c.dir); got != c.want {
