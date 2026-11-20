@@ -22,8 +22,10 @@ jobs:
       - name: the program and one test binary per package, with no C library dependency
         run: |
           CGO_ENABLED=0 go build -o out/catalyst ./cmd/catalyst
+          # Named after the package's folder, with / as _, so a container needs no find to know where to run it.
           for p in $(go list ./internal/...); do
-            CGO_ENABLED=0 go test -c -o "out/$(basename "$p").test" "$p"
+            rel=${p#github.com/theappfoundryco/catalyst/}
+            CGO_ENABLED=0 go test -c -o "out/$(echo "$rel" | tr / _).test" "$p"
           done
       - uses: actions/upload-artifact@v4
         with:
@@ -68,8 +70,8 @@ jobs:
             docker run --rm $who -v "$PWD:/src:ro" --entrypoint /bin/sh "${{ matrix.image }}" -c '
               fail=0
               for t in /src/out/*.test; do
-                d=$(basename "$t" .test)
-                cd "$(find /src/internal -type d -name "$d" | head -1)" && "$t" > /tmp/o.txt 2>&1 || { echo "FAIL $d"; cat /tmp/o.txt; fail=1; }
+                d=$(basename "$t" .test | tr _ /)
+                cd "/src/$d" && "$t" > /tmp/o.txt 2>&1 || { echo "FAIL $d"; cat /tmp/o.txt; fail=1; }
               done
               exit $fail'
           done
@@ -104,7 +106,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-14, macos-15, macos-15-intel]
+        os: [macos-15, macos-15-intel, macos-latest]  # macos-14 runners are retired
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -115,6 +117,7 @@ jobs:
       - run: go test ./...
       - name: every read-only command, and the platform it reports
         run: |
+          set +e  # each command's exit code is judged below, not by the shell
           go build -o catalyst ./cmd/catalyst
           export NO_COLOR=1
           for c in "doctor -v" "status" "space" "clean --dry-run" "ports" "path" "ssh" "disk" "startup" "battery" "sweep --dry-run"; do
@@ -122,4 +125,5 @@ jobs:
             if grep -q -e "^goroutine " -e "panic:" out.txt; then echo "stack trace from $c"; exit 1; fi
             [ $code -le 1 ] || [ $code -eq 3 ] || { echo "exit $code from $c"; exit 1; }
           done
+          set -e
           ./catalyst status --json | python3 -c 'import json,sys; p=json.load(sys.stdin)["platform"]; print(p); assert p["family"]=="macos" and p["init"]=="launchd"'
