@@ -209,13 +209,22 @@ func TestLoadShellIgnoresWhatStartupFilesPrint(t *testing.T) {
 	f := &run.Fake{}
 	e := ForTest("/home/alex", "linux", f)
 	e.Shell = "/bin/zsh"
-	script := `printf '\n` + pathMark + `%s\n%s\n%s\n` + pathMark + `\n' "$PATH" "$JAVA_HOME" "$NVM_DIR"`
-	f.Replies = map[string]run.Result{
-		"/bin/zsh -l -i -c " + script: {Stdout: "Welcome back!\n" + pathMark + "/a/bin:/b/bin\n/jdk\n/nvm\n" + pathMark + "\n"},
+	out := "Welcome back!\n" + pathMark + "/a/bin:/b/bin\n/jdk\n/nvm\n" + pathMark + "\n"
+	for _, v := range ShellVars {
+		val := ""
+		if v == "NODE_EXTRA_CA_CERTS" {
+			val = "/etc/corp.pem"
+		}
+		out += pathMark + val + "\n"
 	}
+	out += pathMark + "\nlogout\n"
+	f.Replies = map[string]run.Result{"/bin/zsh -l -i -c " + shellScript(): {Stdout: out}}
 	e.LoadShell()
 	if strings.Join(e.Entries, ":") != "/a/bin:/b/bin" || e.JavaHome != "/jdk" || e.NvmDir != "/nvm" {
 		t.Fatalf("%+v", e)
+	}
+	if e.Var("NODE_EXTRA_CA_CERTS") != "/etc/corp.pem" || e.Var("npm_config_cafile") != "" || e.Var("HTTPS_PROXY") != "" {
+		t.Fatalf("%q", e.Vars)
 	}
 }
 
