@@ -127,7 +127,8 @@ func (a *App) Scrub(s string) string {
 			s = strings.ReplaceAll(s, short, "this-machine")
 		}
 	}
-	if u, err := user.Current(); err == nil && len(u.Username) > 2 {
+	// root is not a person's name, and "belongs to root" must keep its meaning.
+	if u, err := user.Current(); err == nil && len(u.Username) > 2 && u.Username != "root" {
 		s = replaceWord(s, u.Username, "you")
 	}
 	return s
