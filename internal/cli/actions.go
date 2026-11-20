@@ -157,6 +157,12 @@ func (a *App) edit(path string, line int) string {
 func (a *App) sudoReady() bool {
 	u := a.U
 	u.Blank()
+	if p := a.E.Platform(); p.Root {
+		return true // already root, often so in a container, where sudo may not even be installed
+	} else if !p.Sudo {
+		u.Stop("This needs admin rights, and sudo is not installed here, so nothing was changed.")
+		return false
+	}
 	who := "macOS"
 	if !a.E.Mac() {
 		who = "sudo"
@@ -172,6 +178,10 @@ func (a *App) sudoReady() bool {
 
 // asRoot runs one command as root, after sudoReady. The person sees its output, as they would in their own terminal.
 func (a *App) asRoot(cmd ...string) bool {
+	if a.E.Platform().Root {
+		_, code := run.Attached(false, cmd[0], cmd[1:]...)
+		return code == 0
+	}
 	_, code := run.Attached(false, "sudo", append([]string{"-p", "  Password for %u: "}, cmd...)...)
 	return code == 0
 }
