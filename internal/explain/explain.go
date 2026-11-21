@@ -115,7 +115,7 @@ var sigs = []sig{
 		"Apple's Command Line Tools are missing or broken",
 		"git, make and compilers on a Mac come from them, and a macOS update often removes them.",
 		[]string{"tools.build"}, "", "Reinstall them: xcode-select --install", ""},
-	{"npm-eacces", re(`npm (?:ERR!|error) code EACCES|EACCES: permission denied, (?:mkdir|access|open|rename|symlink) '[^']*node_modules`),
+	{"npm-eacces", re(`npm (?:ERR!|error) code EACCES|EACCES: permission denied, (?:mkdir|access|open|rename|symlink),? '?[^'\s]*node_modules`),
 		"npm cannot write to its global folder",
 		"The folder npm installs global packages into belongs to root, often after one sudo npm install -g.",
 		[]string{"tools.node"}, "", "Do not use sudo. Use a version manager such as nvm or fnm, whose global folder is yours.", ""},

@@ -51,7 +51,7 @@ func cmdWhy(a *App, args []string) int {
 	if code, ok := a.parse(fs, args); !ok {
 		return code
 	}
-	if fs.NArg() != 1 || strings.ContainsRune(fs.Arg(0), '/') {
+	if fs.NArg() != 1 || strings.TrimSpace(fs.Arg(0)) == "" || strings.ContainsRune(fs.Arg(0), '/') {
 		fs.Usage()
 		return ExitUsage
 	}
