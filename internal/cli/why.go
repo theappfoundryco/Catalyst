@@ -147,7 +147,9 @@ func (a *App) copiesOf(name string) []whichCopy {
 		if c.Kind == "" && c.Target != "" {
 			c.Kind = host.ExecKindOf(c.Target)
 		}
-		if !c.Shadowed {
+		if why, _ := host.Broken(p, checks.MachineOf(a.E)); why != "" {
+			c.Problem = "It cannot start: " + why + "."
+		} else if !c.Shadowed {
 			a.tryRun(&c, name)
 		}
 		out = append(out, c)
