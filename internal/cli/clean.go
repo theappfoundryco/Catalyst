@@ -66,13 +66,13 @@ func cmdClean(a *App, args []string) int {
 		u.Say("  " + u.Dim("Dry run: nothing was moved."))
 		return ExitOK
 	}
-	m := &ui.Menu{Items: items, Noun: "folder", Nouns: "folders", Action: "clean", Note: "everything goes to the Trash first",
+	m := &ui.Menu{Items: items, Noun: "folder", Nouns: "folders", Action: "clean", Note: "Everything goes to the Trash, and catalyst undo brings it back.",
 		Keys: []ui.MenuKey{
 			{Key: "o", Label: "open", Do: func(i int) string { return a.reveal(r.Items[i].Path) }},
 			{Key: "y", Label: "copy path", Do: func(i int) string { return a.copyText(r.Items[i].Path, "the path") }},
 		}}
 	if a.inSession {
-		m.Cancel = "back"
+		m.Cancel, m.Note = "back", "Everything goes to the Trash, and Undo brings it back."
 	}
 	if !m.Run(u) {
 		a.outcome.SkipWait = true
