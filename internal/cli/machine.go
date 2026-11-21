@@ -718,8 +718,8 @@ func cmdPorts(a *App, args []string) int {
 	a.outcome.Refresh = true
 	u.Hdr("What is listening")
 	if len(list) == 0 {
-		if !a.has("ss") && !a.has("lsof") { // nothing to ask is not the same as nothing listening
-			u.Skip("Ports needs ss or lsof to see what is listening, and this system has neither.")
+		if !a.E.Linux() && !a.has("lsof") { // nothing to ask is not the same as nothing listening; Linux always has /proc
+			u.Skip("Ports needs lsof to see what is listening, and this system does not have it.")
 			if cmd, advice := a.E.Platform().Install(map[string]string{"": "lsof"}); cmd != nil {
 				u.Hint("Install lsof with: " + strings.Join(a.rootCmd(cmd), " "))
 			} else {

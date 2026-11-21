@@ -1,8 +1,10 @@
 package host
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -363,6 +365,7 @@ type Listener struct {
 	Command string
 	Address string
 	User    string
+	inode   string // only while /proc is read
 }
 
 // Listeners lists TCP listeners, sorted by port.
@@ -379,7 +382,83 @@ func (e *Env) Listeners() []Listener {
 			out = ParseLsof(s)
 		}
 	}
+	if len(out) == 0 && e.Linux() { // small images and containers often have neither tool, and /proc is always there
+		out = procListeners("/proc")
+	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Port < out[j].Port })
+	return out
+}
+
+// procListeners reads listening sockets from /proc/net and finds their processes through /proc/PID/fd. Only this
+// user's processes can be read without root, the same as ss shows, so the others have a port and no process.
+func procListeners(proc string) []Listener {
+	var out []Listener
+	for _, f := range []string{"tcp", "tcp6"} {
+		b, _ := os.ReadFile(filepath.Join(proc, "net", f))
+		out = append(out, ParseProcNet(string(b))...)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	owners := map[string]int{}
+	dirs, _ := os.ReadDir(proc)
+	for _, d := range dirs {
+		pid, err := strconv.Atoi(d.Name())
+		if err != nil {
+			continue
+		}
+		fds, _ := os.ReadDir(filepath.Join(proc, d.Name(), "fd"))
+		for _, fd := range fds {
+			if t, err := os.Readlink(filepath.Join(proc, d.Name(), "fd", fd.Name())); err == nil && strings.HasPrefix(t, "socket:[") {
+				owners[strings.TrimSuffix(strings.TrimPrefix(t, "socket:["), "]")] = pid
+			}
+		}
+	}
+	seen := map[string]bool{}
+	var kept []Listener
+	for _, l := range out {
+		if pid, ok := owners[l.inode]; ok {
+			l.PID = pid
+			comm, _ := os.ReadFile(filepath.Join(proc, strconv.Itoa(pid), "comm"))
+			l.Command = strings.TrimSpace(string(comm))
+		}
+		key := fmt.Sprintf("%d/%d/%s", l.PID, l.Port, l.Address)
+		if !seen[key] {
+			seen[key] = true
+			l.inode = ""
+			kept = append(kept, l)
+		}
+	}
+	return kept
+}
+
+// ParseProcNet reads the listening sockets in /proc/net/tcp or tcp6. Addresses there are hex, in the kernel's byte
+// order per 32-bit word, and state 0A is LISTEN.
+func ParseProcNet(text string) []Listener {
+	var out []Listener
+	for _, l := range strings.Split(text, "\n") {
+		f := strings.Fields(l)
+		if len(f) < 10 || f[3] != "0A" {
+			continue
+		}
+		hexAddr, hexPort, ok := strings.Cut(f[1], ":")
+		port, err := strconv.ParseUint(hexPort, 16, 16)
+		if !ok || err != nil {
+			continue
+		}
+		raw, err := hex.DecodeString(hexAddr)
+		if err != nil || (len(raw) != 4 && len(raw) != 16) {
+			continue
+		}
+		for i := 0; i+4 <= len(raw); i += 4 {
+			raw[i], raw[i+1], raw[i+2], raw[i+3] = raw[i+3], raw[i+2], raw[i+1], raw[i]
+		}
+		addr := net.IP(raw).String()
+		if net.IP(raw).IsUnspecified() {
+			addr = "*"
+		}
+		out = append(out, Listener{Port: int(port), Address: addr, inode: f[9]})
+	}
 	return out
 }
 
