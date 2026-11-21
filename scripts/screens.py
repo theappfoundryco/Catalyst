@@ -68,9 +68,13 @@ class Term:
         return [l.rstrip() for l in self.screen.display]
 
     def settle(self, limit=90):
-        """Wait while a spinner shows, as a long step (measuring, a checkup) draws one until it is done."""
+        """Wait until the screen is done: no spinner, and the key bar drawn at the bottom, which comes last."""
         end = time.time() + limit
-        while time.time() < end and any(c in "\n".join(self.lines()) for c in SPINNER):
+        while time.time() < end:
+            shown = [l for l in self.lines() if l.strip()]
+            busy = any(c in "\n".join(shown) for c in SPINNER)
+            if shown and not busy and ("exit" in shown[-1] or "back" in shown[-1] or "cancel" in shown[-1]):
+                break
             self.pump(0.5)
         self.pump(0.5)
 
