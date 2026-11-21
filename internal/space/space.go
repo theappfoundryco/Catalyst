@@ -104,8 +104,8 @@ func Measure(o Options) Report {
 	r.Disk, r.DiskOK = e.HomeVolume()
 	sizer, marks := newSizer(), newSizer()
 	if o.Budget > 0 {
-		t := time.AfterFunc(o.Budget, func() { sizer.stop.Store(true); marks.stop.Store(true) })
-		defer t.Stop()
+		sizer.deadline = time.Now().Add(o.Budget)
+		marks.deadline = sizer.deadline
 	}
 	entries, _ := os.ReadDir(e.Home)
 	var mu sync.Mutex
@@ -210,6 +210,8 @@ type sizer struct {
 	seen   map[[2]uint64]bool
 	denied int
 	stop   atomic.Bool // set when the time is up: every walk returns what it has counted so far
+	// deadline is when the time is up, or zero for none. Each folder checks it, so a stop never waits on a timer.
+	deadline time.Time
 }
 
 func newSizer() *sizer { return &sizer{seen: map[[2]uint64]bool{}} }
@@ -232,6 +234,9 @@ func (z *sizer) size(root string) (total int64, cut bool) {
 	}
 	var visit func(dir string)
 	visit = func(dir string) {
+		if !z.deadline.IsZero() && time.Now().After(z.deadline) {
+			z.stop.Store(true)
+		}
 		if z.stop.Load() {
 			cut = true
 			return
