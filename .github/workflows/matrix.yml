@@ -6,7 +6,7 @@ on:
     - cron: "17 3 * * *"
   workflow_dispatch:
   pull_request:
-    paths: [".github/workflows/matrix.yml", "scripts/distro-matrix.sh"]
+    paths: [".github/workflows/matrix.yml", "scripts/distro-matrix.sh", "scripts/screens.py"]
 
 permissions:
   contents: read
@@ -127,3 +127,12 @@ jobs:
           done
           set -e
           ./catalyst status --json | python3 -c 'import json,sys; p=json.load(sys.stdin)["platform"]; print(p); assert p["family"]=="macos" and p["init"]=="launchd"'
+      - name: every screen of the list, in a real terminal, wide and narrow
+        run: |
+          # pyte draws a terminal in memory. It is pinned and kept in a throwaway venv, and only this step uses it.
+          python3 -m venv "$RUNNER_TEMP/v"
+          "$RUNNER_TEMP/v/bin/pip" install -q --no-deps pyte==0.8.2 wcwidth==0.2.13
+          export XDG_CONFIG_HOME="$RUNNER_TEMP/cfg" XDG_STATE_HOME="$RUNNER_TEMP/state"
+          mkdir -p "$XDG_CONFIG_HOME/catalyst" && echo '{"setup_done":true}' > "$XDG_CONFIG_HOME/catalyst/config.json"
+          "$RUNNER_TEMP/v/bin/python" scripts/screens.py ./catalyst 100 45
+          "$RUNNER_TEMP/v/bin/python" scripts/screens.py ./catalyst 60 30
