@@ -1436,7 +1436,11 @@ func (a *App) showPath() int {
 	if dead > 0 {
 		u.Blank()
 		u.Note("A folder that does not exist only slows each search a little. It is safe to leave.")
-		u.Hint("To remove one you added, take it out of the file named beside it. One from /etc/paths.d was put there by an installer.")
+		hint := "To remove one you added, take it out of the file named beside it."
+		if a.E.Mac() {
+			hint += " One from /etc/paths.d was put there by an installer."
+		}
+		u.Hint(hint)
 	}
 	u.Sect("Tools hidden by an earlier folder")
 	shadows := a.shadows()
@@ -1495,23 +1499,57 @@ func (a *App) pathSource(dir string) (string, int) {
 		extra, _ := filepath.Glob("/etc/paths.d/*")
 		files = append(files, extra...)
 	}
+	needles := []string{dir, short, tilde}
+	_, err := os.Stat(dir)
+	missing := err != nil
 	for _, rc := range files {
 		b, err := os.ReadFile(rc)
 		if err != nil {
 			continue
 		}
-		for n, line := range strings.Split(string(b), "\n") {
-			if strings.HasPrefix(strings.TrimSpace(line), "#") {
+		lines := strings.Split(string(b), "\n")
+		for n, line := range lines {
+			if strings.HasPrefix(strings.TrimSpace(line), "#") || !namesAny(line, needles) || onlyTests(line) {
 				continue
 			}
-			for _, needle := range []string{dir, short, tilde} {
-				if NamesFolder(line, needle) {
-					return rc, n + 1
-				}
+			// Debian's and Ubuntu's ~/.profile add ~/bin only "if [ -d" it exists. For a folder that does not, such a
+			// line did nothing, and the line that really added it is further on.
+			if missing && guardedByExists(lines, n, needles) {
+				continue
 			}
+			return rc, n + 1
 		}
 	}
 	return "", 0
+}
+
+// onlyTests says whether a line just checks that a folder exists, such as "if [ -d "$HOME/bin" ] ; then", and does
+// not touch PATH itself.
+func onlyTests(line string) bool {
+	return (strings.Contains(line, "[ -d") || strings.Contains(line, "[ -e") || strings.Contains(line, "test -d")) &&
+		!strings.Contains(strings.ToLower(line), "path")
+}
+
+func namesAny(line string, needles []string) bool {
+	for _, n := range needles {
+		if NamesFolder(line, n) {
+			return true
+		}
+	}
+	return false
+}
+
+// guardedByExists says whether line n runs only when the folder exists: "[ -d DIR ] && ..." on the line itself, or
+// "if [ -d DIR ]" on it or one of the two lines before.
+func guardedByExists(lines []string, n int, needles []string) bool {
+	for i := n; i >= 0 && i >= n-2; i-- {
+		l := lines[i]
+		test := (strings.Contains(l, "-d ") || strings.Contains(l, "-e ")) && namesAny(l, needles)
+		if test && (strings.Contains(l, "if ") || i == n && strings.Contains(l, "&&")) {
+			return true
+		}
+	}
+	return false
 }
 
 // NamesFolder says whether a startup file line puts this folder on PATH. The folder has to start and end where a path
