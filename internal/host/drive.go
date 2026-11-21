@@ -3,7 +3,9 @@ package host
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -151,6 +153,23 @@ func (e *Env) Gateway() string {
 	s, _ := e.Out("ip", "route", "show", "default")
 	if m := gatewayLinux.FindStringSubmatch(s); m != nil {
 		return m[1]
+	}
+	b, _ := os.ReadFile("/proc/net/route") // small images and containers often have no ip command
+	return GatewayFromProc(string(b))
+}
+
+// GatewayFromProc reads the default route from /proc/net/route, where addresses are hex in the kernel's byte order.
+func GatewayFromProc(s string) string {
+	for _, l := range strings.Split(s, "\n") {
+		f := strings.Fields(l)
+		if len(f) < 3 || f[1] != "00000000" || len(f[2]) != 8 || f[2] == "00000000" {
+			continue
+		}
+		v, err := strconv.ParseUint(f[2], 16, 32)
+		if err != nil {
+			continue
+		}
+		return fmt.Sprintf("%d.%d.%d.%d", v&0xff, v>>8&0xff, v>>16&0xff, v>>24)
 	}
 	return ""
 }
