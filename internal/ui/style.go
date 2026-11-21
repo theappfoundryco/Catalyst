@@ -69,7 +69,7 @@ func (u *UI) Wide() int {
 }
 
 // KeyBar is the bottom of every screen: a thin rule, then the keys. A key bar that would not fit first drops the keys
-// everyone knows (ctrl-c, the arrows), then the screen's last own keys. The way back always stays.
+// everyone knows (ctrl-c, the arrows), then the screen's last own keys. Enter's action and the way back always stay.
 func (u *UI) KeyBar(pairs ...string) []string {
 	pairs = append([]string(nil), pairs...)
 	fits := func() bool { return Visible(u.KeyHints(pairs...)) <= u.Width()-3 }
@@ -82,10 +82,13 @@ func (u *UI) KeyBar(pairs ...string) []string {
 			}
 		}
 	}
-	for len(pairs) > 2 && !fits() {
+	for !fits() {
 		i := len(pairs) - 2
-		if pairs[i] == "esc" {
+		for i >= 0 && (pairs[i] == "esc" || pairs[i] == "⏎") {
 			i -= 2
+		}
+		if i < 0 {
+			break
 		}
 		drop(i)
 	}
