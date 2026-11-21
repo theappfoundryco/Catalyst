@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/theappfoundryco/catalyst/internal/cli"
-	_ "github.com/theappfoundryco/catalyst/internal/doctor/checks"
+	"github.com/theappfoundryco/catalyst/internal/doctor/checks"
 	"github.com/theappfoundryco/catalyst/internal/host"
 	"github.com/theappfoundryco/catalyst/internal/journal"
 	"github.com/theappfoundryco/catalyst/internal/run"
@@ -120,6 +120,9 @@ func main() {
 		return ok
 	}
 	sysdata.Glob = func(string) ([]string, error) { return []string{"/Applications/Install macOS Sequoia.app"}, nil }
+	// A pip tool whose Python was removed, in a folder of the invented machine rather than the one recording it.
+	write(".local/bin/http", "#!"+filepath.Join(home, ".pyenv/versions/3.11.4/bin/python3.11")+"\n", 0o755)
+	checks.CommandFolders = func(*host.Env) []string { return []string{filepath.Join(home, ".local", "bin")} }
 	e := host.ForTest(home, "darwin", slowRunner{&run.Fake{Replies: replies}, &clock})
 	e.SetCLT(true)
 	e.Shell = "/bin/zsh"
