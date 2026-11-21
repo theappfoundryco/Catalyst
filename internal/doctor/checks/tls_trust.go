@@ -74,9 +74,13 @@ func tlsTrust(e *host.Env) []d.Result {
 func pythonOrgCerts(e *host.Env) (out []d.Result, looked int) {
 	versions, _ := os.ReadDir(pythonOrg)
 	active := ""
+	root := pythonOrg
+	if r, err := filepath.EvalSymlinks(pythonOrg); err == nil {
+		root = r // both sides resolved, or a folder reached through a link would never match
+	}
 	if p, err := e.Look("python3"); err == nil {
-		if real, err := filepath.EvalSymlinks(p); err == nil && strings.HasPrefix(real, pythonOrg+"/") {
-			active = strings.SplitN(strings.TrimPrefix(real, pythonOrg+"/"), "/", 2)[0]
+		if real, err := filepath.EvalSymlinks(p); err == nil && strings.HasPrefix(real, root+"/") {
+			active = strings.SplitN(strings.TrimPrefix(real, root+"/"), "/", 2)[0]
 		}
 	}
 	for _, v := range versions {
