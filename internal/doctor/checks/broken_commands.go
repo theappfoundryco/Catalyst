@@ -22,6 +22,10 @@ var (
 	systemPrefixes = []string{"/System/", "/Library/Apple/", "/Applications/Xcode", "/Library/Developer/CommandLineTools/", "/var/run/com.apple.", "/nix/", "/run/current-system/", "/etc/profiles/"}
 )
 
+// CommandFolders is where commands are looked for: the PATH a new terminal gets. The demo points it at its invented
+// machine, since this check reads files rather than asking a program.
+var CommandFolders = func(e *host.Env) []string { return e.Entries }
+
 // A folder rarely holds more than a few hundred commands. The cap keeps a PATH that includes a huge folder by mistake
 // from making the checkup slow.
 const brokenBudget = 6000
@@ -37,7 +41,7 @@ func brokenCommands(e *host.Env) []d.Result {
 	var intel []string
 	dead := map[string]string{} // a link to nothing: the shell skips it, so it matters only if nothing later has the name
 	checked := 0
-	for _, dir := range e.Entries {
+	for _, dir := range CommandFolders(e) {
 		if !filepath.IsAbs(dir) || isSystemBin(dir) {
 			continue
 		}
