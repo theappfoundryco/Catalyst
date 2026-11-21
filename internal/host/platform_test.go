@@ -243,7 +243,7 @@ func TestBrewOnLinuxLimits(t *testing.T) {
 	if ok, _ := (Platform{OS: "linux", Arch: "amd64", Libc: "glibc 2.39"}).Brew(); !ok {
 		t.Fatal("supported glibc")
 	}
-	if ok, why := (Platform{OS: "linux", Arch: "arm", Libc: "glibc 2.39"}).Brew(); ok || !strings.Contains(why, "x86_64 and ARM64") {
+	if ok, why := (Platform{OS: "linux", Arch: "arm", Libc: "glibc 2.39"}).Brew(); ok || !strings.Contains(why, "x86_64 and arm64") {
 		t.Fatal(why)
 	}
 	if ok, why := (Platform{OS: "linux", Arch: "amd64", Libc: "glibc 2.12"}).Brew(); ok || !strings.Contains(why, "2.13") {
