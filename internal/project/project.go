@@ -131,6 +131,15 @@ func Pins(dir string) []Pin {
 	for tool, v := range ToolVersions(readFile(filepath.Join(dir, ".tool-versions"))) {
 		add(tool, v, ".tool-versions")
 	}
+	// engines is the range a project works with, not the version someone chose, so a version file above wins.
+	var pkg struct {
+		Engines map[string]any `json:"engines"`
+	}
+	if json.Unmarshal([]byte(readFile(filepath.Join(dir, "package.json"))), &pkg) == nil {
+		if v, ok := pkg.Engines["node"].(string); ok {
+			add("node", v, "package.json")
+		}
+	}
 	return out
 }
 
@@ -218,6 +227,9 @@ func comparePin(e *host.Env, dir string, p Pin) Finding {
 	}
 	got := versionNumber.FindString(have)
 	match, judged := Matches(p.Want, have)
+	if !judged {
+		match, judged = Satisfies(p.Want, have)
+	}
 	switch {
 	case !judged:
 		return Finding{Level: OK, File: p.File, Title: p.File + " asks for " + label + " " + p.Want + ", and " + got + " runs here"}
@@ -241,6 +253,12 @@ func installHint(p Pin) string {
 		return "With rbenv: rbenv install " + p.Want + ". With chruby: ruby-install " + p.Want
 	case ".tool-versions":
 		return "With asdf: asdf install. With mise: mise install"
+	case "package.json":
+		major := versionNumber.FindString(p.Want)
+		if i := strings.Index(major, "."); i > 0 {
+			major = major[:i]
+		}
+		return "Its engines field asks for that range. Switch to a Node in it with your version manager, such as nvm install " + major + ", or fnm use " + major
 	}
 	return "With mise: mise install"
 }
