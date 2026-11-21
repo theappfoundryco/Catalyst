@@ -75,6 +75,9 @@ func TestDockerVMDiskNearlyFull(t *testing.T) {
 	f.Truncate(8 << 20) // an 8 MB limit, with 7.5 MB written below
 	f.Write(make([]byte, 7<<20+1<<19))
 	f.Close()
+	if _, _, sparse := sparseUse(p); !sparse {
+		t.Skip("this filesystem does not keep the file sparse, so there is nothing to measure")
+	}
 	rs := dockerState(e)
 	if len(rs) != 2 || rs[1].Severity != d.Warning || !strings.Contains(rs[1].Title, "Docker Desktop's virtual disk is 9") || !strings.Contains(rs[1].Hint, "docker system prune") {
 		t.Fatalf("a full disk is said even while Docker will not start: %+v", rs)
@@ -85,5 +88,13 @@ func TestDockerVMDiskNearlyFull(t *testing.T) {
 	f.Close()
 	if rs := dockerState(e); len(rs) != 1 {
 		t.Fatalf("an empty disk says nothing: %+v", rs)
+	}
+}
+
+func TestAFullyAllocatedDiskFileSaysNothing(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "Docker.raw")
+	os.WriteFile(p, make([]byte, 1<<20), 0o644) // every block written: nothing can be read about the inside
+	if _, _, ok := sparseUse(p); ok {
+		t.Fatal("a file that is not sparse must not be judged")
 	}
 }
