@@ -337,7 +337,7 @@ func Keys(b []byte) []string {
 // picking by number instead, so it still works over a pipe.
 func (m *Menu) Run(u *UI) bool {
 	cols, rows := u.Width(), u.Height()
-	if !u.TTY || !u.InTTY || !u.Color || rows < 12 || cols < 60 {
+	if !u.TTY || !u.InTTY || !u.Color || rows < 12 || cols < 40 { // frame fits each line, so only a very narrow window needs numbers
 		return m.byNumber(u)
 	}
 	fd := int(u.In.Fd())

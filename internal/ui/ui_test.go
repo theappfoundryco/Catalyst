@@ -314,3 +314,11 @@ func TestKeyBarKeepsTheWayBack(t *testing.T) {
 		t.Fatalf("%q", bar)
 	}
 }
+
+func TestKeyBarKeepsEnterAndEsc(t *testing.T) {
+	u := Plain(nil, 50)
+	bar := u.KeyBar("↑↓", "move", "space", "select", "a", "all", "o", "open", "y", "copy path", "⏎", "continue", "esc", "cancel")[1]
+	if !strings.Contains(bar, "[⏎] continue") || !strings.Contains(bar, "[esc] cancel") || Visible(bar) > 50 {
+		t.Fatalf("%q", bar)
+	}
+}
