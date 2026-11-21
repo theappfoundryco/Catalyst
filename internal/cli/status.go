@@ -22,8 +22,8 @@ func (a *App) header() session.Header {
 		s := a.E.Shell
 		shell = ", " + s[strings.LastIndex(s, "/")+1:]
 	}
-	about := strings.TrimPrefix(version.Version, "v") + " · " + a.E.OSName() + ", " + a.E.Arch + shell
-	lines := []string{u.Bold("Catalyst") + " " + u.Dim(strings.TrimPrefix(version.Version, "v")), u.Dim(a.E.OSName() + ", " + a.E.Arch + shell), ""}
+	about := strings.TrimPrefix(version.Version, "v") + " · " + a.E.OSName() + ", " + host.ArchName(a.E.Arch) + shell
+	lines := []string{u.Bold("Catalyst") + " " + u.Dim(strings.TrimPrefix(version.Version, "v")), u.Dim(a.E.OSName() + ", " + host.ArchName(a.E.Arch) + shell), ""}
 	if name := a.Store.LoadConfig().Nickname(); name != "" {
 		lines = []string{u.Bold(greeting(name, a.E.Now())), u.Dim("Catalyst " + about), ""}
 	}
