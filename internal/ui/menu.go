@@ -88,11 +88,12 @@ func (m *Menu) frame(u *UI, cols, rows int) []string {
 	if m.cur >= m.top+view {
 		m.top = m.cur - view + 1
 	}
-	longest, sized := 0, false
+	longest, rightW, sized := 0, 0, false
 	for _, it := range m.Items {
 		if n := Visible(it.Label); n > longest {
 			longest = n
 		}
+		rightW = max(rightW, Visible(it.Right)) // the widest note sets the room for all, so sizes line up in one column
 		sized = sized || it.Size > 0
 	}
 	sizeW := 0
@@ -111,7 +112,7 @@ func (m *Menu) frame(u *UI, cols, rows int) []string {
 		default:
 			mark = u.Dot(it.Picked) + " "
 		}
-		avail := cols - 10 - sizeW - Visible(it.Right) - 3
+		avail := cols - 10 - sizeW - rightW - 3
 		if avail > longest { // sizes sit beside the names, not far off at the window's edge
 			avail = longest
 		}
