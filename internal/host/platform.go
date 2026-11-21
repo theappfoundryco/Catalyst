@@ -304,7 +304,7 @@ func (p Platform) Has(manager string) bool { return slices.Contains(p.Managers, 
 
 // Brew says whether Homebrew can work here and, when it cannot, why, in words for the person. Facts from
 // docs.brew.sh/Support-Tiers, read 2026-11-21: Linux needs glibc (2.13 or newer, 2.39 for full support), x86_64 or
-// ARM64, and a normal user.
+// arm64, and a normal user.
 func (p Platform) Brew() (bool, string) {
 	if p.OS == "darwin" {
 		return true, ""
@@ -314,7 +314,7 @@ func (p Platform) Brew() (bool, string) {
 	case p.Libc == "musl":
 		return false, "Not available on " + name + ": Homebrew needs glibc, and this system uses musl"
 	case p.Arch != "amd64" && p.Arch != "arm64":
-		return false, "Not available on " + p.Arch + ": Homebrew supports x86_64 and ARM64 only"
+		return false, "Not available on " + p.Arch + ": Homebrew supports x86_64 and arm64 only"
 	case p.Libc != "" && !p.GlibcAtLeast(2, 13):
 		return false, "Not available here: Homebrew needs glibc 2.13 or newer, and this has " + strings.TrimPrefix(p.Libc, "glibc ")
 	case p.Root:
@@ -418,7 +418,7 @@ func (p Platform) Describe() string { return p.Pretty + ", " + p.Details() }
 
 // Details is Describe without the system's name, for a screen that already shows it.
 func (p Platform) Details() string {
-	parts := []string{archName(p.Arch)}
+	parts := []string{ArchName(p.Arch)}
 	if p.Rosetta {
 		parts[0] += " (this terminal runs under Rosetta)"
 	}
@@ -440,12 +440,10 @@ func (p Platform) Details() string {
 	return strings.Join(parts, ", ")
 }
 
-func archName(a string) string {
-	switch a {
-	case "amd64":
+// ArchName is a processor the way uname -m and Apple's own screens say it, rather than Go's name for it.
+func ArchName(a string) string {
+	if a == "amd64" {
 		return "x86_64"
-	case "arm64":
-		return "ARM64"
 	}
 	return a
 }
