@@ -86,6 +86,10 @@ func sshGitHosts(e *host.Env) []d.Result {
 		case only && len(have) == 0:
 			out = append(out, d.Warn("SSH to "+alias+" will be refused: the key it is set to use is gone").
 				With("~/.ssh/config tells ssh to offer only "+strings.Join(files, ", ")+" to "+service+", and no such file exists. Point IdentityFile at a key you have, or make one: ssh-keygen -t ed25519"))
+		case len(have) == 0 && agentKeys <= 0 && !defaultKeys(files):
+			// Naming an IdentityFile replaces ssh's own list, so the id_ed25519 beside it is never tried.
+			out = append(out, d.Warn("SSH to "+alias+" will be refused: the key it is set to use is gone").
+				With("~/.ssh/config tells ssh to use "+strings.Join(files, ", ")+" for "+service+", and no such file exists. ssh then tries none of your other keys. Point IdentityFile at a key you have."))
 		case len(have) == 0 && agentKeys <= 0:
 			out = append(out, d.Warn("SSH to "+alias+" will be refused: there is no key to offer").
 				With("~/.ssh/config sets up "+alias+" for "+service+", but ~/.ssh holds no key ssh would try, and no agent holds one. Make one and add its .pub to your "+service+" account:\nssh-keygen -t ed25519"))
@@ -104,6 +108,18 @@ func sshGitHosts(e *host.Env) []d.Result {
 		return []d.Result{d.Pass("SSH to " + strings.Join(judged, ", ") + " has a key to offer")}
 	}
 	return out
+}
+
+// defaultKeys says whether ssh -G listed only its own default key names, which it does when nothing names a key.
+func defaultKeys(files []string) bool {
+	for _, f := range files {
+		switch strings.TrimPrefix(f, "~/.ssh/") {
+		case "id_rsa", "id_ecdsa", "id_ecdsa_sk", "id_ed25519", "id_ed25519_sk", "id_xmss", "id_dsa":
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // sshConfigAliases finds the Host names in ~/.ssh/config that lead to a git host, by name or through HostName, mapped
