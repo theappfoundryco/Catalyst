@@ -669,4 +669,9 @@ func TestNoHomeFolderRefusesToRun(t *testing.T) {
 	if code := a.dispatch([]string{"sweep", "--dry-run"}); code != ExitFailed || !strings.Contains(b.String(), "HOME is not set") {
 		t.Fatalf("%d %q", code, b.String())
 	}
+	for _, args := range [][]string{{"version"}, {"--version"}, {"help"}, {"completion", "bash"}} {
+		if code := a.dispatch(args); code != ExitOK {
+			t.Errorf("%v needs no home folder, but exited %d", args, code)
+		}
+	}
 }

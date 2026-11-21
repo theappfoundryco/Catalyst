@@ -246,7 +246,6 @@ func (a *App) helperHint(tool, what string) {
 	}
 }
 
-// cmdSetup is the first-run welcome: what to call the person, and the helpers worth having.
 // cleanName keeps a name to 24 characters, cut between characters, never inside one, and drops control characters:
 // the name is printed on the home screen, and a pasted escape would reach the terminal.
 func cleanName(s string) string {
@@ -263,6 +262,7 @@ func cleanName(s string) string {
 	return s
 }
 
+// cmdSetup is the first-run welcome: what to call the person, and the helpers worth having.
 func cmdSetup(a *App, _ []string) int {
 	u := a.U
 	c := a.Store.LoadConfig()
