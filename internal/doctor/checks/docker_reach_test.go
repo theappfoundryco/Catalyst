@@ -1,6 +1,8 @@
 package checks
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -56,5 +58,32 @@ func TestDockerUnreachable(t *testing.T) {
 	e.Run.(*run.Fake).Replies["docker info --format {{.ServerVersion}}"] = run.Result{Code: 1, Stderr: dockerDeadCtx}
 	if r := one(t, dockerState(e)); r.State != d.Skipped || r.Title != "Docker points at the colima context, which is not running" || !strings.Contains(r.Hint, "colima start") {
 		t.Fatalf("%+v", r)
+	}
+}
+
+func TestDockerVMDiskNearlyFull(t *testing.T) {
+	old := vmDiskSmallest
+	vmDiskSmallest = 1 << 20
+	defer func() { vmDiskSmallest = old }()
+	e, _ := env(t, "darwin", map[string]string{"docker": "/usr/local/bin/docker"}, map[string]run.Result{
+		"docker info --format {{.ServerVersion}}": {Code: 1, Stderr: "Cannot connect to the Docker daemon at unix:///var/run/docker.sock. Is the docker daemon running?"},
+		"docker context show":                     {Stdout: "desktop-linux\n"},
+	})
+	p := e.Path("Library", "Containers", "com.docker.docker", "Data", "vms", "0", "data", "Docker.raw")
+	os.MkdirAll(filepath.Dir(p), 0o755)
+	f, _ := os.Create(p)
+	f.Truncate(8 << 20) // an 8 MB limit, with 7.5 MB written below
+	f.Write(make([]byte, 7<<20+1<<19))
+	f.Close()
+	rs := dockerState(e)
+	if len(rs) != 2 || rs[1].Severity != d.Warning || !strings.Contains(rs[1].Title, "Docker Desktop's virtual disk is 9") || !strings.Contains(rs[1].Hint, "docker system prune") {
+		t.Fatalf("a full disk is said even while Docker will not start: %+v", rs)
+	}
+	f, _ = os.Create(p)
+	f.Truncate(8 << 20)
+	f.Write(make([]byte, 1<<20))
+	f.Close()
+	if rs := dockerState(e); len(rs) != 1 {
+		t.Fatalf("an empty disk says nothing: %+v", rs)
 	}
 }
