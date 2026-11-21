@@ -1,9 +1,11 @@
 package space
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/theappfoundryco/catalyst/internal/host"
 	"github.com/theappfoundryco/catalyst/internal/run"
@@ -88,5 +90,21 @@ func TestUnreadableFoldersAreCountedNotGuessed(t *testing.T) {
 	r := Measure(Options{Env: host.ForTest(home, "linux", &run.Fake{})})
 	if r.Unreadable != 1 {
 		t.Fatal(r.Unreadable)
+	}
+}
+
+func TestABudgetStopsTheWalkAndSaysSo(t *testing.T) {
+	home := t.TempDir()
+	for i := 0; i < 50; i++ {
+		os.MkdirAll(filepath.Join(home, "code", fmt.Sprintf("p%d", i), "src"), 0o755)
+		os.WriteFile(filepath.Join(home, "code", fmt.Sprintf("p%d", i), "src", "a.txt"), make([]byte, 8192), 0o644)
+	}
+	e := host.ForTest(home, "linux", &run.Fake{})
+	if r := Measure(Options{Env: e}); r.Stopped || r.Home[0].Partial {
+		t.Fatalf("no budget, no stop: %+v", r)
+	}
+	r := Measure(Options{Env: e, Budget: time.Nanosecond})
+	if !r.Stopped || len(r.Home) != 1 || !r.Home[0].Partial {
+		t.Fatalf("%+v", r)
 	}
 }
