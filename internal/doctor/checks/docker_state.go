@@ -103,10 +103,10 @@ func sparseUse(p string) (limit, used int64, ok bool) {
 		return 0, 0, false
 	}
 	limit, used = st.Size(), int64(sys.Blocks)*512
-	if used > limit {
-		used = limit
+	if limit <= 0 || used >= limit {
+		return 0, 0, false // fully allocated: it may be empty inside, and a full-looking file would be a false alarm
 	}
-	return limit, used, limit > 0
+	return limit, used, true
 }
 
 // DockerFailure is why the docker command could not reach its engine, read from its own error.
