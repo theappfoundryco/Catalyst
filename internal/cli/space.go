@@ -6,12 +6,25 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/theappfoundryco/catalyst/internal/session"
 	"github.com/theappfoundryco/catalyst/internal/space"
 	"github.com/theappfoundryco/catalyst/internal/sweep"
 	"github.com/theappfoundryco/catalyst/internal/ui"
 )
+
+// spaceBudget is how long Space measures before it shows what it has. A home folder with years of projects can take
+// minutes to walk, and the biggest folders are clear long before the last file is counted.
+var spaceBudget = 30 * time.Second
+
+// sizeAtLeast is a size, with + when the count was stopped before it was done.
+func sizeAtLeast(n int64, partial bool) string {
+	if partial {
+		return ui.Size(n) + "+"
+	}
+	return ui.Size(n)
+}
 
 func cmdSpace(a *App, args []string) int {
 	fs := a.flags("space", "[--in PATH] [--json]")
@@ -34,6 +47,7 @@ func cmdSpace(a *App, args []string) int {
 	}
 	u := a.U
 	u.Hdr("Space")
+	opts.Budget = spaceBudget // a script asking for --json gets the whole count, a person gets an answer in time
 	sp := u.Spin("Measuring your folders")
 	opts.Progress = func(p string) { sp.Detail(a.E.Tilde(p)) }
 	r := space.Measure(opts)
@@ -45,23 +59,24 @@ func cmdSpace(a *App, args []string) int {
 
 	// What takes the space: the biggest folders in your home, your apps and the system, with bars against the biggest.
 	type row struct {
-		name  string
-		bytes int64
-		note  string
-		path  string
+		name    string
+		bytes   int64
+		note    string
+		path    string
+		partial bool
 	}
 	var rows []row
 	for i, h := range r.Home {
 		if i == 8 || h.Bytes < 100_000_000 {
 			break
 		}
-		rows = append(rows, row{"~/" + h.Name, h.Bytes, "", h.Path})
+		rows = append(rows, row{"~/" + h.Name, h.Bytes, "", h.Path, h.Partial})
 	}
 	if r.Apps > 0 {
-		rows = append(rows, row{"Applications", r.Apps, "", "/Applications"})
+		rows = append(rows, row{"Applications", r.Apps, "", "/Applications", r.AppsCut})
 	}
 	if r.System != nil {
-		rows = append(rows, row{"macOS", r.System.Total(), "Apple's own volumes, press Enter", ""})
+		rows = append(rows, row{"macOS", r.System.Total(), "Apple's own volumes, press Enter", "", false})
 	}
 	sort.SliceStable(rows, func(i, j int) bool { return rows[i].bytes > rows[j].bytes })
 	biggest := int64(1)
@@ -89,7 +104,7 @@ func cmdSpace(a *App, args []string) int {
 		case x.path != "":
 			keys = append(keys, a.revealKey(x.path), a.copyKey("y", "copy path", x.path, "the path"))
 		}
-		line := fmt.Sprintf("  %s%8s  %s%s  %s", a.row(keys...), ui.Size(x.bytes), u.Accent(strings.Repeat("█", bar)), strings.Repeat(" ", 16-bar), x.name)
+		line := fmt.Sprintf("  %s%8s  %s%s  %s", a.row(keys...), sizeAtLeast(x.bytes, x.partial), u.Accent(strings.Repeat("█", bar)), strings.Repeat(" ", 16-bar), x.name)
 		if x.note != "" {
 			line += "  " + u.Faint(x.note)
 		}
@@ -125,13 +140,22 @@ func cmdSpace(a *App, args []string) int {
 		for i, l := range r.Landmarks {
 			mark := a.row(goTo("⏎", "look inside", l.Name, "space", "--in", l.Path), a.revealKey(l.Path), a.copyKey("y", "copy path", l.Path, "the path"))
 			if oneLine {
-				u.Say(fmt.Sprintf("  %s%8s  %-*s  %s", mark, ui.Size(l.Bytes), nameW, l.Name, hows[i]))
+				u.Say(fmt.Sprintf("  %s%8s  %-*s  %s", mark, sizeAtLeast(l.Bytes, l.Partial), nameW, l.Name, hows[i]))
 				continue
 			}
-			u.Say(fmt.Sprintf("  %s%8s  %s", mark, ui.Size(l.Bytes), l.Name))
+			u.Say(fmt.Sprintf("  %s%8s  %s", mark, sizeAtLeast(l.Bytes, l.Partial), l.Name))
 			for _, w := range u.Wrap(strings.Repeat(" ", 12)+hows[i], u.Width()) {
 				fmt.Fprintln(u.Out, w)
 			}
+		}
+	}
+	if r.Stopped {
+		u.Blank()
+		u.Note(fmt.Sprintf("Measured for %d seconds, so sizes marked + are at least that much.", int(spaceBudget.Seconds())))
+		if a.inSession {
+			u.Hint("Press Enter on a folder to measure just that one.")
+		} else {
+			u.Hint("Measure just one folder: catalyst space --in PATH")
 		}
 	}
 	if r.Unreadable > 0 {
