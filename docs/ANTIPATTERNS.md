@@ -26,6 +26,7 @@ Mistakes that already happened in this project or the Mac app before it, so they
 - **Reading a pipe with no limit.** A daemon that inherits the pipe (git's fsmonitor, `system_profiler`) keeps it open after the program exits. Every call has a time limit and `WaitDelay`.
 - **Running `git` or `python3` on a Mac to see if they exist.** Without Command Line Tools, those are stubs that open Apple's install dialog. Use `SafeTool`.
 - **Checking the environment you were started with.** A process's PATH is rarely what a new terminal gets. Ask a login shell, and tolerate whatever startup files print.
+- **Trusting SHELL and HOME to be set.** `docker exec`, cron and dev containers start programs without them. Without SHELL no login shell was asked, and without HOME history landed in the current folder. Take both from the user database.
 - **Finding a tool and calling it working.** A command can resolve and still fail. Run it.
 - **Parsing text in the user's language.** Everything runs with `LC_ALL=C`.
 
@@ -36,6 +37,8 @@ Mistakes that already happened in this project or the Mac app before it, so they
 - **Printing a secret to prove you found it.** Counts only, everywhere, including `--json`.
 
 ## Output
+- **Printing a name as it is.** A folder in a cloned repository, a process or a stored name can hold a newline or an escape that retitles the terminal or writes to its clipboard. Every line goes through `ui.Printable`, and paths through `Tilde`.
+- **Counting characters as columns.** 名前 and most emoji take two columns each. Measure with `ui.Visible`.
 - **Output wider than the terminal.** A spinner line longer than the window wraps and stacks on every redraw. Fit lines to the width, and never cut text inside brackets.
 - **A background key reader.** It steals the keys meant for a command's own menu. Wait for input with `select`, and read only when a key is ready.
 - **Raw logs on screen.** Long steps show a spinner. Details appear only when something fails.
@@ -51,7 +54,7 @@ Mistakes that already happened in this project or the Mac app before it, so they
 
 ## Scope
 - **Wrapping what developers already do.** The Mac app had nine screens over `pip` and `brew`, and that is what people called overkill. Catalyst diagnoses those tools. It does not manage them.
-- **Cleaning what is not a cache.** Clean takes app caches and old logs, which rebuild themselves, and nothing else. Models, virtual machines, backups and simulators are someone's chosen data: show them with their own tool's way to remove them.
+- **Cleaning what is not a cache.** Clean takes app caches and old logs, which rebuild themselves, and nothing else. Models, virtual machines, backups and simulators are someone's chosen data: show them with their own tool's way to remove them. On Linux they hide in `~/.cache` too (torch, lm-studio, whisper), so not every folder there is a cache.
 - **Cleaning under a running app.** An app writing to its cache while it disappears can lose work or crash. Leave an open app's cache, and say so.
 - **Touching Apple's caches or admin areas by hand.** macOS manages `com.apple.*`, `/Library/Caches`, `/private/var/folders`, its logs and its downloaded assets. Measure and explain them, locked. Offer only what has a supported way out (Time Machine's `tmutil`, Wallpaper or Software Update settings, an app's own command), and run that way.
 - **Calling macOS clearable.** The sealed system, Preboot and Recovery can never be cleared, and swap only shrinks by itself. Say so on screen, every time someone looks.

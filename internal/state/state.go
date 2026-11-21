@@ -20,10 +20,11 @@ func New(home string, getenv func(string) string) *Store {
 	st := filepath.Join(home, ".local", "state")
 	cf := filepath.Join(home, ".config")
 	if getenv != nil {
-		if v := getenv("XDG_STATE_HOME"); v != "" {
+		// The XDG spec says a relative path here is to be ignored: it would put history in whatever folder this ran in.
+		if v := getenv("XDG_STATE_HOME"); filepath.IsAbs(v) {
 			st = v
 		}
-		if v := getenv("XDG_CONFIG_HOME"); v != "" {
+		if v := getenv("XDG_CONFIG_HOME"); filepath.IsAbs(v) {
 			cf = v
 		}
 	}

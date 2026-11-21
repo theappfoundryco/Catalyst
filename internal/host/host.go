@@ -7,11 +7,13 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/theappfoundryco/catalyst/internal/run"
+	"github.com/theappfoundryco/catalyst/internal/ui"
 )
 
 // Env is everything a check needs from the outside world. Tests build their own.
@@ -37,15 +39,50 @@ type Env struct {
 // else would diagnose the wrong PATH. That is the most common reason an environment check lies.
 func New() *Env {
 	home, _ := os.UserHomeDir()
+	if !filepath.IsAbs(home) { // HOME unset, empty or relative: every path built on it would land in the current folder
+		home = passwdField("/etc/passwd", os.Getuid(), 5)
+		if home != "" {
+			os.Setenv("HOME", home) // git, ssh and the login shell read it too
+		}
+	}
 	e := &Env{
 		OS: runtime.GOOS, Arch: runtime.GOARCH, Home: home, Shell: os.Getenv("SHELL"),
 		Run: run.Real{}, Look: exec.LookPath, Getenv: os.Getenv, Now: time.Now,
 		Hostname: func() string { n, _ := os.Hostname(); return n },
 	}
+	if e.Shell == "" {
+		e.Shell = passwdShell("/etc/passwd", os.Getuid())
+	}
 	e.Entries = splitPath(os.Getenv("PATH"))
 	e.JavaHome = os.Getenv("JAVA_HOME")
 	e.NvmDir = os.Getenv("NVM_DIR")
 	return e
+}
+
+// passwdShell is the login shell the user database gives this user. docker exec, cron, dev containers and some IDE
+// tasks start programs without SHELL, and without a shell to ask every PATH check would read the wrong PATH. A Mac
+// keeps its users elsewhere, but Terminal always sets SHELL there.
+func passwdShell(file string, uid int) string {
+	if s := passwdField(file, uid, 6); !strings.HasSuffix(s, "nologin") && !strings.HasSuffix(s, "/false") {
+		return s
+	}
+	return ""
+}
+
+// passwdField is one field of this user's line in the user database: 5 is the home folder, 6 the login shell. Only an
+// absolute path counts.
+func passwdField(file string, uid, field int) string {
+	b, err := os.ReadFile(file)
+	if err != nil {
+		return ""
+	}
+	want := strconv.Itoa(uid)
+	for _, line := range strings.Split(string(b), "\n") {
+		if f := strings.Split(line, ":"); len(f) == 7 && f[2] == want && filepath.IsAbs(f[field]) {
+			return f[field]
+		}
+	}
+	return ""
 }
 
 const pathMark = "__CATALYST_ENV__"
@@ -136,9 +173,9 @@ func (e *Env) Tilde(p string) string {
 		return "~"
 	}
 	if strings.HasPrefix(p, e.Home+"/") {
-		return "~" + p[len(e.Home):]
+		p = "~" + p[len(e.Home):]
 	}
-	return p
+	return ui.Printable(p) // a name can hold a newline or an escape, and this is how paths reach the screen
 }
 
 // Out runs a program with the default time limit and returns its trimmed output and whether it worked.

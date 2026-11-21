@@ -72,6 +72,24 @@ func TestSSHHostsConfiguredKeyIsGone(t *testing.T) {
 	}
 }
 
+// A named IdentityFile replaces ssh's defaults, so a key beside it that ssh would otherwise try does not help, and
+// "make a key" would be the wrong advice: the person has one.
+func TestSSHHostsNamedKeyGoneWhileAnotherExists(t *testing.T) {
+	te, replies := sshEnv(t, run.Result{Code: 1, Stdout: "The agent has no identities.\n"})
+	e := te.e
+	write(t, e.Path(".ssh", "config"), "Host github.com\n  IdentityFile ~/.ssh/id_missing\n", 0o644)
+	write(t, e.Path(".ssh", "id_ed25519"), "key", 0o600)
+	replies["/usr/bin/ssh -G github.com"] = run.Result{Stdout: "hostname github.com\nidentitiesonly no\nidentityfile ~/.ssh/id_missing\n"}
+	r := one(t, sshGitHosts(e))
+	if !strings.Contains(r.Title, "the key it is set to use is gone") || !strings.Contains(r.Hint, "~/.ssh/id_missing") || strings.Contains(r.Hint, "ssh-keygen") {
+		t.Fatalf("%+v", r)
+	}
+	replies["/usr/bin/ssh-add -l"] = run.Result{Stdout: "256 SHA256:abc sam (ED25519)\n"}
+	if r := one(t, sshGitHosts(e)); r.State != d.Passed {
+		t.Fatalf("without IdentitiesOnly the agent's keys are still offered: %+v", r)
+	}
+}
+
 func TestSSHHostsOldGitHubKey(t *testing.T) {
 	te, replies := sshEnv(t, run.Result{Stdout: "256 SHA256:abc alex@example.com (ED25519)\n"})
 	e := te.e

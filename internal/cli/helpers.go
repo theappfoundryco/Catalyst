@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/theappfoundryco/catalyst/internal/host"
 	"github.com/theappfoundryco/catalyst/internal/run"
@@ -244,16 +246,29 @@ func (a *App) helperHint(tool, what string) {
 	}
 }
 
+// cleanName keeps a name to 24 characters, cut between characters, never inside one, and drops control characters:
+// the name is printed on the home screen, and a pasted escape would reach the terminal.
+func cleanName(s string) string {
+	s = strings.Map(func(r rune) rune {
+		if unicode.IsControl(r) || r == utf8.RuneError {
+			return -1
+		}
+		return r
+	}, s)
+	s = strings.TrimSpace(s)
+	if r := []rune(s); len(r) > 24 {
+		s = strings.TrimSpace(string(r[:24]))
+	}
+	return s
+}
+
 // cmdSetup is the first-run welcome: what to call the person, and the helpers worth having.
 func cmdSetup(a *App, _ []string) int {
 	u := a.U
 	c := a.Store.LoadConfig()
 	u.Say("  " + u.Bold("Hi, I'm Catalyst.") + u.Dim(" I check your dev setup and free space safely. Nothing changes without asking."))
 	u.Blank()
-	name := strings.TrimSpace(u.Text("What should I call you? " + u.Dim("(Enter to skip) ")))
-	if len(name) > 24 {
-		name = name[:24]
-	}
+	name := cleanName(u.Text("What should I call you? " + u.Dim("(Enter to skip) ")))
 	c.Name = &name
 	u.Blank()
 	if name != "" {

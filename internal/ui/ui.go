@@ -14,7 +14,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode/utf8"
 
 	"golang.org/x/term"
 )
@@ -118,7 +117,7 @@ func (u *UI) Height() int {
 var ansi = regexp.MustCompile(`\x1b\[[0-9;?]*[A-Za-z]`)
 
 // Visible is how many columns s takes once colour codes are ignored.
-func Visible(s string) int { return utf8.RuneCountInString(ansi.ReplaceAllString(s, "")) }
+func Visible(s string) int { return columns(ansi.ReplaceAllString(s, "")) }
 
 // Fit shortens s to the given width. A note in brackets goes first, so a cut never leaves "(" open.
 func Fit(s string, width int) string {
@@ -126,32 +125,30 @@ func Fit(s string, width int) string {
 		return s
 	}
 	plain := ansi.ReplaceAllString(s, "")
-	if i := strings.LastIndex(plain, " ("); i > 0 && strings.HasSuffix(plain, ")") && utf8.RuneCountInString(plain[:i]) <= width {
+	if i := strings.LastIndex(plain, " ("); i > 0 && strings.HasSuffix(plain, ")") && columns(plain[:i]) <= width {
 		return plain[:i]
 	}
-	r := []rune(plain)
-	return strings.TrimRight(string(r[:width-1]), " ") + "…"
+	return strings.TrimRight(head(plain, width-1), " ") + "…"
 }
 
 // FitPath shortens a path from the front, so the folder names that tell it apart stay on screen.
 func FitPath(p string, width int) string {
-	r := []rune(p)
-	if len(r) <= width || width < 2 {
+	if columns(p) <= width || width < 2 {
 		return p
 	}
-	tail := string(r[len(r)-(width-1):])
-	if i := strings.Index(tail, "/"); i >= 0 && i < len(tail)-1 {
-		tail = tail[i:]
+	end := tail(p, width-1)
+	if i := strings.Index(end, "/"); i >= 0 && i < len(end)-1 {
+		end = end[i:]
 	}
-	return "…" + tail
+	return "…" + end
 }
 
 // Line writes one line, indented by nothing and never wider than the window.
-func (u *UI) line(s string) { fmt.Fprintln(u.Out, s) }
+func (u *UI) line(s string) { fmt.Fprintln(u.Out, Printable(s)) }
 
 // Say prints a line, wrapped to the window with the indent carried over.
 func (u *UI) Say(s string) {
-	for _, l := range u.Wrap(s, u.Width()) {
+	for _, l := range u.Wrap(Printable(s), u.Width()) {
 		u.line(l)
 	}
 }

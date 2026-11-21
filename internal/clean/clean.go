@@ -91,8 +91,9 @@ var known = map[string]string{
 var leave = map[string]bool{
 	"CloudKit": true, "FamilyCircle": true, "GeoServices": true, "com.apple.bird": true,
 	"Homebrew": true, "pip": true, "Yarn": true, "yarn": true, "go-build": true, // these are in sweep
-	"huggingface": true, // models, not a cache: reported instead
-	"mole":        true,
+	"huggingface": true, "torch": true, "lm-studio": true, "whisper": true, "gpt4all": true, "llama.cpp": true, "kagglehub": true, // models, not a cache: reported instead
+	"uv":   true, // projects link into it, so only uv cache prune may shrink it (System Data offers that)
+	"mole": true,
 }
 
 // Scan looks, measures and decides. It changes nothing.

@@ -55,6 +55,21 @@ func TestEveryEntryKnowsItsOwnSample(t *testing.T) {
 	}
 }
 
+// The same error as Node prints it, and as it often turns up copied with its quotes gone.
+func TestNpmPermissionErrorWithOrWithoutQuotes(t *testing.T) {
+	for _, text := range []string{
+		"Error: EACCES: permission denied, mkdir '/usr/lib/node_modules/typescript'",
+		"Error: EACCES: permission denied, mkdir /usr/lib/node_modules",
+	} {
+		if got := Find(text); len(got) == 0 || got[0].ID != "npm-eacces" {
+			t.Errorf("%q: %+v", text, got)
+		}
+	}
+	if got := Find("Error: EACCES: permission denied, open '/home/alex/notes.txt'"); len(got) != 0 && got[0].ID == "npm-eacces" {
+		t.Errorf("a file outside node_modules is not npm's global folder: %+v", got)
+	}
+}
+
 func TestWhatWasCaughtIsUsed(t *testing.T) {
 	for text, want := range map[string]string{
 		"zsh: command not found: nvm":                 "catalyst why nvm",

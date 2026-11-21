@@ -48,8 +48,8 @@ func (u *UI) Spin(doing string) *Spinner {
 // line builds the row so it fits one terminal line: longer than that, each frame would wrap and stack.
 func (s *Spinner) line(frame int, cols int) string {
 	s.mu.Lock()
-	last := s.last
-	doing := s.doing
+	last := Printable(s.last) // often a path, which can hold anything
+	doing := Printable(s.doing)
 	s.mu.Unlock()
 	secs := fmt.Sprintf("(%ds)", int(time.Since(s.t0).Seconds()))
 	doing = Fit(doing, cols-len(secs)-8)
@@ -164,7 +164,12 @@ func (u *UI) Text(q string) string {
 }
 
 func (u *UI) prompt(q string) string {
-	fmt.Fprint(u.Out, "  "+q)
+	// A long question wraps at words like any line, and the answer is typed after its last line.
+	lines := u.Wrap("  "+Printable(q), u.Width())
+	for _, l := range lines[:len(lines)-1] {
+		fmt.Fprintln(u.Out, l)
+	}
+	fmt.Fprint(u.Out, lines[len(lines)-1])
 	r := bufio.NewReader(u.In)
 	line, _ := r.ReadString('\n')
 	if u.Echo != nil {

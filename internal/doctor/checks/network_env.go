@@ -4,6 +4,8 @@ import (
 	"net"
 	"net/url"
 	"os"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -50,7 +52,7 @@ func networkEnv(e *host.Env) []d.Result {
 		switch {
 		case err != nil:
 			out = append(out, d.Warn(v.name+" points at "+e.Tilde(p)+", which does not exist").
-				With("So "+v.who+" fail with certificate errors. Remove the line that sets it, or point it at the right file. See where: catalyst path"))
+				With("So "+v.who+" fail with certificate errors. Remove the line that sets it, or point it at the right file. "+WhereSet(e, v.name)))
 		case v.name == "SSL_CERT_DIR" && !st.IsDir():
 			out = append(out, d.Warn("SSL_CERT_DIR points at a file, not a folder").With("OpenSSL expects a folder of certificates here."))
 		case v.name != "SSL_CERT_DIR" && st.IsDir():
@@ -81,6 +83,26 @@ func networkEnv(e *host.Env) []d.Result {
 		return []d.Result{d.Skip("No proxy or certificate variables are set")}
 	}
 	return []d.Result{d.Pass("Proxy and certificate settings point at real places")}
+}
+
+// WhereSet says which startup file sets a variable, and on which line, so a hint can point at the line to change.
+func WhereSet(e *host.Env, name string) string {
+	set := regexp.MustCompile(`(^|[\s;])(export\s+|declare\s+-x\s+)?` + regexp.QuoteMeta(name) + `=|set\s+-[a-zA-Z]*x[a-zA-Z]*\s+` + regexp.QuoteMeta(name) + `\b|setenv\s+` + regexp.QuoteMeta(name) + `\b`)
+	for _, rc := range e.RCFiles() {
+		b, err := os.ReadFile(rc)
+		if err != nil {
+			continue
+		}
+		for n, line := range strings.Split(string(b), "\n") {
+			if !strings.HasPrefix(strings.TrimSpace(line), "#") && set.MatchString(line) {
+				return "It is set in " + e.Tilde(rc) + ", line " + strconv.Itoa(n+1) + "."
+			}
+		}
+	}
+	if e.Mac() {
+		return "None of your startup files sets it directly. Look in files they read, launchctl getenv " + name + ", or the app that opened this terminal."
+	}
+	return "None of your startup files sets it directly. Look in files they read, /etc/environment, /etc/profile.d, or the app that opened this terminal."
 }
 
 // LocalProxy returns host:port when a proxy setting points at this machine. Remote proxies return false, because

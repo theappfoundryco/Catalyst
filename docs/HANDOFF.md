@@ -101,6 +101,12 @@ As of 0.1.0, built and run on Apple silicon macOS 15 and ARM64 Linux containers:
 - **The home list** with the new Project, Changes and Report rows, and `w` on PATH's hidden tools, driven on a pseudo-terminal with pyte at 100 by 30, 50 by 20 and 100 by 40.
 - **Shell completions** parsed by bash, zsh and fish, and completing in fish and a simulated bash, in debian:12.
 
+### Added on 2026-11-22 (an end-to-end run as a new user, in a Debian container)
+
+- A messy home planted as user `sam`: Node, Python and Rust projects, a tracked `node_modules`, links into `/usr/lib` and `~/Documents`, decoy `build` and `target` folders, folders named with spaces, quotes, `;`, `-rf`, `$(touch PWNED)`, a newline, Chinese characters, 200 letters and 120 levels deep, a symlink loop, locked folders and 20,000 files in one `node_modules`. Sweep found only the real build output, swept all 17 for real, and undo put back every one of 20,012 files byte for byte. Nothing ran from a name.
+- Corrupt, half-written and unwritable state files, no HOME, no SHELL, a relative XDG folder, two sweeps at once, a journal that cannot be written (every move was put back, exit 3), a 10 MB paste into explain, TERM=dumb, NO_COLOR and widths from 5 to 100 columns. No stack trace anywhere.
+- Every row of the list driven on a pseudo-terminal at 100 by 40 and 60 by 24, and the welcome at 30 by 12.
+
 ## What has not been verified
 
 - **A real Intel Mac by hand.** CI's macos-15-intel runner ran the read-only commands. Nobody has looked at the output on a person's Intel Mac.

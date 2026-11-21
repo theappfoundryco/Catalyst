@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -115,11 +116,18 @@ func (a *App) dispatch(args []string) int {
 			rest = append(rest, x)
 		}
 	}
-	if len(rest) == 0 {
-		if a.U.TTY && a.U.InTTY {
-			return a.session()
-		}
+	if len(rest) == 0 && !(a.U.TTY && a.U.InTTY) {
 		return cmdHelp(a, nil) // a pipe has nobody to talk to
+	}
+	// Without a home folder every path would be relative, and history would land in whatever folder this ran in.
+	// Help, the version and completions need none, so they still work for a user the system does not know.
+	if !filepath.IsAbs(a.E.Home) && (len(rest) == 0 || rest[0] != "help" && rest[0] != "version" && rest[0] != "completion") {
+		a.U.Stop("Catalyst needs your home folder, and HOME is not set.")
+		a.U.Hint("Set it, then run this again: export HOME=/path/to/your/home")
+		return ExitFailed
+	}
+	if len(rest) == 0 {
+		return a.session()
 	}
 	for _, c := range commands() {
 		if c.Name == rest[0] {

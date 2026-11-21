@@ -170,9 +170,10 @@ func (a *App) sweepOffer(rep sweep.Report, age time.Duration, dry, pickAll bool)
 		items[i] = ui.Item{Label: label, Right: right, About: about, Size: it.Size, Picked: pickAll || it.Cost == sweep.Safe}
 	}
 	if dry {
-		for i, it := range items {
-			u.Say(fmt.Sprintf("  %8s  %s  %s", ui.Size(it.Size), it.Label, u.Dim(it.Right)))
-			u.Hint("   " + a.E.Tilde(rep.Items[i].Path))
+		w := u.Width()
+		for i, it := range items { // each row on its own lines, so a long project name or a deep path never wraps
+			u.Say(fmt.Sprintf("  %8s  %s  %s", ui.Size(it.Size), ui.Fit(ui.Printable(it.Label), max(12, w-14-ui.Visible(it.Right))), u.Dim(it.Right)))
+			u.Hint("   " + ui.FitPath(a.E.Tilde(rep.Items[i].Path), w-10))
 		}
 		u.Blank()
 		u.Say("  " + u.Dim("Dry run: nothing was moved."))
@@ -205,7 +206,11 @@ func (a *App) sweepApply(rep sweep.Report, picked []ui.Item) int {
 			}
 			it := rep.Items[i]
 			s.Detail(filepath.Base(filepath.Dir(it.Path)))
-			if err := a.moveToTrash(it.Path, it.Title+" in "+it.Project, batch, it.Size); err != nil {
+			title := it.Title
+			if !it.Global { // a global cache is its own project: "npm cache in npm cache" says it twice
+				title += " in " + it.Project
+			}
+			if err := a.moveToTrash(it.Path, title, batch, it.Size); err != nil {
 				failed++
 				problems = append(problems, a.E.Tilde(it.Path)+": "+err.Error())
 				continue
@@ -329,6 +334,10 @@ func cmdLog(a *App, args []string) int {
 	u.Hdr("What Catalyst has changed")
 	for _, e := range all {
 		what := e.Title
+		if name, rest, ok := strings.Cut(what, " in "); ok && name == rest { // older entries for a global cache say "npm cache in npm cache"
+			what = name
+		}
+		what = ui.Fit(ui.Printable(what), u.Width()-21) // one row per change, however long a folder's name
 		switch e.Kind {
 		case journal.KindUndo:
 			what = u.Dim("Undid the change before this")

@@ -1,6 +1,10 @@
 package cli
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+)
 
 func TestNamesFolder(t *testing.T) {
 	cases := []struct {
@@ -22,5 +26,23 @@ func TestNamesFolder(t *testing.T) {
 		if got := NamesFolder(c.line, c.dir); got != c.want {
 			t.Errorf("%q in %q: %v", c.dir, c.line, got)
 		}
+	}
+}
+
+// Debian's ~/.profile names ~/bin inside "if [ -d", so when ~/bin does not exist, the line that really added it is the
+// one to blame, not the guarded one that comes first.
+func TestPathSourceSkipsALineGuardedByExistence(t *testing.T) {
+	a, _ := testApp(t, "linux")
+	home := a.E.Home
+	os.WriteFile(filepath.Join(home, ".profile"), []byte("if [ -d \"$HOME/bin\" ] ; then\n    PATH=\"$HOME/bin:$PATH\"\nfi\n[ -d \"$HOME/opt\" ] && PATH=\"$HOME/opt:$PATH\"\n"), 0o644)
+	os.WriteFile(filepath.Join(home, ".bashrc"), []byte("# mine\nexport PATH=\"$HOME/bin:$HOME/opt:$PATH\"\n"), 0o644)
+	for _, dir := range []string{"bin", "opt"} {
+		if rc, line := a.pathSource(filepath.Join(home, dir)); rc != filepath.Join(home, ".bashrc") || line != 2 {
+			t.Errorf("missing ~/%s: blamed %s line %d", dir, rc, line)
+		}
+	}
+	os.Mkdir(filepath.Join(home, "bin"), 0o755)
+	if rc, line := a.pathSource(filepath.Join(home, "bin")); rc != filepath.Join(home, ".profile") || line != 2 {
+		t.Errorf("an existing ~/bin is added by .profile first: %s line %d", rc, line)
 	}
 }

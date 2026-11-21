@@ -59,8 +59,8 @@ func cmdClean(a *App, args []string) int {
 	}
 	if *dry {
 		for _, it := range r.Items {
-			u.Say(fmt.Sprintf("  %8s  %s", ui.Size(it.Bytes), it.Name))
-			u.Hint("   " + a.E.Tilde(it.Path))
+			u.Say(fmt.Sprintf("  %8s  %s", ui.Size(it.Bytes), ui.Fit(ui.Printable(it.Name), u.Width()-12)))
+			u.Hint("   " + ui.FitPath(a.E.Tilde(it.Path), u.Width()-10))
 		}
 		u.Blank()
 		u.Say("  " + u.Dim("Dry run: nothing was moved."))
