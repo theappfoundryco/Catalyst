@@ -133,3 +133,27 @@ func TestRootFindsTheRepository(t *testing.T) {
 		t.Fatal("root")
 	}
 }
+
+func TestNodeEngines(t *testing.T) {
+	dir := files(t, map[string]string{"package.json": `{"engines":{"node":">=20 <23","npm":">=10"}}`})
+	title := func(node string) (Finding, bool) {
+		e := env(t, []string{"node"}, map[string]run.Result{"node --version": {Stdout: node + "\n"}})
+		for _, f := range Check(e, dir).Findings {
+			if f.File == "package.json" && strings.Contains(f.Title, "Node") {
+				return f, true
+			}
+		}
+		return Finding{}, false
+	}
+	f, ok := title("v18.19.0")
+	if !ok || f.Level != Warn || f.Title != "package.json asks for Node >=20 <23, but 18.19.0 runs here" || !strings.Contains(f.Hint, "nvm install 20") {
+		t.Fatalf("%+v", f)
+	}
+	if f, _ := title("v22.3.0"); f.Level != OK || f.Title != "Node 22.3.0 runs here, as package.json asks" {
+		t.Fatalf("%+v", f)
+	}
+	os.WriteFile(filepath.Join(dir, ".nvmrc"), []byte("22\n"), 0o644)
+	if _, ok := title("v22.3.0"); ok {
+		t.Fatal(".nvmrc is the version chosen, and wins over the range")
+	}
+}
