@@ -57,3 +57,18 @@ func TestNetworkEnv(t *testing.T) {
 		}
 	}
 }
+
+func TestWhereSet(t *testing.T) {
+	e, _ := env(t, "linux", nil, nil)
+	write(t, e.Path(".bashrc"), "# export NODE_EXTRA_CA_CERTS=/old.pem\nalias x=y\nexport NODE_EXTRA_CA_CERTS=/etc/ssl/missing.pem\n", 0o644)
+	write(t, e.Path(".config", "fish", "config.fish"), "set -gx PIP_CERT /x.pem\n", 0o644)
+	if got := WhereSet(e, "NODE_EXTRA_CA_CERTS"); got != "It is set in ~/.bashrc, line 3." {
+		t.Errorf("got %q", got)
+	}
+	if got := WhereSet(e, "PIP_CERT"); got != "It is set in ~/.config/fish/config.fish, line 1." {
+		t.Errorf("got %q", got)
+	}
+	if got := WhereSet(e, "SSL_CERT_FILE"); !strings.Contains(got, "/etc/environment") {
+		t.Errorf("got %q", got)
+	}
+}

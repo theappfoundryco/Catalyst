@@ -37,7 +37,7 @@ func pipSystem(e *host.Env) []d.Result {
 		if scope, ok := strings.CutSuffix(key, ".break-system-packages"); ok && scope != ":env:" {
 			r = r.Run(py, "-m", "pip", "config", "unset", scope+".break-system-packages")
 		} else {
-			r = r.With("PIP_BREAK_SYSTEM_PACKAGES is set in your environment. Remove the line that sets it. See where: catalyst path")
+			r = r.With("PIP_BREAK_SYSTEM_PACKAGES is set in your environment. Remove the line that sets it. " + WhereSet(e, "PIP_BREAK_SYSTEM_PACKAGES"))
 		}
 		return []d.Result{r}
 	}
