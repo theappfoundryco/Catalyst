@@ -40,6 +40,9 @@ func TestWideCharacters(t *testing.T) {
 	if n := Visible("名前"); n != 4 {
 		t.Errorf("Visible(名前) = %d, want 4", n)
 	}
+	if n := Visible("🚀🫠"); n != 4 {
+		t.Errorf("Visible(🚀🫠) = %d, want 4", n)
+	}
 	if n := Visible("é"); n != 1 {
 		t.Errorf("an accent on its letter takes %d columns, want 1", n)
 	}
