@@ -33,7 +33,11 @@ func TestLinuxOffersClosedAppCachesOnly(t *testing.T) {
 	put(t, home, ".cache/ms-playwright/chromium", 2<<20) // closed, offered with a known name
 	put(t, home, ".cache/pip/http/blob", 4<<20)          // sweep offers this one
 	put(t, home, ".cache/huggingface/hub/model", 5<<20)  // models: reported, never offered
-	put(t, home, ".cache/tiny/blob", 1000)               // too small to be worth a row
+	put(t, home, ".cache/torch/hub/checkpoints/m.pth", 5<<20)
+	put(t, home, ".cache/lm-studio/models/q4.gguf", 5<<20)
+	put(t, home, ".cache/whisper/medium.pt", 5<<20)
+	put(t, home, ".cache/uv/archive-v0/x", 5<<20) // projects link into it: only uv cache prune, from System Data
+	put(t, home, ".cache/tiny/blob", 1000)        // too small to be worth a row
 	e := host.ForTest(home, "linux", &run.Fake{Replies: map[string]run.Result{"ps -eo comm=": {Stdout: "bash\n/opt/google/chrome/google-chrome\n"}}})
 	r := Scan(Options{Env: e, MinSize: 1 << 20})
 	if got := names(r); got != "Playwright browsers" {
