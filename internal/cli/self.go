@@ -105,7 +105,7 @@ func cmdUpdate(a *App, args []string) int {
 		u.Blank()
 		return ExitOK
 	}
-	u.Say("  " + u.Bold(tag) + " is out. You have " + version.Version + ".")
+	u.Say("  " + u.Bold(strings.TrimPrefix(tag, "v")) + " is out. You have " + strings.TrimPrefix(version.Version, "v") + ".")
 	u.Hint("What changed: https://github.com/" + version.Repo + "/releases/tag/" + tag)
 	if *check {
 		u.Blank()
@@ -209,7 +209,11 @@ func cmdUninstall(a *App, args []string) int {
 	u.Hint(a.E.Tilde(a.Store.Dir) + " and " + a.E.Tilde(a.Store.ConfigDir))
 	u.Hint("What is in the Trash stays there. Anything it moved is yours to keep or empty.")
 	u.Sect("This stays")
-	u.Hint("Homebrew, and everything installed with it, such as smartmontools. Catalyst never removes them.")
+	if a.brew() != "" {
+		u.Hint("Homebrew, and everything installed with it, such as smartmontools. Catalyst never removes them.")
+	} else {
+		u.Hint("Helper tools such as smartmontools, and everything else your package manager installed. Catalyst never removes them.")
+	}
 	if !u.Ask("Remove Catalyst?") {
 		return ExitOK
 	}

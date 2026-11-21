@@ -86,7 +86,7 @@ func (a *App) reportText(all []doctor.Result) string {
 		}
 		w("| %s | `%s` | %s |\n", t, path, strings.ReplaceAll(ver, "|", "/"))
 	}
-	w("\n## Doctor\n\nScore %d. %d fine, %d critical, %d warnings, %d notes, %d skipped, %d could not run.\n\n", doctor.Score(all), c.Fine, c.Critical, c.Warning, c.Info, c.Skipped, c.Failed)
+	w("\n## Doctor\n\nScore %d. %s.\n\n", doctor.Score(all), countWords(c))
 	mark := map[doctor.State]string{doctor.Passed: "ok", doctor.Skipped: "skip", doctor.Failed: "error"}
 	for _, g := range doctor.GroupOrder {
 		var rows []string
@@ -100,7 +100,7 @@ func (a *App) reportText(all []doctor.Result) string {
 			}
 			line := fmt.Sprintf("- **%s** %s", m, r.Title)
 			if r.Hint != "" && r.State == doctor.Issue {
-				line += ". " + r.Hint
+				line += ". " + strings.ReplaceAll(r.Hint, "\n", " ")
 			}
 			rows = append(rows, line)
 		}

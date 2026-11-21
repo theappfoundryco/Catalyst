@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -610,5 +611,16 @@ func TestKitLinkIsAddedOnceAndNeverTakesAnotherKit(t *testing.T) {
 	// A Homebrew copy is left to Homebrew.
 	if got := a.linkKit("/opt/homebrew/Cellar/catalyst/0.1.1/bin/catalyst"); got != kitNo {
 		t.Fatal(got)
+	}
+}
+
+func TestFlagProblemInPlainWords(t *testing.T) {
+	for in, want := range map[string]string{
+		"flag provided but not defined: -nope": "doctor has no option --nope.",
+		"flag needs an argument: -n":           "-n needs a value.",
+	} {
+		if got := flagProblem("doctor", errors.New(in)); got != want {
+			t.Errorf("%s: %q", in, got)
+		}
 	}
 }

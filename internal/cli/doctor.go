@@ -198,27 +198,8 @@ func (a *App) verdict(all []doctor.Result, score int, c doctor.Counts, fixing bo
 	if change, since, ok := state.Trend(a.Store.History()); ok {
 		head += "   " + u.Dim(trendWords(change, since, a.E.Now()))
 	}
-	parts := []string{}
-	if c.Fine > 0 {
-		parts = append(parts, fmt.Sprintf("%d fine", c.Fine))
-	}
-	if n := c.Warning + c.Info; n > 0 {
-		parts = append(parts, ui.Count(n, "worth a look", "worth a look"))
-	}
-	if c.Critical > 0 {
-		parts = append(parts, fmt.Sprintf("%d need%s fixing", c.Critical, plural1(c.Critical)))
-	}
-	if c.Skipped > 0 {
-		parts = append(parts, fmt.Sprintf("%d skipped", c.Skipped))
-	}
-	if c.Failed > 0 {
-		parts = append(parts, fmt.Sprintf("%d could not run", c.Failed))
-	}
-	if c.Muted > 0 {
-		parts = append(parts, fmt.Sprintf("%d muted", c.Muted))
-	}
 	u.Say("  " + head)
-	u.Say("  " + u.Dim(strings.Join(parts, ", ")))
+	u.Say("  " + u.Dim(countWords(c)))
 	fixable := 0
 	for _, r := range all {
 		if r.State == doctor.Issue && r.Fix != nil && r.Fix.Kind != doctor.FixManual {
@@ -349,7 +330,8 @@ func (a *App) applyFixes(all []doctor.Result, allSafe bool) {
 	case a.inSession:
 		u.Say("  " + u.Dim("Change your mind? Undo is on the home screen."))
 	default:
-		u.Say("  " + u.Dim("Change your mind? catalyst undo   See everything: catalyst log"))
+		u.Say("  " + u.Dim("Change your mind? catalyst undo"))
+		u.Say("  " + u.Dim("See everything: catalyst log"))
 	}
 }
 
@@ -449,4 +431,28 @@ func firstLeft(all []doctor.Result, done map[int]bool) int {
 		}
 	}
 	return -1
+}
+
+// countWords is the one-line tally under the health bar. The report says it the same way.
+func countWords(c doctor.Counts) string {
+	parts := []string{}
+	if c.Fine > 0 {
+		parts = append(parts, fmt.Sprintf("%d fine", c.Fine))
+	}
+	if n := c.Warning + c.Info; n > 0 {
+		parts = append(parts, ui.Count(n, "worth a look", "worth a look"))
+	}
+	if c.Critical > 0 {
+		parts = append(parts, fmt.Sprintf("%d need%s fixing", c.Critical, plural1(c.Critical)))
+	}
+	if c.Skipped > 0 {
+		parts = append(parts, fmt.Sprintf("%d skipped", c.Skipped))
+	}
+	if c.Failed > 0 {
+		parts = append(parts, fmt.Sprintf("%d could not run", c.Failed))
+	}
+	if c.Muted > 0 {
+		parts = append(parts, fmt.Sprintf("%d muted", c.Muted))
+	}
+	return strings.Join(parts, ", ")
 }

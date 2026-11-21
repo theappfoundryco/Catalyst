@@ -43,7 +43,14 @@ func toolsRun(e *host.Env) []d.Result {
 		}
 	}
 	if len(fine) > 0 {
-		out = append(out, d.Pass(strings.Join(fine, ", ")+" all run"))
+		switch len(fine) {
+		case 1:
+			out = append(out, d.Pass(fine[0]+" runs"))
+		case 2:
+			out = append(out, d.Pass(fine[0]+" and "+fine[1]+" both run"))
+		default:
+			out = append(out, d.Pass(strings.Join(fine, ", ")+" all run"))
+		}
 	}
 	if len(out) == 0 {
 		return []d.Result{d.Skip("None of the usual tools are installed")}
