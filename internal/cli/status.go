@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/theappfoundryco/catalyst/internal/host"
 	"github.com/theappfoundryco/catalyst/internal/kit"
 	"github.com/theappfoundryco/catalyst/internal/session"
 	"github.com/theappfoundryco/catalyst/internal/state"
@@ -21,8 +22,8 @@ func (a *App) header() session.Header {
 		s := a.E.Shell
 		shell = ", " + s[strings.LastIndex(s, "/")+1:]
 	}
-	about := "v" + strings.TrimPrefix(version.Version, "v") + " · " + a.E.OSName() + ", " + a.E.Arch + shell
-	lines := []string{u.Bold("Catalyst") + " " + u.Dim("v"+strings.TrimPrefix(version.Version, "v")), u.Dim(a.E.OSName() + ", " + a.E.Arch + shell), ""}
+	about := strings.TrimPrefix(version.Version, "v") + " · " + a.E.OSName() + ", " + host.ArchName(a.E.Arch) + shell
+	lines := []string{u.Bold("Catalyst") + " " + u.Dim(strings.TrimPrefix(version.Version, "v")), u.Dim(a.E.OSName() + ", " + host.ArchName(a.E.Arch) + shell), ""}
 	if name := a.Store.LoadConfig().Nickname(); name != "" {
 		lines = []string{u.Bold(greeting(name, a.E.Now())), u.Dim("Catalyst " + about), ""}
 	}
@@ -80,6 +81,8 @@ type statusReport struct {
 	Disk    int     `json:"disk_percent"`
 	Battery *int    `json:"battery_percent,omitempty"`
 	Health  *int    `json:"health,omitempty"`
+	// Platform is what this machine is and what it can do, so a script can tell why a check skipped.
+	Platform host.Platform `json:"platform"`
 }
 
 // heavySwap is where the doctor's memory check starts to warn, so the two never disagree.
@@ -125,7 +128,7 @@ func cmdStatus(a *App, args []string) int {
 	bat := a.E.Battery()
 	h := a.Store.History()
 	if *asJSON {
-		r := statusReport{Host: name, OS: a.E.OSName(), Load: load, Threads: threads, Memory: mem.Percent(), Disk: vol.UsedPercent}
+		r := statusReport{Host: name, OS: a.E.OSName(), Load: load, Threads: threads, Memory: mem.Percent(), Disk: vol.UsedPercent, Platform: a.E.Platform()}
 		if bat.Present {
 			r.Battery = &bat.Percent
 		}
@@ -141,7 +144,13 @@ func cmdStatus(a *App, args []string) int {
 	a.outcome.Refresh = true
 	a.outcome.Live = 2 * time.Second
 	u.Hdr("Status")
-	u.Row("Machine", name+"  "+u.Dim(a.E.OSName()))
+	osName := a.E.OSName()
+	u.Row("Machine", ui.Fit(name, max(12, u.Width()-21-ui.Visible(osName)))+"  "+u.Dim(osName)) // a long machine name must not push the system onto its own line
+	plat := a.E.Platform()
+	u.Row("Platform", u.Dim(plat.Details()))
+	if len(plat.Managers) > 0 {
+		u.Row("Packages", u.Dim(strings.Join(plat.Managers, ", ")))
+	}
 	if len(h) > 0 {
 		last := h[len(h)-1]
 		u.Row("Health", u.ScoreStyle(last.Score)(fmt.Sprintf("%d", last.Score))+"  "+u.Dim("from "+ui.When(last.Date)))
@@ -220,6 +229,7 @@ func cmdStatus(a *App, args []string) int {
 	}
 	if cpu := a.E.TopProcs(3, false); len(cpu) > 0 && !*asJSON {
 		u.Sect("Busiest right now")
+		u.Say("  " + u.Faint("BY CPU"))
 		for _, p := range cpu {
 			u.Say(fmt.Sprintf("  %6.0f%%  %s", p.CPU, ui.Fit(p.Name, u.Width()-12)))
 		}
@@ -229,6 +239,9 @@ func cmdStatus(a *App, args []string) int {
 		}
 	}
 	problems, allClear := statusVerdict(loadPct, mem.Percent(), vol.UsedPercent, memOK, volOK, mem.SwapUsed)
+	if len(h) > 0 && h[len(h)-1].Score < 80 {
+		allClear = false // the resources are fine, but the last checkup was not, and a sign-off would say otherwise
+	}
 	if len(problems) > 0 {
 		u.Blank()
 		for _, p := range problems {

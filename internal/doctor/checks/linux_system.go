@@ -28,13 +28,25 @@ func JournalBytes(s string) int64 {
 
 func linuxSystem(e *host.Env) []d.Result {
 	var out []d.Result
-	if host.Exists("/var/run/reboot-required") {
-		out = append(out, d.Note("This machine is waiting for a restart to finish an update"))
+	p := e.Platform()
+	if p.InContainer() && p.Init == "" {
+		return []d.Result{d.Skip("No restart or system log check inside a container: the host owns both")}
+	}
+	rs := RestartWaiting(e)
+	if rs.Needed {
+		r := d.Note("This machine is waiting for a restart to finish an update")
+		if rs.Why != "" {
+			r = r.With(rs.Why + ". Restart when it suits you.")
+		}
+		out = append(out, r)
 	}
 	if r := e.Run.Run(0, "journalctl", "--disk-usage"); r.OK() {
 		if b := JournalBytes(r.Stdout + r.Stderr); b > 2*gb {
 			out = append(out, d.Note("System logs are using "+ui.Size(b)).Manual("sudo", "journalctl", "--vacuum-size=500M"))
 		}
+	}
+	if len(out) == 0 && !rs.Known { // only a system that answered can be said to have no restart waiting
+		return []d.Result{d.Pass("System logs are a normal size")}
 	}
 	if len(out) == 0 {
 		return []d.Result{d.Pass("No restart waiting, logs are a normal size")}

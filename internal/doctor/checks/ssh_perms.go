@@ -40,6 +40,9 @@ func sshPerms(e *host.Env) []d.Result {
 			out = append(out, d.Warn(fmt.Sprintf("SSH key %s is weak (%d-bit %s)", k.Name, k.Bits, k.Type)).With("Make a new one: ssh-keygen -t ed25519"))
 		}
 	}
+	if len(out) == 0 && len(keys) == 0 {
+		return []d.Result{d.Pass("~/.ssh has safe permissions, and holds no private keys")}
+	}
 	if len(out) == 0 {
 		return []d.Result{d.Pass("~/.ssh and your " + ui.Count(len(keys), "key have", "keys have") + " safe permissions")}
 	}

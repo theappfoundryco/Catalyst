@@ -91,7 +91,7 @@ func cmdSystem(a *App, args []string) int {
 		}
 		items[i] = ui.Item{Label: ar.Name, Size: ar.Bytes, Right: ar.WayWords(), About: about, Path: path, Locked: !ar.Selectable()}
 		if ar.Bytes == 0 && ar.Count > 0 {
-			items[i].Right = strconv.Itoa(ar.Count) + " · " + ar.WayWords()
+			items[i].Right = ui.Count(ar.Count, "item", "items") + " · " + ar.WayWords()
 		}
 	}
 	keys := []ui.MenuKey{
@@ -135,7 +135,7 @@ func cmdSystem(a *App, args []string) int {
 func sizeOr(ar sysdata.Area) string {
 	switch {
 	case ar.Bytes == 0 && ar.Count > 0:
-		return strconv.Itoa(ar.Count)
+		return ui.Count(ar.Count, "item", "items")
 	case ar.Bytes == 0:
 		return ""
 	}
@@ -154,7 +154,7 @@ func (a *App) reclaim(picked []sysdata.Area) int {
 		case sysdata.Trash:
 			u.Hint("Moved to the Trash: " + a.E.Tilde(ar.Path) + ". Undo puts it back.")
 		case sysdata.Owner:
-			u.Hint("Runs " + strings.Join(ar.Command, " ") + " as you. It may ask its own questions. This cannot be undone.")
+			u.Hint("Runs " + ar.Said() + " as you. It may ask its own questions. This cannot be undone.")
 		case sysdata.Settings:
 			u.Hint("Opens System Settings at the right page. You make the change there.")
 		case sysdata.Root:
@@ -183,12 +183,12 @@ func (a *App) reclaim(picked []sysdata.Area) int {
 			u.Ok("Moved " + ar.Name + " to the Trash")
 			trashed++
 		case sysdata.Owner:
-			u.Say("  " + u.Faint("$ "+strings.Join(ar.Command, " ")))
+			u.Say("  " + u.Faint("$ "+ar.Said()))
 			if _, code := run.Attached(false, ar.Command[0], ar.Command[1:]...); code != 0 {
 				u.Warn(ar.Name + ": it stopped without finishing, so it may be unchanged.")
 				continue
 			}
-			a.Journal.Add(journal.Entry{Time: a.E.Now(), Batch: batch, Kind: journal.KindRun, Title: ar.Name, Command: ar.Command})
+			a.Journal.Add(journal.Entry{Time: a.E.Now(), Batch: batch, Kind: journal.KindRun, Title: ar.Name, Command: strings.Fields(ar.Said())})
 			u.Ok(ar.Name + ": done")
 		case sysdata.Settings:
 			u.Ok(a.openURL(ar.Settings, "Settings"))

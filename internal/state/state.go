@@ -37,6 +37,17 @@ type Config struct {
 	Name      *string  `json:"name,omitempty"`             // what to call the person; set but empty means they chose not to say
 	NoHelpers []string `json:"declined_helpers,omitempty"` // helper tools the person said no to, so setup stops offering them
 	SetupDone bool     `json:"setup_done,omitempty"`
+	Muted     []string `json:"muted_checks,omitempty"` // doctor checks whose issues the person chose to stop hearing about
+}
+
+// IsMuted says whether a doctor check is muted.
+func (c Config) IsMuted(check string) bool {
+	for _, m := range c.Muted {
+		if m == check {
+			return true
+		}
+	}
+	return false
 }
 
 // MascotOn says whether Kit may appear. On unless turned off.
@@ -164,4 +175,44 @@ func (s *Store) SaveSweep(v Sweep) error {
 	}
 	b, _ := json.Marshal(v)
 	return writeAtomic(filepath.Join(s.Dir, "sweep.json"), b)
+}
+
+// Snapshot is what this machine's toolchain looked like after one doctor run, so `catalyst changes` can say what moved
+// since it last worked. Startup files are kept as hashes, never their text.
+type Snapshot struct {
+	Date  time.Time         `json:"date"`
+	Score int               `json:"score"`
+	OS    string            `json:"os"`
+	Tools map[string]string `json:"tools"` // name to "path version"
+	Path  []string          `json:"path"`
+	Files map[string]string `json:"files"` // startup file to a short hash, "" when it does not exist
+}
+
+const keepSnapshots = 30
+
+// Snapshots returns saved snapshots, oldest first.
+func (s *Store) Snapshots() []Snapshot {
+	var v []Snapshot
+	if b, err := os.ReadFile(filepath.Join(s.Dir, "snapshots.json")); err == nil {
+		_ = json.Unmarshal(b, &v)
+	}
+	return v
+}
+
+// SaveSnapshot keeps one per calendar day, the newest of that day, and the last 30 days.
+func (s *Store) SaveSnapshot(n Snapshot) error {
+	if err := os.MkdirAll(s.Dir, 0o755); err != nil {
+		return err
+	}
+	v := s.Snapshots()
+	if k := len(v); k > 0 && sameDay(v[k-1].Date, n.Date) {
+		v[k-1] = n
+	} else {
+		v = append(v, n)
+	}
+	if len(v) > keepSnapshots {
+		v = v[len(v)-keepSnapshots:]
+	}
+	b, _ := json.Marshal(v)
+	return writeAtomic(filepath.Join(s.Dir, "snapshots.json"), b)
 }

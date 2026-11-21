@@ -74,17 +74,21 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      matrix:
-        image: ["debian:12", "fedora:41", "alpine:3.20", "archlinux:latest"]
+      matrix:  # a quick spread on every pull request; matrix.yml runs every supported image each night
+        include:
+          - { image: "debian:12", family: debian }
+          - { image: "ubuntu:24.04", family: debian }
+          - { image: "fedora:41", family: fedora }
+          - { image: "alpine:3.20", family: alpine }
+          - { image: "archlinux:latest", family: arch }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
       - run: CGO_ENABLED=0 go build -o catalyst ./cmd/catalyst
-      - name: runs with nothing installed
-        run: |
-          docker run --rm -v "$PWD:/c:ro" "${{ matrix.image }}" sh -c '
-            cd /tmp
-            /c/catalyst doctor -v; c=$?; [ $c -le 1 ] || exit $c
-            /c/catalyst status && /c/catalyst sweep --dry-run && /c/catalyst disk && /c/catalyst ports && /c/catalyst startup'
+      - name: every read-only command, as root and as a normal user, with nothing installed
+        run: scripts/distro-matrix.sh "${{ matrix.image }}" "${{ matrix.family }}"
+      - name: what each run printed
+        if: always()
+        run: cat .cache/matrix/out/*.txt

@@ -61,6 +61,20 @@ var Rules = []Rule{
 	{Dir: ".dart_tool", Needs: []string{"pubspec.yaml"}, Title: "Dart tool cache", Restore: "dart pub get", Cost: Rebuild},
 	{Dir: "zig-cache", Needs: []string{"build.zig"}, Title: "Zig cache", Restore: "rebuilds itself", Cost: Safe},
 	{Dir: ".zig-cache", Needs: []string{"build.zig"}, Title: "Zig cache", Restore: "rebuilds itself", Cost: Safe},
+	{Dir: ".build", Needs: []string{"Package.swift"}, Title: "Swift package build", Restore: "swift build", Cost: Rebuild},
+	{Dir: "_build", Needs: []string{"mix.exs"}, Title: "Elixir build", Restore: "mix compile", Cost: Rebuild},
+	{Dir: "deps", Needs: []string{"mix.exs"}, Title: "Elixir dependencies", Restore: "mix deps.get", Cost: Rebuild},
+	{Dir: ".stack-work", Needs: []string{"stack.yaml"}, Title: "Haskell Stack build", Restore: "stack build", Cost: Rebuild},
+	{Dir: "dist-newstyle", Needs: []string{"cabal.project", "*.cabal"}, Title: "Haskell Cabal build", Restore: "cabal build", Cost: Rebuild},
+	{Dir: ".angular", Needs: []string{"angular.json"}, Title: "Angular cache", Restore: "rebuilds itself", Cost: Safe},
+	{Dir: "elm-stuff", Needs: []string{"elm.json"}, Title: "Elm build", Restore: "elm make", Cost: Rebuild},
+	{Dir: ".output", Needs: []string{"nuxt.config.ts", "nuxt.config.js", "nuxt.config.mjs"}, Title: "Nuxt build", Restore: "nuxt build", Cost: Rebuild},
+	{Dir: ".docusaurus", Needs: []string{"docusaurus.config.js", "docusaurus.config.ts"}, Title: "Docusaurus cache", Restore: "rebuilds itself", Cost: Safe},
+	{Dir: "cmake-build-debug", Needs: []string{"CMakeLists.txt"}, Title: "CLion build", Restore: "build again in CLion", Cost: Rebuild},
+	{Dir: "cmake-build-release", Needs: []string{"CMakeLists.txt"}, Title: "CLion build", Restore: "build again in CLion", Cost: Rebuild},
+	{Dir: "bin", Needs: []string{"*.csproj", "*.fsproj", "*.vbproj"}, Title: ".NET build output", Restore: "dotnet build", Cost: Rebuild, NeedsGit: true},
+	{Dir: "obj", Needs: []string{"*.csproj", "*.fsproj", "*.vbproj"}, Title: ".NET build output", Restore: "dotnet build", Cost: Rebuild, NeedsGit: true},
+	{Dir: "vendor", Needs: []string{"composer.json"}, Title: "PHP Composer packages", Restore: "composer install", Cost: Rebuild, NeedsGit: true},
 }
 
 // Global is a cache outside any project. These always rebuild themselves.
@@ -275,6 +289,12 @@ func ruleFor(dir, name string) (Rule, bool) {
 			return r, true
 		}
 		for _, n := range r.Needs {
+			if strings.Contains(n, "*") { // a project file whose name is the project's, like App.csproj
+				if m, _ := filepath.Glob(filepath.Join(dir, n)); len(m) > 0 {
+					return r, true
+				}
+				continue
+			}
 			if host.Exists(filepath.Join(dir, n)) {
 				return r, true
 			}

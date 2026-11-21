@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/theappfoundryco/catalyst/internal/doctor"
+	"github.com/theappfoundryco/catalyst/internal/host"
 	"github.com/theappfoundryco/catalyst/internal/journal"
 	"github.com/theappfoundryco/catalyst/internal/kit"
 	"github.com/theappfoundryco/catalyst/internal/session"
@@ -25,17 +26,25 @@ type doctorReport struct {
 	Score   int             `json:"score"`
 	Counts  doctor.Counts   `json:"counts"`
 	Results []doctor.Result `json:"results"`
+	// Platform says what this machine is, so a reader can tell why a check did not apply.
+	Platform host.Platform `json:"platform"`
 }
 
 func cmdDoctor(a *App, args []string) int {
-	fs := a.flags("doctor", "[--fix] [--only group] [--json] [-v]")
+	fs := a.flags("doctor", "[--fix [--all-safe]] [--only group] [--json] [-v] [--mute CHECK | --unmute CHECK]")
 	fix := fs.Bool("fix", false, "")
+	allSafe := fs.Bool("all-safe", false, "")
 	asJSON := fs.Bool("json", false, "")
 	only := fs.String("only", "", "")
 	verbose := fs.Bool("v", false, "")
 	yes := fs.Bool("yes", false, "")
+	mute := fs.String("mute", "", "")
+	unmute := fs.String("unmute", "", "")
 	if code, ok := a.parse(fs, args); !ok {
 		return code
+	}
+	if *mute != "" || *unmute != "" {
+		return a.setMuted(*mute, *unmute)
 	}
 	a.U.Yes = a.U.Yes || *yes
 	var filter []string
@@ -51,6 +60,10 @@ func cmdDoctor(a *App, args []string) int {
 	sp := u.Spin("Reading what a new terminal sees")
 	a.E.LoadShell()
 	sp.Stop()
+	snap := make(chan state.Snapshot, 1)
+	if len(filter) == 0 {
+		go func() { snap <- a.snapshot(0) }() // alongside the checks, so it adds no time
+	}
 	scan := doctor.Start(a.E, doctor.All(), filter)
 	if len(scan.Checks) == 0 {
 		u.Stop("No check matches " + *only + ".")
@@ -61,11 +74,14 @@ func cmdDoctor(a *App, args []string) int {
 	counts := doctor.Count(all)
 	if len(filter) == 0 {
 		a.Store.Record(state.Health{Date: a.E.Now(), Score: score, Issues: counts.Critical + counts.Warning + counts.Info, Critical: counts.Critical})
+		s := <-snap // what catalyst changes compares with, later
+		s.Score = score
+		a.Store.SaveSnapshot(s)
 	}
 	u.Blank()
 	a.verdict(all, score, counts, *fix)
 	if *fix {
-		a.applyFixes(all)
+		a.applyFixes(all, *allSafe)
 	}
 	u.Blank()
 	switch {
@@ -84,8 +100,9 @@ func (a *App) doctorJSON(filter []string) int {
 	for i := range scan.Checks {
 		all = append(all, scan.Wait(i)...)
 	}
+	doctor.Mute(all, a.Store.LoadConfig().IsMuted)
 	c := doctor.Count(all)
-	emit(a, doctorReport{Schema: 1, Version: version.Version, OS: a.E.OS, Score: doctor.Score(all), Counts: c, Results: all})
+	emit(a, doctorReport{Schema: 1, Version: version.Version, OS: a.E.OS, Score: doctor.Score(all), Counts: c, Results: all, Platform: a.E.Platform()})
 	switch {
 	case c.Critical+c.Warning > 0:
 		return ExitIssues
@@ -107,9 +124,10 @@ func (a *App) showScan(scan *doctor.Run, verbose bool) []doctor.Result {
 			}
 			sp := u.Spin(c.Name)
 			rs := scan.Wait(i)
+			doctor.Mute(rs, a.Store.LoadConfig().IsMuted)
 			took := sp.Stop()
 			for j, r := range rs {
-				if r.State == doctor.Skipped && !verbose {
+				if (r.State == doctor.Skipped || r.Muted) && !verbose {
 					continue
 				}
 				if first { // a heading only once something will sit under it
@@ -135,7 +153,15 @@ func (a *App) printResult(r doctor.Result, verbose bool, took time.Duration, fir
 		if r.Fix != nil && r.Fix.Kind != doctor.FixManual {
 			keys = append(keys, goTo("f", "fix it", "Doctor", "doctor", "--fix", "--only", r.Check))
 		}
+		if r.State == doctor.Issue {
+			keys = append(keys, goTo("m", "mute", "Doctor", "doctor", "--mute", r.Check))
+		}
 		title = a.row(keys...) + title
+	}
+	if r.Muted {
+		u.Skip("muted: " + r.Title)
+		u.Hint("Hear about it again: catalyst doctor --unmute " + r.Check)
+		return
 	}
 	switch r.State {
 	case doctor.Passed:
@@ -172,24 +198,8 @@ func (a *App) verdict(all []doctor.Result, score int, c doctor.Counts, fixing bo
 	if change, since, ok := state.Trend(a.Store.History()); ok {
 		head += "   " + u.Dim(trendWords(change, since, a.E.Now()))
 	}
-	parts := []string{}
-	if c.Fine > 0 {
-		parts = append(parts, fmt.Sprintf("%d fine", c.Fine))
-	}
-	if n := c.Warning + c.Info; n > 0 {
-		parts = append(parts, ui.Count(n, "worth a look", "worth a look"))
-	}
-	if c.Critical > 0 {
-		parts = append(parts, fmt.Sprintf("%d need%s fixing", c.Critical, plural1(c.Critical)))
-	}
-	if c.Skipped > 0 {
-		parts = append(parts, fmt.Sprintf("%d skipped", c.Skipped))
-	}
-	if c.Failed > 0 {
-		parts = append(parts, fmt.Sprintf("%d could not run", c.Failed))
-	}
 	u.Say("  " + head)
-	u.Say("  " + u.Dim(strings.Join(parts, ", ")))
+	u.Say("  " + u.Dim(countWords(c)))
 	fixable := 0
 	for _, r := range all {
 		if r.State == doctor.Issue && r.Fix != nil && r.Fix.Kind != doctor.FixManual {
@@ -238,16 +248,57 @@ func trendWords(change int, since, now time.Time) string {
 }
 
 // applyFixes offers each fix in turn. Every one is shown before it runs, and none happens without a yes.
-func (a *App) applyFixes(all []doctor.Result) {
+// undoable is a fix the journal can reverse: a mode change or a move to the Trash.
+func undoable(f *doctor.Fix) bool {
+	return f != nil && (f.Kind == doctor.FixChmod || f.Kind == doctor.FixTrash)
+}
+
+// applyFixes offers each fix in turn. With allSafe, every fix that can be undone is shown together and asked once,
+// and only those that cannot be undone are still asked one by one.
+func (a *App) applyFixes(all []doctor.Result, allSafe bool) {
 	u := a.U
 	batch := journal.NewBatch(a.E.Now())
 	any, changed := false, false
-	for _, r := range all {
-		if r.State != doctor.Issue || r.Fix == nil {
+	done := map[int]bool{}
+	if allSafe {
+		var safe []int
+		for i, r := range all {
+			if r.State == doctor.Issue && !r.Muted && undoable(r.Fix) {
+				safe = append(safe, i)
+			}
+		}
+		if len(safe) > 0 {
+			u.Sect("Fixes that can be undone")
+			for _, i := range safe {
+				u.Say("  " + all[i].Title)
+				u.Hint(all[i].Fix.Preview())
+			}
+			u.Blank()
+			if u.Ask(fmt.Sprintf("Make %s? Undo reverses them all at once.", ui.Count(len(safe), "this change", "these changes"))) {
+				for _, i := range safe {
+					if err := a.applyFix(*all[i].Fix, batch); err != nil {
+						u.Stop(all[i].Title + ": that did not work: " + err.Error())
+						continue
+					}
+					changed = true
+					a.outcome.Changed = true
+				}
+				if changed {
+					u.Ok("Done")
+				}
+			}
+			for _, i := range safe {
+				done[i] = true
+			}
+			any = true
+		}
+	}
+	for i, r := range all {
+		if r.State != doctor.Issue || r.Fix == nil || r.Muted || done[i] {
 			continue
 		}
 		f := *r.Fix
-		if !any {
+		if !any || (allSafe && i == firstLeft(all, done)) {
 			u.Sect("Fixes")
 			any = true
 		}
@@ -279,7 +330,8 @@ func (a *App) applyFixes(all []doctor.Result) {
 	case a.inSession:
 		u.Say("  " + u.Dim("Change your mind? Undo is on the home screen."))
 	default:
-		u.Say("  " + u.Dim("Change your mind? catalyst undo   See everything: catalyst log"))
+		u.Say("  " + u.Dim("Change your mind? catalyst undo"))
+		u.Say("  " + u.Dim("See everything: catalyst log"))
 	}
 }
 
@@ -329,4 +381,78 @@ func (a *App) moveToTrash(path, title, batch string, size int64) error {
 		return fmt.Errorf("could not record the move, so it was put back: %v", err)
 	}
 	return nil
+}
+
+// setMuted mutes or unmutes one check by its ID, as doctor --json and catalyst doctor -v name them.
+func (a *App) setMuted(mute, unmute string) int {
+	u := a.U
+	id := mute + unmute
+	known := false
+	for _, c := range doctor.All() {
+		if c.ID == id {
+			known = true
+		}
+	}
+	if !known {
+		u.Stop("There is no check called " + id + ".")
+		u.Hint("Each finding's check is in catalyst doctor --json, as \"check\".")
+		return ExitUsage
+	}
+	c := a.Store.LoadConfig()
+	var keep []string
+	for _, m := range c.Muted {
+		if m != id {
+			keep = append(keep, m)
+		}
+	}
+	if mute != "" {
+		keep = append(keep, id)
+	}
+	c.Muted = keep
+	if err := a.Store.SaveConfig(c); err != nil {
+		u.Stop("Could not save the setting: " + err.Error())
+		return ExitFailed
+	}
+	a.outcome.Changed = true
+	if mute != "" {
+		u.Ok("Muted " + id + ". Doctor still checks it, and lists it with -v, but it no longer counts against your score.")
+		u.Hint("Hear about it again: catalyst doctor --unmute " + id)
+	} else {
+		u.Ok("Unmuted " + id + ".")
+	}
+	return ExitOK
+}
+
+// firstLeft is the first fix still to offer one by one, so its section heading prints once.
+func firstLeft(all []doctor.Result, done map[int]bool) int {
+	for i, r := range all {
+		if r.State == doctor.Issue && r.Fix != nil && !r.Muted && !done[i] {
+			return i
+		}
+	}
+	return -1
+}
+
+// countWords is the one-line tally under the health bar. The report says it the same way.
+func countWords(c doctor.Counts) string {
+	parts := []string{}
+	if c.Fine > 0 {
+		parts = append(parts, fmt.Sprintf("%d fine", c.Fine))
+	}
+	if n := c.Warning + c.Info; n > 0 {
+		parts = append(parts, ui.Count(n, "worth a look", "worth a look"))
+	}
+	if c.Critical > 0 {
+		parts = append(parts, fmt.Sprintf("%d need%s fixing", c.Critical, plural1(c.Critical)))
+	}
+	if c.Skipped > 0 {
+		parts = append(parts, fmt.Sprintf("%d skipped", c.Skipped))
+	}
+	if c.Failed > 0 {
+		parts = append(parts, fmt.Sprintf("%d could not run", c.Failed))
+	}
+	if c.Muted > 0 {
+		parts = append(parts, fmt.Sprintf("%d muted", c.Muted))
+	}
+	return strings.Join(parts, ", ")
 }

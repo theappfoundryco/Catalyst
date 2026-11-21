@@ -5,12 +5,14 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/theappfoundryco/catalyst/internal/doctor"
+	"github.com/theappfoundryco/catalyst/internal/host"
 	"github.com/theappfoundryco/catalyst/internal/journal"
 	"github.com/theappfoundryco/catalyst/internal/run"
 	"github.com/theappfoundryco/catalyst/internal/session"
@@ -115,7 +117,7 @@ var lineNo = regexp.MustCompile(`:(\d+):`)
 // guideFor writes the guide for one finding. It reads the machine again where that helps, such as which file sets a
 // variable, so the steps name real files and lines.
 func (a *App) guideFor(r doctor.Result) guide {
-	g := guide{why: r.Hint}
+	g := guide{why: strings.ReplaceAll(r.Hint, "\n", " ")}
 	t := r.Title
 	switch r.Check {
 	case "shell.path":
@@ -163,7 +165,35 @@ func (a *App) guideFor(r doctor.Result) guide {
 				g.file = a.startupFile()
 			}
 			g.copy = `eval "$(/opt/homebrew/bin/brew shellenv)"`
-		case strings.Contains(t, "does not exist"), strings.Contains(t, "twice"):
+		case strings.Contains(t, "twice"):
+			seen := map[string]bool{}
+			for _, p := range a.E.Entries {
+				clean := filepath.Clean(p)
+				if !seen[clean] {
+					seen[clean] = true
+					continue
+				}
+				where := a.E.Tilde(p)
+				if src, n := a.pathSource(p); src != "" {
+					where += "  (added by " + a.E.Tilde(src) + ", line " + strconv.Itoa(n) + ")"
+					if !strings.HasPrefix(src, "/etc/") && g.file == "" {
+						g.file, g.line = src, n
+					}
+				} else {
+					where += "  (added by " + a.systemOrShell() + ")"
+				}
+				if !slices.Contains(g.where, where) {
+					g.where = append(g.where, where)
+				}
+			}
+			g.why = "When a folder is on your PATH twice, the second copy never finds anything the first did not. It is harmless, and usually means a startup file runs more than once, or two files add the same folder."
+			if g.file != "" {
+				g.steps = []string{fmt.Sprintf("Open %s at line %d. If another file adds the same folder, keep only one of the two lines.", a.E.Tilde(g.file), g.line), "Open a new terminal, then check with: catalyst path"}
+			} else {
+				g.steps = []string{"None of your startup files adds the second copy: " + a.systemOrShell() + " did. It is harmless, so the safe choice is to leave it."}
+			}
+			g.screen, g.label = []string{"path"}, "PATH screen"
+		case strings.Contains(t, "does not exist"):
 			for _, p := range a.E.Entries {
 				if !isDir(p) {
 					src, n := a.pathSource(p)
@@ -174,7 +204,7 @@ func (a *App) guideFor(r doctor.Result) guide {
 							g.file, g.line = src, n
 						}
 					} else {
-						where += "  (added by macOS or the shell)"
+						where += "  (added by " + a.systemOrShell() + ")"
 					}
 					g.where = append(g.where, where)
 				}
@@ -183,7 +213,7 @@ func (a *App) guideFor(r doctor.Result) guide {
 			if g.file != "" {
 				g.steps = []string{fmt.Sprintf("Open %s at line %d, and delete the line or the part of it that adds the folder.", a.E.Tilde(g.file), g.line), "Open a new terminal to check."}
 			} else {
-				g.steps = []string{"None of your startup files adds it: macOS or an installer did. It is harmless, so the safe choice is to leave it."}
+				g.steps = []string{"None of your startup files adds it: " + a.systemOrShell() + " or an installer did. It is harmless, so the safe choice is to leave it."}
 			}
 			g.screen, g.label = []string{"path"}, "PATH screen"
 		case strings.Contains(t, "relative folder"):
@@ -244,12 +274,13 @@ func (a *App) guideFor(r doctor.Result) guide {
 			g.settings = settingsFirewall
 			g.steps = []string{"Open System Settings, Network, Firewall.", "Turn it on. Apps you use ask once whether they may accept connections."}
 		} else {
-			g.copy = "sudo ufw enable"
-			g.steps = []string{"Turn it on with: " + g.copy, "Allow what you need, such as SSH: sudo ufw allow ssh"}
+			g.copy, g.steps = a.firewallSteps()
 		}
 	case "machine.memory":
 		g.why = "When memory runs out, the system moves what is open onto the disk (swap). It works, but everything is slower, and the swap files take disk space until you quit apps or restart."
-		g.where = []string{"/private/var/vm (macOS keeps swap here)"}
+		if a.E.Mac() {
+			g.where = []string{"/private/var/vm (macOS keeps swap here)"}
+		}
 		g.facts = a.topMemory(5)
 		g.steps = []string{"Quit the apps you are not using, starting with the biggest above.", "Close browser tabs you do not need. Each one can use hundreds of MB.", "Restart when convenient. That clears swap completely."}
 		if a.E.Mac() {
@@ -258,6 +289,9 @@ func (a *App) guideFor(r doctor.Result) guide {
 	case "tools.brew":
 		g.file = a.E.Path(".zprofile")
 		g.copy = `eval "$(/opt/homebrew/bin/brew shellenv)"`
+		if a.E.Platform().Arch != "arm64" {
+			g.copy = `eval "$(/usr/local/bin/brew shellenv)"`
+		}
 		g.why = "Homebrew is installed, but your shell does not know where, so brew and everything it installed is not found."
 		g.steps = []string{"Add this line to " + a.E.Tilde(g.file) + ":", "  " + g.copy, "Open a new terminal."}
 	case "tools.build":
@@ -266,8 +300,13 @@ func (a *App) guideFor(r doctor.Result) guide {
 			g.why = "git, make, and anything that compiles code come from Apple's Command Line Tools."
 			g.steps = []string{"Run this, then click Install in the window that opens:", "  " + g.copy, "It takes a few minutes and needs no Apple account."}
 		} else {
-			g.copy = "sudo apt-get install build-essential"
-			g.steps = []string{"Install a compiler and make. On Debian or Ubuntu:", "  " + g.copy}
+			p := a.E.Platform()
+			if cmd, advice := p.Install(host.BuildToolsPkgs); cmd != nil {
+				g.copy = strings.Join(a.rootCmd(cmd), " ")
+				g.steps = []string{"Install a compiler and make with " + p.Short() + "'s own packages:", "  " + g.copy}
+			} else {
+				g.steps = []string{advice + "."}
+			}
 		}
 	case "tools.git":
 		g.why = "Every commit records who made it. Without a name and email, git refuses to commit, or labels it with a guess."
@@ -323,8 +362,13 @@ func (a *App) guideFor(r doctor.Result) guide {
 	if r.Fix != nil && g.copy == "" {
 		g.copy = r.Fix.Preview()
 	}
-	if len(g.steps) == 0 && r.Hint != "" {
-		g.steps = []string{r.Hint}
+	// With a fix, the fix is the step and is shown below. The hint then only explains, and the why already holds it.
+	if len(g.steps) == 0 && r.Hint != "" && (r.Fix == nil || r.Fix.Kind == doctor.FixManual) {
+		lines := strings.Split(r.Hint, "\n") // a hint's later lines are commands, which steps show on their own lines
+		g.steps = []string{lines[0]}
+		for _, l := range lines[1:] {
+			g.steps = append(g.steps, "  "+l)
+		}
 	}
 	if g.file != "" && len(g.where) == 0 {
 		w := a.E.Tilde(g.file)
@@ -539,4 +583,44 @@ func (a *App) runInstall(title string, cmd []string) {
 	a.Journal.Add(journal.Entry{Time: a.E.Now(), Batch: journal.NewBatch(a.E.Now()), Kind: journal.KindRun, Title: title, Command: cmd})
 	a.outcome.Changed = true
 	u.Ok("Installed. Press Esc, and the guide checks again.")
+}
+
+// firewallSteps turns the firewall on the way this distribution does it: firewalld where it is installed (Fedora, RHEL,
+// openSUSE), ufw where that is (Debian, Ubuntu, Arch), and otherwise the one the family ships.
+func (a *App) firewallSteps() (string, []string) {
+	switch {
+	case a.has("firewall-cmd"):
+		c := strings.Join(a.rootCmd([]string{"systemctl", "enable", "--now", "firewalld"}), " ")
+		return c, []string{"Turn it on with: " + c, "Open what you need, such as SSH: sudo firewall-cmd --permanent --add-service=ssh, then sudo firewall-cmd --reload"}
+	case a.has("ufw"):
+		c := strings.Join(a.rootCmd([]string{"ufw", "enable"}), " ")
+		return c, []string{"Allow what you need first, such as SSH: sudo ufw allow ssh", "Then turn it on with: " + c}
+	}
+	p := a.E.Platform()
+	tool := "ufw"
+	if p.Family == "fedora" || p.Family == "rhel" || p.Family == "suse" {
+		tool = "firewalld"
+	}
+	cmd, advice := p.Install(map[string]string{"": tool})
+	if cmd == nil {
+		return "", []string{advice + "."}
+	}
+	c := strings.Join(a.rootCmd(cmd), " ")
+	return c, []string{"Install " + tool + " with: " + c, "Then open this guide again for how to turn it on."}
+}
+
+// systemOrShell names what put a PATH folder there when no startup file did, the way the PATH screen says it.
+func (a *App) systemOrShell() string {
+	if a.E.Mac() {
+		return "macOS or the shell"
+	}
+	return "the system or the shell"
+}
+
+// rootCmd puts sudo in front of a command that needs root, unless Catalyst already runs as root.
+func (a *App) rootCmd(cmd []string) []string {
+	if p := a.E.Platform(); p.Root || !p.Sudo {
+		return cmd
+	}
+	return append([]string{"sudo"}, cmd...)
 }

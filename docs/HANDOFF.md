@@ -16,8 +16,11 @@ internal/kit/         Kit's sprites and half-block drawing
 internal/session/     bare `catalyst`: the home list on the terminal's separate screen, scrolling results, the only place Kit is drawn
 internal/run/         runs programs: argv only, own session, no stdin, time limit, fixed locale. Fake for tests
 internal/host/        the machine: env from a login shell, plus parsers for df, vm_stat, pmset, lsof, ss, smartctl and more
+                      platform.go: distribution, family, libc, init, container, package managers
 internal/doctor/      engine: runs checks at once, four result states, score
 internal/doctor/checks/   one file per check
+internal/project/     catalyst project: pinned versions, lockfiles, .env and hooks of the repository you are in
+internal/explain/     catalyst explain: known error messages matched to the checks that explain them
 internal/sweep/       rules table, walker, git safety, real sizes
 internal/clean/       app caches and logs outside projects, open-app detection, admin areas explained
 internal/space/       where the disk goes: home, apps, macOS's own volumes, named landmarks
@@ -83,11 +86,28 @@ As of 0.1.0, built and run on Apple silicon macOS 15 and ARM64 Linux containers:
 - After the interactive rows: Ports, PATH, SSH, Startup, Doctor guides, Space, the macOS explainer, System Data, Status live, Battery, Disk, Network and an address test, all driven read-only on a real Mac through a pseudo-terminal.
 - In an Ubuntu container: stopping a port from its row, then Esc, lands on Ports measured again without it. System Data ran `sudo apt-get autoremove` after sudo itself asked for the password, as a normal user with a real terminal.
 - The health dot breathes: 31 distinct shades in 3.5 seconds of raw output for a score of 70.
+- Every command and screen end to end (#74): read-only natively on Ubuntu at 80 and 60 columns. In a Debian container as a user without sudo: the list at 100 and 60 columns, plus a real sweep, undo, history, `doctor --fix` and its undo, `ports kill`, `path add`, settings and uninstall.
+- Every row of the list on macOS 15 (Apple silicon and Intel) and the latest runner, driven by `scripts/screens.py` in CI (#75).
+- The new checks (#77 to #81) with planted problems: broken scripts, a dead link, an arm64 binary and a glibc program on Alpine. SSH cases against real openssh, which computed GitHub's old host key fingerprint. A real sparse file for the VM disk. Unused versions (#86) removed for real through System Data with real nvm and real mise in a Debian container, keeping the defaults. On this Ubuntu machine they find no false alarms, and the full checkup takes about 1.3 s.
+
+### Added on 2026-11-21 (overnight, x86_64 Linux)
+
+- **x86_64 Linux, natively.** Every read-only command on an x86_64 Ubuntu 24.04 desktop with systemd, snap and Homebrew on Linux: doctor, status, space, clean --dry-run, ports, path, ssh, disk, startup, battery, plus the new why, project, report, changes and completion. No crash. Doctor takes 1.4 s there.
+- **The platform profile on 19 images**, as root and as uid 1000, with `scripts/distro-matrix.sh`: debian 11, 12, 13, ubuntu 20.04, 22.04, 24.04, fedora 40, 41, rockylinux 9, almalinux 8, amazonlinux 2023, opensuse leap 15.6 and tumbleweed, archlinux, alpine 3.18 and 3.20, void-glibc, nixos/nix and golang:1.27. Every read-only command ran, no stack trace, and the right family each time. The test suite (static test binaries) passed in alpine, debian and amazonlinux as root and as a user.
+- **macOS 15.7 Intel (macos-15-intel), macOS 15 and macOS 26.7 Apple silicon**, through GitHub runners: the test suite and every read-only command, and the platform reported as x86_64 or ARM64, launchd, brew. This is the first Intel Mac run.
+- **A real systemd**, in a privileged `jrei/systemd-debian:12` booted with `/sbin/init`: a failing unit was reported for root and for `nobody`, and the journal size was read.
+- **Package names**: every install suggestion resolved with its manager's simulate mode in its own image (dnf --assumeno, zypper --dry-run, pacman --print, apk --simulate, xbps-install -n, apt-get -s). openSUSE Leap's `devel_basis` pattern conflicts inside the image itself (its libncurses6 is newer than its repositories).
+- **Real, in throwaway containers**: Docker locked out (uid 1234 with the socket mounted) gives the warning and the usermod command; pip's break-system-packages on Debian 12 is caught; `go clean -modcache` from System Data on 466 MB of modules.
+- **The home list** with the new Project, Changes and Report rows, and `w` on PATH's hidden tools, driven on a pseudo-terminal with pyte at 100 by 30, 50 by 20 and 100 by 40.
+- **Shell completions** parsed by bash, zsh and fish, and completing in fish and a simulated bash, in debian:12.
 
 ## What has not been verified
 
-- **Intel Macs and x86 Linux.** The archives build, but the checks have run only on Apple silicon and ARM64 Linux containers.
-- **A real systemd machine, and a real laptop on Linux.** Containers have no systemd, so failed units, user services and Linux batteries are covered by recorded output only.
+- **A real Intel Mac by hand.** CI's macos-15-intel runner ran the read-only commands. Nobody has looked at the output on a person's Intel Mac.
+- **A real laptop on Linux.** Linux batteries are covered by recorded output only. Systemd ran for real only in a privileged container.
+- **The new Mac checks on a person's Mac**: Xcode path and licence, Rosetta, the 256 open file limit, Xcode DeviceSupport. Tested with recorded output and on clean CI runners, where none of them fire.
+- **A restart actually pending** on Fedora, openSUSE or Arch. The "restart needed" wording comes from dnf-plugins-core and zypper's source, not from a recorded run.
+- **WSL, an image-based system (Silverblue, NixOS), Gentoo.** Detection is tested with recorded files only.
 - **`smartctl`.** Parsed from recorded output. Not installed on the development Mac, and Helpers has not installed it for real there.
 - **System Data's Mac steps.** `tmutil deletelocalsnapshots`, `colima delete`, `docker system prune`, `xcrun simctl delete` and moving an installer to the Trash are tested as data and through the Linux sudo path, not run on a real Mac, on purpose.
 - **Homebrew's installer from Helpers.** Shown and wired, not run, since the development Mac already has Homebrew.
@@ -96,6 +116,9 @@ As of 0.1.0, built and run on Apple silicon macOS 15 and ARM64 Linux containers:
 - **`catalyst legacy` on a Mac with the old app installed.** The zshrc edit is tested. The Keychain and app paths have not run against a real install.
 - **Other volumes.** Trash on an external disk (`.Trashes`, `.Trash-UID`) is written to the spec but has not run on a real second disk.
 - **Fish and bash as the login shell.** zsh and sh have run. Fish has not.
+- **The new checks on a real Mac** (#77 to #81): a Homebrew library removed for real, python.org's Python without its certificates, Docker Desktop's real `Docker.raw`, keys kept in the macOS keychain. Covered by synthetic files and the CI runners only.
+- **Unused versions with fnm, rbenv, SDKMAN and asdf** (#86). nvm and mise were run for real in a container; the others are tested from files. Simulator runtimes are tested from a sample of `xcrun simctl runtime list -j` only.
+- **Colima's and OrbStack's VM disks.** Left out of the disk check, since their files do not show the limit.
 - **Notarized macOS downloads.** Not done. `curl` and Homebrew do not quarantine, so `get.sh` is fine. A DMG or browser download would need it.
 
 ## Known gaps and open work
@@ -105,7 +128,9 @@ As of 0.1.0, built and run on Apple silicon macOS 15 and ARM64 Linux containers:
 - WSL2 is refused politely by `get.sh`. Windows is out of scope.
 - The list takes no arguments, so `startup disable`, `path add` and `sweep --deep` are shell only.
 - `clean` on a real Mac has only run as `--dry-run`, by design: it would change the maintainer's machine. Its Mac rules are tested with recorded `lsappinfo` output.
-- `doctor --fix` applies one fix at a time on purpose. A "fix everything safe" mode could come later.
+- `doctor --fix` applies one fix at a time on purpose. `--fix --all-safe` asks once for every fix that can be undone.
+- Completions are printed by `catalyst completion`, not installed. Whether get.sh or setup should install them is an open question.
+- 182 open Dependabot alerts all point at `OLDC/requirements.txt`, from the old Mac app. That file is not on main, so the alerts can be dismissed as "not used".
 - Snapshot and migrate from the Mac app is parked. Brewfile, chezmoi and mise cover it well.
 
 ## Good first things

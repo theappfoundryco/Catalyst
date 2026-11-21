@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/theappfoundryco/catalyst/internal/host"
 	"github.com/theappfoundryco/catalyst/internal/run"
 )
 
@@ -38,21 +39,48 @@ func (a *App) helpers() []helper {
 		name: "smartmontools", label: "smartmontools", unlocks: "Lets Disk show wear, total read and written, temperature and power-on hours.",
 		have: func(a *App) bool { _, err := a.E.Look("smartctl"); return err == nil },
 		install: func(a *App) []string {
-			switch {
-			case a.E.Mac():
-				return []string{a.brew(), "install", "smartmontools"}
-			case a.has("apt-get"):
-				return []string{"apt-get", "install", "-y", "smartmontools"}
-			case a.has("dnf"):
-				return []string{"dnf", "install", "-y", "smartmontools"}
-			case a.has("pacman"):
-				return []string{"pacman", "-S", "--noconfirm", "smartmontools"}
-			}
-			return nil
+			cmd, _ := a.smartInstall()
+			return cmd
 		},
-		root: !a.E.Mac(), needsBrew: a.E.Mac(),
+		root: !a.E.Mac() && !a.linuxBrewOnly(), needsBrew: a.E.Mac(),
 	})
 	return out
+}
+
+// smartInstall picks how smartmontools installs here: Homebrew on a Mac, the distribution's own package manager on
+// Linux, and Homebrew on Linux only when it is already installed, can work here, and nothing native is. When nothing
+// can, why says so in plain words.
+func (a *App) smartInstall() (cmd []string, why string) {
+	if a.E.Mac() {
+		return []string{a.brew(), "install", "smartmontools"}, ""
+	}
+	p := a.E.Platform()
+	if a.linuxBrewOnly() {
+		return []string{a.brew(), "install", "smartmontools"}, ""
+	}
+	cmd, why = p.Install(host.SmartPkgs)
+	if cmd == nil && !p.Has("brew") {
+		if ok, brewWhy := p.Brew(); !ok {
+			why += ". " + brewWhy
+		}
+	}
+	return cmd, why
+}
+
+// linuxBrewOnly is true on Linux when Homebrew is the only package manager Catalyst can use and it can run here.
+func (a *App) linuxBrewOnly() bool {
+	if a.E.Mac() {
+		return false
+	}
+	p := a.E.Platform()
+	if !p.Has("brew") || a.brew() == "" {
+		return false
+	}
+	if ok, _ := p.Brew(); !ok {
+		return false
+	}
+	cmd, _ := p.Install(host.SmartPkgs)
+	return cmd == nil
 }
 
 func (a *App) has(tool string) bool { _, err := a.E.Look(tool); return err == nil }
@@ -132,7 +160,13 @@ func (a *App) installHelper(h helper) int {
 	}
 	cmd := h.install(a)
 	if cmd == nil {
-		u.Stop("No package manager here that Catalyst knows how to use. Install " + h.label + " the way your system does.")
+		why := "No package manager here that Catalyst knows how to use. Install " + h.label + " the way your system does"
+		if h.name == "smartmontools" {
+			if _, w := a.smartInstall(); w != "" {
+				why = w
+			}
+		}
+		u.Note(why + ".")
 		return ExitIssues
 	}
 	shown := strings.Join(cmd, " ")
@@ -140,7 +174,7 @@ func (a *App) installHelper(h helper) int {
 		shown = brewInstall
 	}
 	if h.root {
-		shown = "sudo " + shown
+		shown = strings.Join(a.rootCmd(cmd), " ")
 	}
 	u.Say("  " + u.Bold("Install "+h.label) + u.Dim(". "+h.unlocks))
 	u.Blank()
@@ -152,7 +186,11 @@ func (a *App) installHelper(h helper) int {
 	u.Blank()
 	if !u.Ask("Install it?") {
 		a.decline(h.name)
-		u.Say("  " + u.Dim("Not installed. It is under More, Helpers, whenever you want it."))
+		if a.inSession {
+			u.Say("  " + u.Dim("Not installed. It is under More, Helpers, whenever you want it."))
+		} else {
+			u.Say("  " + u.Dim("Not installed. Whenever you want it: catalyst helpers install "+h.name))
+		}
 		return ExitOK
 	}
 	ok := false

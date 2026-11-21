@@ -399,3 +399,30 @@ func TestJournalBytes(t *testing.T) {
 		t.Fatal(b)
 	}
 }
+
+func TestBrokenCommandsReportsOnlyWhatRuns(t *testing.T) {
+	e, _ := env(t, "linux", nil, nil)
+	mine, later := e.Path(".local", "bin"), e.Path("tools", "bin")
+	e.Entries = []string{mine, later, "/usr/bin"}
+	write(t, filepath.Join(mine, "http"), "#!/nowhere/python3.11\n", 0o755)
+	write(t, filepath.Join(mine, "notes.txt"), "not a command\n", 0o644)
+	write(t, filepath.Join(later, "fine"), "#!/bin/sh\n", 0o755)
+	write(t, filepath.Join(later, "hidden"), "#!/nowhere/sh\n", 0o755) // hidden by the working copy before it
+	write(t, filepath.Join(mine, "hidden"), "#!/bin/sh\n", 0o755)
+	os.Symlink("/nowhere/tool", filepath.Join(mine, "fine")) // skipped by the shell, and a later fine runs
+	os.Symlink("/nowhere/gone", filepath.Join(mine, "gone"))
+	rs := brokenCommands(e)
+	var titles []string
+	for _, r := range rs {
+		titles = append(titles, r.Title)
+	}
+	got := strings.Join(titles, "|")
+	if got != "gone is on your PATH but cannot start|http is on your PATH but cannot start" {
+		t.Fatalf("%s", got)
+	}
+	os.Remove(filepath.Join(mine, "http"))
+	os.Remove(filepath.Join(mine, "gone"))
+	if r := one(t, brokenCommands(e)); r.State != d.Passed || !strings.Contains(r.Title, "2 commands") {
+		t.Fatalf("%+v", r)
+	}
+}

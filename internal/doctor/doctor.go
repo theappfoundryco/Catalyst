@@ -73,6 +73,18 @@ type Result struct {
 	Title    string   `json:"title"`
 	Hint     string   `json:"hint,omitempty"`
 	Fix      *Fix     `json:"fix,omitempty"`
+	// Muted is an issue the person chose to stop hearing about. It is still an issue, and still reported, but it does
+	// not count against the score or the exit code.
+	Muted bool `json:"muted,omitempty"`
+}
+
+// Mute marks the issues of the checks the person muted.
+func Mute(rs []Result, muted func(check string) bool) {
+	for i := range rs {
+		if rs[i].State == Issue && muted(rs[i].Check) {
+			rs[i].Muted = true
+		}
+	}
 }
 
 // Pass, Warn, Crit, Note, Skip and Err build results.
@@ -210,7 +222,7 @@ func runOne(e *host.Env, c Check) []Result {
 func Score(rs []Result) int {
 	f := 1.0
 	for _, r := range rs {
-		if r.State != Issue {
+		if r.State != Issue || r.Muted {
 			continue
 		}
 		switch r.Severity {
@@ -227,7 +239,7 @@ func Score(rs []Result) int {
 
 // Counts sums results by how they ended.
 type Counts struct {
-	Fine, Critical, Warning, Info, Skipped, Failed int
+	Fine, Critical, Warning, Info, Skipped, Failed, Muted int
 }
 
 // Count adds them up.
@@ -242,6 +254,10 @@ func Count(rs []Result) Counts {
 		case Failed:
 			c.Failed++
 		case Issue:
+			if r.Muted {
+				c.Muted++
+				continue
+			}
 			switch r.Severity {
 			case Critical:
 				c.Critical++

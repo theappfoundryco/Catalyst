@@ -404,7 +404,7 @@ func (s *runner) list(items []Item, title string) bool {
 			}
 			return headerLines(u, s.header, mood, withKit && u.Mascot && cols >= minForKit, cols)
 		}
-		foot := s.footer("↑↓", "move", "⏎", "open", "esc", "back")
+		foot := s.footer("↑↓", "move", "⏎", "open", "esc", "back", "ctrl-c", "exit")
 		if home {
 			foot = s.footer("↑↓", "move", "⏎", "open", "ctrl-c", "exit")
 		}
@@ -717,11 +717,7 @@ func (s *runner) result(p *page) (*Action, bool) {
 			status = "  " + u.Accent(flash)
 		}
 		out = append(out, strings.TrimRight(status, " "))
-		if row != nil || len(p.out.Actions) > 0 {
-			pairs = append(pairs, "esc", "back", "ctrl-c", "exit")
-		} else {
-			pairs = append(pairs, "⏎", "back", "ctrl-c", "exit")
-		}
+		pairs = append(pairs, "esc", "back", "ctrl-c", "exit") // Enter also goes back when it has nothing else to do, but one name for back reads the same on every screen
 		s.paint(append(out, s.footer(pairs...)...))
 	}
 	s.clear()

@@ -84,4 +84,4 @@ One line in the `Rules` table in `internal/sweep/sweep.go`:
 {Dir: "target", Needs: []string{"Cargo.toml"}, Title: "Rust build output", Restore: "cargo build", Cost: Rebuild},
 ```
 
-`Needs` is what must sit beside the folder to prove what it is. `Inside` is the same for a file within it. `Cost` is `Safe` if it rebuilds by itself or `Rebuild` if it needs a command. Set `NeedsGit: true` for a name too common to trust alone, like `build`. Then add a case to `sweep_test.go`, including one where it must not be offered.
+`Needs` is what must sit beside the folder to prove what it is, and may be a pattern such as `*.csproj`. `Inside` is the same for a file within it. `Cost` is `Safe` if it rebuilds by itself or `Rebuild` if it needs a command. Set `NeedsGit: true` for a name too common to trust alone, like `build`. Then add a case to `sweep_test.go`, including one where it must not be offered.

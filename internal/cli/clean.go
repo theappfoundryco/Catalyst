@@ -50,7 +50,7 @@ func cmdClean(a *App, args []string) int {
 		a.reaction = reaction{kit.Sleep, u.Dim("Nothing to clean right now.")}
 		return ExitOK
 	}
-	u.Say("  " + u.Bold(fmt.Sprintf("Found %s that rebuild themselves", ui.Count(len(r.Items), "folder", "folders"))) + u.Faint("  ·  ") + u.Dim("about "+ui.Size(r.Total())))
+	u.Say("  " + u.Bold("Found "+ui.Count(len(r.Items), "folder that rebuilds itself", "folders that rebuild themselves")) + u.Faint("  ·  ") + u.Dim("about "+ui.Size(r.Total())))
 	a.openNote(r)
 	u.Blank()
 	items := make([]ui.Item, len(r.Items))
@@ -66,13 +66,13 @@ func cmdClean(a *App, args []string) int {
 		u.Say("  " + u.Dim("Dry run: nothing was moved."))
 		return ExitOK
 	}
-	m := &ui.Menu{Items: items, Noun: "folder", Nouns: "folders", Action: "clean", Note: "everything goes to the Trash first",
+	m := &ui.Menu{Items: items, Noun: "folder", Nouns: "folders", Action: "clean", Note: "Everything goes to the Trash, and catalyst undo brings it back.",
 		Keys: []ui.MenuKey{
 			{Key: "o", Label: "open", Do: func(i int) string { return a.reveal(r.Items[i].Path) }},
 			{Key: "y", Label: "copy path", Do: func(i int) string { return a.copyText(r.Items[i].Path, "the path") }},
 		}}
 	if a.inSession {
-		m.Cancel = "back"
+		m.Cancel, m.Note = "back", "Everything goes to the Trash, and Undo brings it back."
 	}
 	if !m.Run(u) {
 		a.outcome.SkipWait = true
@@ -172,7 +172,7 @@ func (a *App) cleanNotes(r clean.Report) {
 			case ad.Bytes > 0:
 				size = ui.Size(ad.Bytes)
 			case ad.Count > 0:
-				size = fmt.Sprintf("%d", ad.Count)
+				size = ui.Count(ad.Count, "item", "items")
 			}
 			u.Say(fmt.Sprintf("  %8s  %s", size, ad.Name))
 			u.Hint("     " + ad.Note)

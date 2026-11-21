@@ -209,18 +209,42 @@ func TestLoadShellIgnoresWhatStartupFilesPrint(t *testing.T) {
 	f := &run.Fake{}
 	e := ForTest("/home/alex", "linux", f)
 	e.Shell = "/bin/zsh"
-	script := `printf '\n` + pathMark + `%s\n%s\n%s\n` + pathMark + `\n' "$PATH" "$JAVA_HOME" "$NVM_DIR"`
-	f.Replies = map[string]run.Result{
-		"/bin/zsh -l -i -c " + script: {Stdout: "Welcome back!\n" + pathMark + "/a/bin:/b/bin\n/jdk\n/nvm\n" + pathMark + "\n"},
+	out := "Welcome back!\n" + pathMark + "/a/bin:/b/bin\n/jdk\n/nvm\n" + pathMark + "\n"
+	for _, v := range ShellVars {
+		val := ""
+		if v == "NODE_EXTRA_CA_CERTS" {
+			val = "/etc/corp.pem"
+		}
+		out += pathMark + val + "\n"
 	}
+	out += pathMark + "\nlogout\n"
+	f.Replies = map[string]run.Result{"/bin/zsh -l -i -c " + shellScript(): {Stdout: out}}
 	e.LoadShell()
 	if strings.Join(e.Entries, ":") != "/a/bin:/b/bin" || e.JavaHome != "/jdk" || e.NvmDir != "/nvm" {
 		t.Fatalf("%+v", e)
+	}
+	if e.Var("NODE_EXTRA_CA_CERTS") != "/etc/corp.pem" || e.Var("npm_config_cafile") != "" || e.Var("HTTPS_PROXY") != "" {
+		t.Fatalf("%q", e.Vars)
 	}
 }
 
 func TestParseOSRelease(t *testing.T) {
 	if got := ParseOSRelease("NAME=x\nPRETTY_NAME=\"Ubuntu 24.04 LTS\"\n"); got != "Ubuntu 24.04 LTS" {
 		t.Fatal(got)
+	}
+}
+
+func TestParseProcNet(t *testing.T) {
+	tcp := "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode\n" +
+		"   0: 00000000:0BB8 00000000:0000 0A 00000000:00000000 00:00000000 00000000  1000        0 41001 1 0\n" +
+		"   1: 0100007F:1F90 00000000:0000 0A 00000000:00000000 00:00000000 00000000  1000        0 41002 1 0\n" +
+		"   2: 0100007F:1F90 0100007F:D431 01 00000000:00000000 00:00000000 00000000  1000        0 41003 1 0\n"
+	got := ParseProcNet(tcp)
+	if len(got) != 2 || got[0].Port != 3000 || got[0].Address != "*" || got[1].Port != 8080 || got[1].Address != "127.0.0.1" {
+		t.Fatalf("%+v", got)
+	}
+	tcp6 := "   0: 00000000000000000000000001000000:0016 00000000000000000000000000000000:0000 0A 00000000:00000000 00:00000000 00000000     0        0 41004 1 0\n"
+	if got := ParseProcNet(tcp6); len(got) != 1 || got[0].Port != 22 || got[0].Address != "::1" {
+		t.Fatalf("%+v", got)
 	}
 }

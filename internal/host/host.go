@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/theappfoundryco/catalyst/internal/run"
@@ -22,11 +23,14 @@ type Env struct {
 	Look     func(string) (string, error)
 	Getenv   func(string) string
 	Now      func() time.Time
-	Entries  []string // the PATH a new terminal gets, in order
-	JavaHome string   // JAVA_HOME as a new terminal sees it
-	NvmDir   string   // NVM_DIR as a new terminal sees it
+	Entries  []string          // the PATH a new terminal gets, in order
+	JavaHome string            // JAVA_HOME as a new terminal sees it
+	NvmDir   string            // NVM_DIR as a new terminal sees it
+	Vars     map[string]string // ShellVars as a new terminal sees them, set only by LoadShell
 	Hostname func() string
 	hasCLT   *bool
+	platMu   sync.Mutex
+	plat     *Platform
 }
 
 // New reads the real machine. It asks a login shell for the environment, because a tool started from anywhere
@@ -46,6 +50,16 @@ func New() *Env {
 
 const pathMark = "__CATALYST_ENV__"
 
+// shellScript prints, between markers, what a new terminal sees: PATH, JAVA_HOME and NVM_DIR in one block, then each of
+// ShellVars in its own. The last marker closes the last value, so whatever the shell prints on exit is not in it.
+func shellScript() string {
+	s := `printf '\n` + pathMark + `%s\n%s\n%s\n` + pathMark + `\n' "$PATH" "$JAVA_HOME" "$NVM_DIR"`
+	for _, v := range ShellVars {
+		s += `; printf '` + pathMark + `%s\n' "$` + v + `"`
+	}
+	return s + `; printf '` + pathMark + `\n'`
+}
+
 // LoadShell replaces the inherited environment with what a new terminal sees. Interactive and login, since nvm and most
 // PATH lines live in .zshrc. The markers skip anything the startup files print. It can take seconds, so commands that do
 // not care about the environment do not call it.
@@ -53,7 +67,7 @@ func (e *Env) LoadShell() {
 	if e.Shell == "" {
 		return
 	}
-	script := `printf '\n` + pathMark + `%s\n%s\n%s\n` + pathMark + `\n' "$PATH" "$JAVA_HOME" "$NVM_DIR"`
+	script := shellScript()
 	r := e.Run.Run(12*time.Second, e.Shell, "-l", "-i", "-c", script)
 	if !r.OK() && r.Stdout == "" {
 		return
@@ -73,6 +87,32 @@ func (e *Env) LoadShell() {
 		}
 	}
 	e.JavaHome, e.NvmDir = lines[1], lines[2]
+	// parts[2] is the newline after the first block, and each variable follows in its own part.
+	if extra := parts[3:]; len(extra) > len(ShellVars) {
+		e.Vars = map[string]string{}
+		for i, v := range ShellVars {
+			e.Vars[v] = strings.TrimSuffix(strings.TrimPrefix(extra[i], "\n"), "\n")
+		}
+	}
+}
+
+// ShellVars are the variables checks read as a new terminal sees them: proxies and certificate bundles, which break
+// installs when they point at nothing. Values stay in memory and are never printed.
+var ShellVars = []string{
+	"HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy",
+	"NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE", "SSL_CERT_DIR", "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE", "GIT_SSL_CAINFO",
+	"PIP_CERT", "AWS_CA_BUNDLE", "NPM_CONFIG_CAFILE", "npm_config_cafile",
+}
+
+// Var is a variable as a new terminal sees it, or as Catalyst was started with when the shell was not asked.
+func (e *Env) Var(name string) string {
+	if e.Vars != nil {
+		return e.Vars[name]
+	}
+	if e.Getenv != nil {
+		return e.Getenv(name)
+	}
+	return ""
 }
 
 func splitPath(p string) []string {
@@ -164,5 +204,15 @@ func ForTest(home, goos string, r run.Runner) *Env {
 		Look:     func(string) (string, error) { return "", exec.ErrNotFound },
 		Now:      time.Now,
 		Hostname: func() string { return "alex-laptop" },
+		plat:     testPlatform(goos),
 	}
+}
+
+// testPlatform keeps tests from reading the machine they run on. Tests that care set their own with SetPlatform.
+func testPlatform(goos string) *Platform {
+	p := Platform{OS: goos, Arch: "arm64", Pretty: "Linux", Family: "unknown", Sudo: true, Managers: []string{}}
+	if goos == "darwin" {
+		p.Pretty, p.Family, p.Init = "macOS 15.1", "macos", "launchd"
+	}
+	return &p
 }

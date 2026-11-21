@@ -282,3 +282,43 @@ func TestHealthDotColoursByScore(t *testing.T) {
 		t.Fatal("no checkup should be a hollow dot")
 	}
 }
+
+func TestWrapKeepsColumns(t *testing.T) {
+	u := Plain(nil, 40)
+	got := u.Wrap("  project     your repository: pinned versions and hooks", 40)
+	want := []string{"  project     your repository: pinned", "              versions and hooks"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Fatalf("%q", got)
+	}
+	if got := u.Wrap("  one two three four five six seven eight nine", 20); got[1] != "  five six seven" {
+		t.Fatalf("a sentence keeps its own indent: %q", got)
+	}
+}
+
+func TestSmallRAMInMB(t *testing.T) {
+	if got := RAM(300 * 1024 * 1024); got != "300 MB" {
+		t.Fatalf("%q", got)
+	}
+}
+
+func TestFitPathKeepsTheEnd(t *testing.T) {
+	if got := FitPath("~/code/clients/example/app", 16); got != "…/example/app" {
+		t.Fatalf("%q", got)
+	}
+}
+
+func TestKeyBarKeepsTheWayBack(t *testing.T) {
+	u := Plain(nil, 60)
+	bar := u.KeyBar("o", "open folder", "y", "copy path", "h", "helpers", "s", "space", "r", "refresh", "↑↓", "move", "esc", "back", "ctrl-c", "exit")[1]
+	if !strings.Contains(bar, "[esc] back") || strings.Contains(bar, "ctrl-c") || !strings.Contains(bar, "open folder") || Visible(bar) > 60 {
+		t.Fatalf("%q", bar)
+	}
+}
+
+func TestKeyBarKeepsEnterAndEsc(t *testing.T) {
+	u := Plain(nil, 50)
+	bar := u.KeyBar("↑↓", "move", "space", "select", "a", "all", "o", "open", "y", "copy path", "⏎", "continue", "esc", "cancel")[1]
+	if !strings.Contains(bar, "[⏎] continue") || !strings.Contains(bar, "[esc] cancel") || Visible(bar) > 50 {
+		t.Fatalf("%q", bar)
+	}
+}

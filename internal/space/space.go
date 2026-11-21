@@ -11,7 +11,9 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
+	"time"
 
 	"github.com/theappfoundryco/catalyst/internal/host"
 )
@@ -60,6 +62,8 @@ type Entry struct {
 	How   string   `json:"how,omitempty"`
 	Clean bool     `json:"cleanable,omitempty"`
 	Top   []string `json:"-"`
+	// Partial is true when the time ran out before this folder was fully counted, so Bytes is a lower bound.
+	Partial bool `json:"partial,omitempty"`
 }
 
 // System is what macOS shows as "macOS" in its storage settings: its own volumes, none of which a person can clear.
@@ -76,6 +80,8 @@ type Report struct {
 	DiskOK     bool        `json:"-"`
 	Home       []Entry     `json:"home"`
 	Apps       int64       `json:"applications,omitempty"`
+	AppsCut    bool        `json:"applications_partial,omitempty"`
+	Stopped    bool        `json:"stopped_early,omitempty"` // the budget ran out, and some sizes are lower bounds
 	System     *System     `json:"system,omitempty"`
 	Landmarks  []Entry     `json:"landmarks"`
 	Unreadable int         `json:"unreadable_folders"`
@@ -87,6 +93,8 @@ type Options struct {
 	Floor         int64
 	Progress      func(path string)
 	LandmarksOnly bool // skip the whole home folder and the apps, for when only the named places matter
+	// Budget stops the walk after this long, so a huge home folder cannot keep someone waiting. 0 means no limit.
+	Budget time.Duration
 }
 
 // Measure walks the home folder, the apps and the known landmarks. Folders it may not read are counted, never guessed.
@@ -94,12 +102,16 @@ func Measure(o Options) Report {
 	e := o.Env
 	r := Report{}
 	r.Disk, r.DiskOK = e.HomeVolume()
-	sizer := newSizer()
+	sizer, marks := newSizer(), newSizer()
+	if o.Budget > 0 {
+		sizer.deadline = time.Now().Add(o.Budget)
+		marks.deadline = sizer.deadline
+	}
 	entries, _ := os.ReadDir(e.Home)
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 	slots := make(chan struct{}, 8)
-	measure := func(p string, done func(int64)) {
+	measure := func(p string, done func(int64, bool)) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -110,9 +122,9 @@ func Measure(o Options) Report {
 				o.Progress(p)
 				mu.Unlock()
 			}
-			n := sizer.size(p)
+			n, cut := sizer.size(p)
 			mu.Lock()
-			done(n)
+			done(n, cut)
 			mu.Unlock()
 		}()
 	}
@@ -129,14 +141,13 @@ func Measure(o Options) Report {
 			continue
 		}
 		name := ent.Name()
-		measure(p, func(n int64) { r.Home = append(r.Home, Entry{Path: p, Name: name, Bytes: n}) })
+		measure(p, func(n int64, cut bool) { r.Home = append(r.Home, Entry{Path: p, Name: name, Bytes: n, Partial: cut}) })
 	}
 	if e.Mac() && !o.LandmarksOnly {
-		measure("/Applications", func(n int64) { r.Apps = n })
+		measure("/Applications", func(n int64, cut bool) { r.Apps, r.AppsCut = n, cut })
 	}
 	// Landmarks sit inside the home folder, so they get their own pass with a fresh inode set: shared hard links
 	// would otherwise be counted only for whichever walk reached them first.
-	marks := newSizer()
 	for _, l := range Landmarks {
 		if l.OS != "" && l.OS != e.OS {
 			continue
@@ -151,9 +162,9 @@ func Measure(o Options) Report {
 			defer wg.Done()
 			slots <- struct{}{}
 			defer func() { <-slots }()
-			n := marks.size(p)
+			n, cut := marks.size(p)
 			mu.Lock()
-			r.Landmarks = append(r.Landmarks, Entry{Path: p, Name: l.Name, Bytes: n, How: l.How, Clean: l.Clean})
+			r.Landmarks = append(r.Landmarks, Entry{Path: p, Name: l.Name, Bytes: n, How: l.How, Clean: l.Clean, Partial: cut})
 			mu.Unlock()
 		}()
 	}
@@ -162,6 +173,7 @@ func Measure(o Options) Report {
 	sort.Slice(r.Home, func(i, j int) bool { return r.Home[i].Bytes > r.Home[j].Bytes })
 	sort.Slice(r.Landmarks, func(i, j int) bool { return r.Landmarks[i].Bytes > r.Landmarks[j].Bytes })
 	r.Unreadable = sizer.denied
+	r.Stopped = sizer.stop.Load() || marks.stop.Load()
 	if e.Mac() && !o.LandmarksOnly {
 		if out, ok := e.Out("diskutil", "apfs", "list"); ok {
 			s := ParseAPFS(out, r.Disk.Name)
@@ -197,6 +209,9 @@ type sizer struct {
 	mu     sync.Mutex
 	seen   map[[2]uint64]bool
 	denied int
+	stop   atomic.Bool // set when the time is up: every walk returns what it has counted so far
+	// deadline is when the time is up, or zero for none. Each folder checks it, so a stop never waits on a timer.
+	deadline time.Time
 }
 
 func newSizer() *sizer { return &sizer{seen: map[[2]uint64]bool{}} }
@@ -212,14 +227,20 @@ func (z *sizer) first(dev, ino uint64) bool {
 	return true
 }
 
-func (z *sizer) size(root string) int64 {
-	var total int64
+func (z *sizer) size(root string) (total int64, cut bool) {
 	var top syscall.Stat_t
 	if syscall.Lstat(root, &top) != nil {
-		return 0
+		return 0, false
 	}
 	var visit func(dir string)
 	visit = func(dir string) {
+		if !z.deadline.IsZero() && time.Now().After(z.deadline) {
+			z.stop.Store(true)
+		}
+		if z.stop.Load() {
+			cut = true
+			return
+		}
 		entries, err := os.ReadDir(dir)
 		if err != nil {
 			if os.IsPermission(err) {
@@ -247,7 +268,7 @@ func (z *sizer) size(root string) int64 {
 		}
 	}
 	visit(root)
-	return total
+	return total, cut
 }
 
 var (

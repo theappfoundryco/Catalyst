@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -334,7 +335,9 @@ func TestEveryCommandIsReachableFromTheList(t *testing.T) {
 		}
 	}
 	walk(a.homeItems())
-	skip := map[string]bool{"help": true, "version": true, "legacy": true, "setup": true} // legacy appears only where the old app left something
+	// legacy appears only where the old app left something. why takes a name and completion writes a script, and anything
+	// with arguments belongs in the shell (why is a key on PATH's hidden tools instead).
+	skip := map[string]bool{"help": true, "version": true, "legacy": true, "setup": true, "why": true, "completion": true}
 	for _, c := range commands() {
 		if !skip[c.Name] && !reach[c.Name] {
 			t.Errorf("%s is not on the list", c.Name)
@@ -608,5 +611,16 @@ func TestKitLinkIsAddedOnceAndNeverTakesAnotherKit(t *testing.T) {
 	// A Homebrew copy is left to Homebrew.
 	if got := a.linkKit("/opt/homebrew/Cellar/catalyst/0.1.1/bin/catalyst"); got != kitNo {
 		t.Fatal(got)
+	}
+}
+
+func TestFlagProblemInPlainWords(t *testing.T) {
+	for in, want := range map[string]string{
+		"flag provided but not defined: -nope": "doctor has no option --nope.",
+		"flag needs an argument: -n":           "-n needs a value.",
+	} {
+		if got := flagProblem("doctor", errors.New(in)); got != want {
+			t.Errorf("%s: %q", in, got)
+		}
 	}
 }
