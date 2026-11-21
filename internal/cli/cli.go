@@ -70,6 +70,7 @@ func commands() []command {
 		{"ssh", "[--json]", "your keys and whether they are safe", cmdSSH},
 		{"path", "[add | remove | status]", "your PATH: dead folders, repeats and shadows", cmdPath},
 		{"why", "NAME [--json]", "which copy of a program runs, and why that one", cmdWhy},
+		{"explain", "[ERROR] [--json]", "paste an error, and see its cause and fix", cmdExplain},
 		{"config", "[set name NAME | set mascot on|off | set animations on|off]", "show or change settings", cmdConfig},
 		{"helpers", "[install NAME]", "tools that let Catalyst see more, such as smartmontools", cmdHelpers},
 		{"setup", "", "the welcome: your name, and helpers worth having", cmdSetup},
@@ -170,7 +171,7 @@ func (a *App) homeItems() []session.Item {
 	item := func(name, label string, gap bool) session.Item {
 		return session.Item{Name: label, Help: helps[name], Args: []string{name}, Gap: gap}
 	}
-	more := []session.Item{item("log", "History", false), item("changes", "Changes", false), item("report", "Report", false), item("config", "Settings", false), item("helpers", "Helpers", false), item("update", "Update", false), item("uninstall", "Uninstall", false)}
+	more := []session.Item{item("log", "History", false), item("changes", "Changes", false), item("explain", "Explain", false), item("report", "Report", false), item("config", "Settings", false), item("helpers", "Helpers", false), item("update", "Update", false), item("uninstall", "Uninstall", false)}
 	if a.oldAppPresent() {
 		more = append(more, item("legacy", "Old app", false))
 	}
@@ -199,7 +200,7 @@ func (a *App) homeItems() []session.Item {
 		item("startup", "Startup", false),
 		item("ssh", "SSH keys", false),
 		item("path", "PATH", false),
-		{Name: "More", Help: "history, what changed, report, settings, helpers, update, uninstall", Gap: true, Sub: more},
+		{Name: "More", Help: "history, what changed, explain an error, report, settings, helpers, update, uninstall", Gap: true, Sub: more},
 	}
 }
 
