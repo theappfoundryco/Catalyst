@@ -20,6 +20,7 @@ import pyte
 
 binary = sys.argv[1]
 cols, rows = (int(sys.argv[2]), int(sys.argv[3])) if len(sys.argv) > 3 else (100, 45)
+SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 KEYS = {"down": b"\x1b[B", "up": b"\x1b[A", "enter": b"\r", "esc": b"\x1b"}
 
 
@@ -52,11 +53,20 @@ class Term:
     def lines(self):
         return [l.rstrip() for l in self.screen.display]
 
-    def close(self):
-        os.write(self.fd, b"\x03")
-        self.pump(0.3)
-        os.write(self.fd, b"\x03")
+    def settle(self, limit=90):
+        """Wait while a spinner shows, as a long step (measuring, a checkup) draws one until it is done."""
+        end = time.time() + limit
+        while time.time() < end and any(c in "\n".join(self.lines()) for c in SPINNER):
+            self.pump(0.5)
         self.pump(0.5)
+
+    def close(self):
+        try:
+            for _ in range(2):
+                os.write(self.fd, b"\x03")
+                self.pump(0.4)
+        except OSError:
+            pass  # it has already exited
 
 
 def show(title, lines):
@@ -98,7 +108,8 @@ for _ in names:
     if not name or name in opened:
         break  # back at the top: every row that can open has been opened
     opened.add(name)
-    t.press("enter", wait=10 if name in ("Doctor", "Network", "Space", "Disk") else 4)
+    t.press("enter", wait=2)
+    t.settle()
     screen = t.lines()
     show(name, screen)
     text = "\n".join(screen)
@@ -108,6 +119,7 @@ for _ in names:
     if "back" not in bar and "cancel" not in bar:
         problems.append(name + ": the key bar has no way back: " + bar.strip())
     t.press("esc")
+    t.settle()
     if current(t.lines()) != name:
         problems.append(name + ": Esc did not return to the list")
         show("after Esc from " + name, t.lines())
