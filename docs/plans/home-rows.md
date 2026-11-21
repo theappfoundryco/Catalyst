@@ -21,7 +21,7 @@ Proposed: one new row under Doctor, two under More.
 
 ```
   ▌ Doctor     find what is wrong and fix what is safe
-    Project    the repository you are in: pinned versions, lockfiles, .env and hooks
+    Project    your repository: pinned versions, lockfiles, .env and hooks
     Sweep      reclaim space from build artifacts
     ...
     More       history, what changed, report, settings, helpers, update, uninstall

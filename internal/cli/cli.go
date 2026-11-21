@@ -55,7 +55,7 @@ func commands() []command {
 		{"sweep", "[paths] [--older-than 14d] [--deep] [--dry-run] [--json]", "reclaim space from build artifacts", cmdSweep},
 		{"clean", "[--dry-run] [--json] [--yes]", "app caches and old logs, which rebuild themselves", cmdClean},
 		{"status", "[--json]", "one-glance health of this machine", cmdStatus},
-		{"project", "[DIR] [--json]", "the repository you are in: pinned versions, lockfiles, .env and hooks", cmdProject},
+		{"project", "[DIR] [--json]", "your repository: pinned versions, lockfiles, .env and hooks", cmdProject},
 		{"space", "[--in PATH] [--json]", "where your storage goes, and what can go", cmdSpace},
 		{"system", "[--dry-run] [--admin] [--json]", "what macOS calls System Data, and what can safely go", cmdSystem},
 		{"undo", "[--yes]", "reverse the last change Catalyst made", cmdUndo},
@@ -158,6 +158,9 @@ func (a *App) first() []string {
 	return []string{"setup"}
 }
 
+// systemHelpLinux replaces the System line off a Mac, where nothing is called System Data.
+const systemHelpLinux = "system caches and logs, and what can safely go"
+
 // homeItems is the list on the home screen. The most-used things come first, and what is rare waits under More.
 func (a *App) homeItems() []session.Item {
 	helps := map[string]string{}
@@ -172,7 +175,7 @@ func (a *App) homeItems() []session.Item {
 		more = append(more, item("legacy", "Old app", false))
 	}
 	if !a.E.Mac() {
-		helps["system"] = "system caches and logs, and what can safely go"
+		helps["system"] = systemHelpLinux
 	}
 	undo := item("undo", "Undo", false)
 	if last := a.Journal.LastUndoable(); len(last) == 0 {
@@ -262,7 +265,7 @@ func (a *App) oldAppPresent() bool {
 func (a *App) flags(name, usage string) *flag.FlagSet {
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	fs.SetOutput(discard{})
-	fs.Usage = func() { a.U.Say("  Usage: catalyst " + name + " " + usage) }
+	fs.Usage = func() { a.U.Say("  Usage:  catalyst " + name + " " + usage) }
 	return fs
 }
 
@@ -291,16 +294,39 @@ func (a *App) parse(fs *flag.FlagSet, args []string) (code int, ok bool) {
 			}
 		}
 	}
-	if err := fs.Parse(append(flags, plain...)); err != nil {
+	usage := fs.Usage
+	fs.Usage = func() {} // flag calls it on every error, before the problem is said; it is shown once, after
+	err := fs.Parse(append(flags, plain...))
+	fs.Usage = usage
+	if err != nil {
 		if err == flag.ErrHelp {
 			fs.Usage()
 			return ExitOK, false
 		}
-		a.U.Stop(err.Error())
+		a.U.Stop(flagProblem(fs.Name(), err))
 		fs.Usage()
 		return ExitUsage, false
 	}
 	return ExitOK, true
+}
+
+// flagProblem says what the flag package found in plain words, with flags written the way the usage line writes them.
+func flagProblem(cmd string, err error) string {
+	msg := err.Error()
+	if name, ok := strings.CutPrefix(msg, "flag provided but not defined: -"); ok {
+		return cmd + " has no option " + flagName(name) + "."
+	}
+	if name, ok := strings.CutPrefix(msg, "flag needs an argument: -"); ok {
+		return flagName(name) + " needs a value."
+	}
+	return strings.ToUpper(msg[:1]) + msg[1:] + "."
+}
+
+func flagName(name string) string {
+	if name = strings.TrimLeft(name, "-"); len(name) == 1 {
+		return "-" + name
+	}
+	return "--" + name
 }
 
 func emit(a *App, v any) int {
@@ -325,7 +351,11 @@ func cmdHelp(a *App, _ []string) int {
 	u.Say("  " + u.Dim("Run catalyst (or kit) alone to open the list, or:"))
 	u.Blank()
 	for _, c := range commands() {
-		u.Say(fmt.Sprintf("  %s  %s", u.Cyan(fmt.Sprintf("%-10s", c.Name)), c.Help))
+		help := c.Help
+		if c.Name == "system" && !a.E.Mac() {
+			help = systemHelpLinux
+		}
+		u.Say(fmt.Sprintf("  %s  %s", u.Cyan(fmt.Sprintf("%-10s", c.Name)), help))
 	}
 	u.Blank()
 	u.Say(u.Dim("  Exit codes: 0 fine, 1 issues found, 2 usage error, 3 a check could not run."))

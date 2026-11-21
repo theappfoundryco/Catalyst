@@ -91,7 +91,7 @@ func cmdSystem(a *App, args []string) int {
 		}
 		items[i] = ui.Item{Label: ar.Name, Size: ar.Bytes, Right: ar.WayWords(), About: about, Path: path, Locked: !ar.Selectable()}
 		if ar.Bytes == 0 && ar.Count > 0 {
-			items[i].Right = strconv.Itoa(ar.Count) + " · " + ar.WayWords()
+			items[i].Right = ui.Count(ar.Count, "item", "items") + " · " + ar.WayWords()
 		}
 	}
 	keys := []ui.MenuKey{
@@ -135,7 +135,7 @@ func cmdSystem(a *App, args []string) int {
 func sizeOr(ar sysdata.Area) string {
 	switch {
 	case ar.Bytes == 0 && ar.Count > 0:
-		return strconv.Itoa(ar.Count)
+		return ui.Count(ar.Count, "item", "items")
 	case ar.Bytes == 0:
 		return ""
 	}

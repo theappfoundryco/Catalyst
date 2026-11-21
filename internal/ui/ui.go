@@ -133,6 +133,19 @@ func Fit(s string, width int) string {
 	return strings.TrimRight(string(r[:width-1]), " ") + "…"
 }
 
+// FitPath shortens a path from the front, so the folder names that tell it apart stay on screen.
+func FitPath(p string, width int) string {
+	r := []rune(p)
+	if len(r) <= width || width < 2 {
+		return p
+	}
+	tail := string(r[len(r)-(width-1):])
+	if i := strings.Index(tail, "/"); i >= 0 && i < len(tail)-1 {
+		tail = tail[i:]
+	}
+	return "…" + tail
+}
+
 // Line writes one line, indented by nothing and never wider than the window.
 func (u *UI) line(s string) { fmt.Fprintln(u.Out, s) }
 
@@ -143,7 +156,8 @@ func (u *UI) Say(s string) {
 	}
 }
 
-// Wrap splits s into lines that fit, keeping its leading spaces on each.
+// Wrap splits s into lines that fit, keeping its leading spaces on each. A line laid out in columns keeps its
+// padding, and what does not fit continues under its last column, so a long row in a table still reads as one row.
 func (u *UI) Wrap(s string, width int) []string {
 	if Visible(s) <= width {
 		return []string{s}
@@ -151,16 +165,31 @@ func (u *UI) Wrap(s string, width int) []string {
 	trimmed := strings.TrimLeft(s, " ")
 	indent := strings.Repeat(" ", len(s)-len(trimmed))
 	var out []string
-	cur := indent
-	for _, w := range strings.Fields(trimmed) {
-		if Visible(cur)+Visible(w)+1 > width && strings.TrimSpace(cur) != "" {
+	cur, hang, gap, first := indent, indent, 0, true
+	for _, w := range strings.Split(trimmed, " ") {
+		if w == "" {
+			gap++
+			continue
+		}
+		if Visible(w) == 0 { // a colour code alone: it takes no room, and the gap before the next word stays
+			cur += w
+			continue
+		}
+		sep := ""
+		if strings.TrimSpace(ansi.ReplaceAllString(cur, "")) != "" {
+			sep = " "
+			if first {
+				sep = strings.Repeat(" ", gap+1)
+			}
+		}
+		if Visible(cur)+len(sep)+Visible(w) > width && sep != "" {
 			out = append(out, cur)
-			cur = indent
+			cur, sep, first = hang, "", false
+		} else if first && gap > 0 && Visible(cur)+len(sep) <= width/2 {
+			hang = strings.Repeat(" ", Visible(cur)+len(sep))
 		}
-		if strings.TrimSpace(cur) != "" {
-			cur += " "
-		}
-		cur += w
+		cur += sep + w
+		gap = 0
 	}
 	return append(out, cur)
 }
@@ -200,8 +229,10 @@ func (u *UI) Note(msg string) { u.marked(u.mark("i", "note", u.Cyan), msg) }
 
 // Hint prints a dim line under a result, lined up with its text.
 func (u *UI) Hint(msg string) {
-	for _, l := range u.Wrap("       "+msg, u.Width()) {
-		u.line(u.Dim(l))
+	for _, part := range strings.Split(msg, "\n") { // one line per command, so none breaks where it cannot be copied
+		for _, l := range u.Wrap("       "+part, u.Width()) {
+			u.line(u.Dim(l))
+		}
 	}
 }
 
@@ -358,6 +389,9 @@ func Size(b int64) string {
 // RAM uses the units memory is sold in, so an 8 GB machine reads as 8 GB and not 8.6.
 func RAM(b int64) string {
 	gb := float64(b) / (1024 * 1024 * 1024)
+	if gb < 0.95 { // a small process would read 0.0 GB
+		return fmt.Sprintf("%d MB", b/(1024*1024))
+	}
 	if gb >= 10 || gb == float64(int64(gb)) {
 		return fmt.Sprintf("%.0f GB", gb)
 	}

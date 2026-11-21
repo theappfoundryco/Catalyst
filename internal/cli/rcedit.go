@@ -66,7 +66,11 @@ func (a *App) editFile(path, title string, change func(lines []string) []string)
 		u.Stop("Could not record the change, so the file was put back.")
 		return false
 	}
-	u.Ok("Done. Open a new terminal to use it. Undo is on the home screen.")
+	if a.inSession {
+		u.Ok("Done. Open a new terminal to use it. Undo is on the home screen.")
+	} else {
+		u.Ok("Done. Open a new terminal to use it. To take it back: catalyst undo")
+	}
 	a.outcome.Changed = true
 	return true
 }

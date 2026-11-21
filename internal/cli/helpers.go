@@ -186,7 +186,11 @@ func (a *App) installHelper(h helper) int {
 	u.Blank()
 	if !u.Ask("Install it?") {
 		a.decline(h.name)
-		u.Say("  " + u.Dim("Not installed. It is under More, Helpers, whenever you want it."))
+		if a.inSession {
+			u.Say("  " + u.Dim("Not installed. It is under More, Helpers, whenever you want it."))
+		} else {
+			u.Say("  " + u.Dim("Not installed. Whenever you want it: catalyst helpers install "+h.name))
+		}
 		return ExitOK
 	}
 	ok := false

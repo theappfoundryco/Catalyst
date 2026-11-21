@@ -24,7 +24,7 @@ func gitIdentity(e *host.Env) []d.Result {
 	switch {
 	case email == "" || name == "":
 		return []d.Result{d.Warn("git does not know your name and email, so commits will fail or look wrong").
-			With(`Set them: git config --global user.name "Your Name" and git config --global user.email you@example.com`)}
+			With("Set them:\n" + `git config --global user.name "Your Name"` + "\n" + `git config --global user.email you@example.com`)}
 	case strings.HasSuffix(email, "@example.com"):
 		return []d.Result{d.Note("git is set to a placeholder email")}
 	}

@@ -46,7 +46,7 @@ func cmdDisk(a *App, args []string) int {
 		mark := a.row(a.revealKey(v.Mount), a.copyKey("y", "copy path", v.Mount, "the path"))
 		u.Row(v.Name, mark+u.Bar(v.UsedPercent, 18, 75, 90)+"  "+u.Dim(ui.Size(v.Free)+" free of "+ui.Size(v.Size)))
 	}
-	u.Hdr("Drive health")
+	u.Sect("Drive health")
 	if health.Model != "" {
 		u.Row("Drive", u.Bold(health.Model))
 	}
@@ -101,10 +101,10 @@ func cmdDisk(a *App, args []string) int {
 	}
 	if health.HasSmart {
 		u.Blank()
-		u.Hint("A drive is rated for a lifetime of writing. Wear counts toward it. Most Macs are replaced long before 100%.")
+		u.Hint("A drive is rated for a lifetime of writing. Wear counts toward it. Most computers are replaced long before 100%.")
 	}
 	if *folders {
-		u.Hdr("Biggest folders in your home")
+		u.Sect("Biggest folders in your home")
 		type row struct {
 			name string
 			size int64
@@ -352,7 +352,9 @@ func cmdNet(a *App, args []string) int {
 			a.outcome.Actions = append(a.outcome.Actions, goTo("s", "speed test", "Network", "net", "speed"), a.urlKey("n", "Network settings", settingsNetwork))
 		}
 	} else {
-		u.Hint("Test any address: catalyst net test example.com   Speed: catalyst net speed   Public IP: catalyst net ip")
+		u.Hint("Test any address: catalyst net test example.com")
+		u.Hint("Speed: catalyst net speed")
+		u.Hint("Public IP: catalyst net ip")
 	}
 	u.Blank()
 	if !ok {
@@ -716,6 +718,16 @@ func cmdPorts(a *App, args []string) int {
 	a.outcome.Refresh = true
 	u.Hdr("What is listening")
 	if len(list) == 0 {
+		if !a.has("ss") && !a.has("lsof") { // nothing to ask is not the same as nothing listening
+			u.Skip("Ports needs ss or lsof to see what is listening, and this system has neither.")
+			if cmd, advice := a.E.Platform().Install(map[string]string{"": "lsof"}); cmd != nil {
+				u.Hint("Install lsof with: " + strings.Join(a.rootCmd(cmd), " "))
+			} else {
+				u.Hint(advice + ".")
+			}
+			u.Blank()
+			return ExitFailed
+		}
 		u.Say("  " + u.Dim("Nothing that this user can see."))
 		u.Blank()
 		return ExitOK
@@ -738,9 +750,14 @@ func cmdPorts(a *App, args []string) int {
 	}
 	u.Say("  " + head)
 	u.Blank()
+	const anotherUser = "(another user's)"
 	nameW := 8
 	for _, l := range list {
-		if n := len(l.Command); n > nameW {
+		name := l.Command
+		if name == "" {
+			name = anotherUser
+		}
+		if n := len(name); n > nameW {
 			nameW = n
 		}
 	}
@@ -752,7 +769,7 @@ func cmdPorts(a *App, args []string) int {
 		l := l
 		name := l.Command
 		if name == "" {
-			name = "(another user's)"
+			name = anotherUser
 		}
 		reach := u.Faint("● ") + u.Dim("this machine only")
 		if wide(l) {
@@ -783,7 +800,7 @@ func cmdPorts(a *App, args []string) int {
 	case stoppable == 0:
 		u.Say("  " + u.Dim("None of these can be stopped from here: they belong to the system or another user."))
 	case !a.inSession:
-		u.Say("  " + u.Accent("i") + "  " + u.Dim("To stop one: ") + "catalyst ports stop" + u.Dim("  or  ") + "catalyst ports kill " + u.Accent("PORT"))
+		u.Hint("To stop one: catalyst ports stop, or catalyst ports kill PORT")
 	}
 	u.Blank()
 	return ExitOK
@@ -1310,6 +1327,12 @@ func cmdPath(a *App, args []string) int {
 	}
 	u := a.U
 	action := fs.Arg(0)
+	if fs.NArg() > 1 { // add and remove are for the catalyst command itself, so a folder after them must not be dropped quietly
+		u.Stop("catalyst path " + action + " is about the catalyst command itself, so it takes no folder.")
+		u.Hint("To add a folder of your own, add it to PATH in your shell startup file.")
+		fs.Usage()
+		return ExitUsage
+	}
 	self, _ := os.Executable()
 	a.E.LoadShell()
 	st := shellpath.Check(a.E.Home, a.E.Shell, a.E.OS, os.Getenv("ZDOTDIR"), a.E.Entries, self, a.E.Look)
@@ -1390,7 +1413,7 @@ func (a *App) showPath() int {
 		dirW = srcW - 14
 	}
 	srcW -= dirW
-	u.Say("  " + u.Faint(fmt.Sprintf("%3s   %-*s  %s", "#", dirW, "FOLDER", "ADDED BY")))
+	u.Say("  " + u.Faint(fmt.Sprintf("%2s   %-*s  %s", "#", dirW, "FOLDER", "ADDED BY")))
 	for i, e := range rows {
 		keys := []session.Action{a.copyKey("y", "copy", e.dir, a.E.Tilde(e.dir))}
 		if host.Exists(e.dir) {
@@ -1401,10 +1424,7 @@ func (a *App) showPath() int {
 		}
 		src := u.Dim(ui.Fit(a.E.Tilde(e.src), srcW))
 		if e.src == "" {
-			src = u.Faint("macOS or the shell")
-			if !a.E.Mac() {
-				src = u.Faint("the system or the shell")
-			}
+			src = u.Faint(a.systemOrShell())
 		}
 		dir := ui.Fit(a.E.Tilde(e.dir), dirW)
 		dir += strings.Repeat(" ", max(0, dirW-ui.Visible(dir)))

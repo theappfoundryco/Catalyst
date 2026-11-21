@@ -170,8 +170,9 @@ func (a *App) sweepOffer(rep sweep.Report, age time.Duration, dry, pickAll bool)
 		items[i] = ui.Item{Label: label, Right: right, About: about, Size: it.Size, Picked: pickAll || it.Cost == sweep.Safe}
 	}
 	if dry {
-		for _, it := range items {
-			u.Say("  " + it.Label + "  " + u.Dim(it.Right))
+		for i, it := range items {
+			u.Say(fmt.Sprintf("  %8s  %s  %s", ui.Size(it.Size), it.Label, u.Dim(it.Right)))
+			u.Hint("   " + a.E.Tilde(rep.Items[i].Path))
 		}
 		u.Blank()
 		u.Say("  " + u.Dim("Dry run: nothing was moved."))
@@ -290,7 +291,14 @@ func cmdUndo(a *App, args []string) int {
 			failed++
 			continue
 		}
-		u.Ok("Put back " + a.E.Tilde(e.From))
+		switch e.Kind {
+		case journal.KindChmod:
+			u.Ok(fmt.Sprintf("%s is back to mode %o", a.E.Tilde(e.From), e.OldMode))
+		case journal.KindEdit:
+			u.Ok(a.E.Tilde(e.From) + " is back to how it was")
+		default:
+			u.Ok("Put back " + a.E.Tilde(e.From))
+		}
 	}
 	a.Journal.Add(journal.Entry{Time: a.E.Now(), Batch: batch[0].Batch, Kind: journal.KindUndo, Title: "Undone"})
 	u.Blank()
@@ -329,6 +337,7 @@ func cmdLog(a *App, args []string) int {
 		case journal.KindRun:
 			what += u.Dim("  (" + strings.Join(e.Command, " ") + ")")
 		case journal.KindChmod:
+			what = strings.TrimSuffix(what, fmt.Sprintf(" (%o)", e.OldMode)) // the title already names the old mode
 			what += u.Dim(fmt.Sprintf("  (%o to %o)", e.OldMode, e.NewMode))
 		}
 		u.Say("  " + u.Dim(fmt.Sprintf("%-16s", ui.When(e.Time))) + " " + what)
