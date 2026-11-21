@@ -1409,8 +1409,8 @@ func (a *App) showPath() int {
 		}
 	}
 	srcW := u.Width() - 2 - 3 - 2 - 2
-	if dirW > srcW-14 {
-		dirW = srcW - 14
+	if dirW > srcW-len(a.systemOrShell()) { // the last column keeps room for its longest words, so no row wraps
+		dirW = max(12, srcW-len(a.systemOrShell()))
 	}
 	srcW -= dirW
 	u.Say("  " + u.Faint(fmt.Sprintf("%2s   %-*s  %s", "#", dirW, "FOLDER", "ADDED BY")))
@@ -1424,9 +1424,9 @@ func (a *App) showPath() int {
 		}
 		src := u.Dim(ui.Fit(a.E.Tilde(e.src), srcW))
 		if e.src == "" {
-			src = u.Faint(a.systemOrShell())
+			src = u.Faint(ui.Fit(a.systemOrShell(), srcW))
 		}
-		dir := ui.Fit(a.E.Tilde(e.dir), dirW)
+		dir := ui.FitPath(a.E.Tilde(e.dir), dirW) // from the front, so the folder names that tell rows apart stay
 		dir += strings.Repeat(" ", max(0, dirW-ui.Visible(dir)))
 		u.Say(fmt.Sprintf("  %s%s %s %s  %s", a.row(keys...), u.Dim(fmt.Sprintf("%2d", i+1)), e.mark, dir, src))
 		if e.note != "" {
