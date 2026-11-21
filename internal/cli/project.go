@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 
 	proj "github.com/theappfoundryco/catalyst/internal/project"
+	"github.com/theappfoundryco/catalyst/internal/ui"
 )
 
 // cmdProject is a doctor for the repository you are in: what it pins against what runs here, lockfiles that
@@ -46,10 +47,12 @@ func cmdProject(a *App, args []string) int {
 	u := a.U
 	a.outcome.Refresh = true
 	u.Hdr("This project: " + filepath.Base(rep.Dir))
+	where := a.E.Tilde(rep.Dir)
 	if len(rep.Kinds) > 0 {
-		u.Say("  " + u.Dim(a.E.Tilde(rep.Dir)+" · "+joinWords(rep.Kinds)))
+		kinds := joinWords(rep.Kinds) + " · "
+		u.Say("  " + u.Dim(kinds+ui.FitPath(where, u.Width()-2-ui.Visible(kinds))))
 	} else {
-		u.Say("  " + u.Dim(a.E.Tilde(rep.Dir)))
+		u.Say("  " + u.Dim(ui.FitPath(where, u.Width()-2)))
 	}
 	u.Blank()
 	if len(rep.Findings) == 0 {

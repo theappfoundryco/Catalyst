@@ -22,8 +22,8 @@ func (a *App) header() session.Header {
 		s := a.E.Shell
 		shell = ", " + s[strings.LastIndex(s, "/")+1:]
 	}
-	about := "v" + strings.TrimPrefix(version.Version, "v") + " · " + a.E.OSName() + ", " + a.E.Arch + shell
-	lines := []string{u.Bold("Catalyst") + " " + u.Dim("v"+strings.TrimPrefix(version.Version, "v")), u.Dim(a.E.OSName() + ", " + a.E.Arch + shell), ""}
+	about := strings.TrimPrefix(version.Version, "v") + " · " + a.E.OSName() + ", " + a.E.Arch + shell
+	lines := []string{u.Bold("Catalyst") + " " + u.Dim(strings.TrimPrefix(version.Version, "v")), u.Dim(a.E.OSName() + ", " + a.E.Arch + shell), ""}
 	if name := a.Store.LoadConfig().Nickname(); name != "" {
 		lines = []string{u.Bold(greeting(name, a.E.Now())), u.Dim("Catalyst " + about), ""}
 	}
@@ -228,6 +228,7 @@ func cmdStatus(a *App, args []string) int {
 	}
 	if cpu := a.E.TopProcs(3, false); len(cpu) > 0 && !*asJSON {
 		u.Sect("Busiest right now")
+		u.Say("  " + u.Faint("BY CPU"))
 		for _, p := range cpu {
 			u.Say(fmt.Sprintf("  %6.0f%%  %s", p.CPU, ui.Fit(p.Name, u.Width()-12)))
 		}
@@ -237,6 +238,9 @@ func cmdStatus(a *App, args []string) int {
 		}
 	}
 	problems, allClear := statusVerdict(loadPct, mem.Percent(), vol.UsedPercent, memOK, volOK, mem.SwapUsed)
+	if len(h) > 0 && h[len(h)-1].Score < 80 {
+		allClear = false // the resources are fine, but the last checkup was not, and a sign-off would say otherwise
+	}
 	if len(problems) > 0 {
 		u.Blank()
 		for _, p := range problems {
