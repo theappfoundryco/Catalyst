@@ -20,6 +20,7 @@ import pyte
 
 binary = sys.argv[1]
 cols, rows = (int(sys.argv[2]), int(sys.argv[3])) if len(sys.argv) > 3 else (100, 45)
+FRAME_START, FRAME_END = b"\x1b[?2026h", b"\x1b[?2026l"
 SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 KEYS = {"down": b"\x1b[B", "up": b"\x1b[A", "enter": b"\r", "esc": b"\x1b"}
 
@@ -28,6 +29,9 @@ class Term:
     def __init__(self):
         self.screen = pyte.Screen(cols, rows)
         self.stream = pyte.ByteStream(self.screen)
+        # The list paints each frame inside synchronized-output marks, which real terminals hold until the frame is
+        # whole. pyte does not, and a Mac pty splits a frame across reads, so the screen is copied only between frames.
+        self.in_frame, self.last_whole = False, None
         self.pid, self.fd = pty.fork()
         if self.pid == 0:
             os.environ.update({"TERM": "xterm-256color", "COLUMNS": str(cols), "LINES": str(rows)})
@@ -40,9 +44,17 @@ class Term:
             ready, _, _ = select.select([self.fd], [], [], 0.05)
             if ready:
                 try:
-                    self.stream.feed(os.read(self.fd, 65536))
+                    data = os.read(self.fd, 65536)
                 except OSError:
                     return
+                self.stream.feed(data)
+                opened, closed = data.rfind(FRAME_START), data.rfind(FRAME_END)
+                if opened > closed:
+                    self.in_frame = True
+                elif closed >= 0:
+                    self.in_frame = False
+                if not self.in_frame:
+                    self.last_whole = [l.rstrip() for l in self.screen.display]
 
     def press(self, *keys, wait=2.5):
         for k in keys:
@@ -51,6 +63,8 @@ class Term:
         self.pump(wait)
 
     def lines(self):
+        if self.in_frame and self.last_whole is not None:
+            return self.last_whole
         return [l.rstrip() for l in self.screen.display]
 
     def settle(self, limit=90):
