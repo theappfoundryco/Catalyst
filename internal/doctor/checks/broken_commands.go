@@ -70,6 +70,7 @@ func brokenCommands(e *host.Env) []d.Result {
 				break
 			}
 			why, isIntel := host.Broken(p, m)
+			why = strings.ReplaceAll(why, e.Home+"/", "~/") // paths are said the way the rest of Catalyst says them
 			if why != "" {
 				bad = append(bad, broken{name, p, why})
 			} else if isIntel {
@@ -80,7 +81,7 @@ func brokenCommands(e *host.Env) []d.Result {
 	for name, p := range dead {
 		if !seen[name] {
 			why, _ := host.Broken(p, m)
-			bad = append(bad, broken{name, p, why})
+			bad = append(bad, broken{name, p, strings.ReplaceAll(why, e.Home+"/", "~/")})
 		}
 	}
 	sort.Slice(bad, func(i, j int) bool { return bad[i].name < bad[j].name })
