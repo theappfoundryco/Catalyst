@@ -45,6 +45,7 @@ None of that is hard to fix. It is hard to notice. Catalyst looks at the machine
 | **Disk and Network** | Drive health, and with smartmontools its wear and lifetime reads and writes. Wi-Fi signal, VPN, DNS timed against public resolvers, a test for any address, and a speed test when you ask. |
 | **Ports** | What is listening and from where. Details, open in the browser, or stop one: it is asked to quit first, and the system's own are never touched. |
 | **Startup, SSH keys and PATH** | What starts by itself, with Login Items a key away. Copy a public key or fingerprint. Your PATH as a table, with the file that adds each folder. |
+| **Explain** | Paste an error, or pipe a log in, and see what causes it, the check that confirms it here and the fix. 27 errors people quote most, matched exactly; anything else is said to be unknown. |
 | **Undo and history** | Reverses the last change, including edits to a startup file. `catalyst log` lists everything Catalyst ever changed. |
 
 <details>
@@ -141,6 +142,7 @@ Coming from the old Catalyst Mac app? `catalyst legacy` shows what the app left 
 catalyst doctor --json              # a versioned report
 catalyst doctor --only keys         # one group
 catalyst sweep --dry-run --json     # what it would offer
+npm install 2>&1 | catalyst explain # what an error means, and what to run
 ```
 
 Exit codes: 0 fine, 1 issues found, 2 usage error, 3 a check could not run. Colour turns itself off in pipes and with `NO_COLOR`.

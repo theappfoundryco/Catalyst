@@ -60,6 +60,7 @@ One `App` (`cli.go`) carries the UI, the environment, the state store and the jo
 | `report.go` (#62) | `report`: a Markdown summary, with `Scrub` taking out home, user and machine names |
 | `changes.go` (#63) | `changes`: the daily snapshot (`snapshot`) and `Diff` in words |
 | `completion.go` (#64) | `completion bash|zsh|fish`, written from the command table |
+| `explain.go` (#82) | `explain [ERROR]`: text from arguments, a pipe, or pasted when asked; never printed back. Screen for `internal/explain` |
 
 ### `internal/host`: the machine
 | File | What is in it |
@@ -67,10 +68,11 @@ One `App` (`cli.go`) carries the UI, the environment, the state store and the jo
 | `host.go` | `Env`: OS, arch, home, shell, the `run.Runner`, `Look`, and the PATH a new terminal gets (`Entries`). `LoadShell` asks a login, interactive shell, with markers so startup-file chatter is ignored. `SafeTool` refuses Apple's stub programs. `Var` (#49) |
 | `platform.go` (#45) | `Platform`: os-release with the `/usr/lib` fallback, family from `ID` then `ID_LIKE`, libc, init from `/proc/1/comm`, container and WSL signs, image-based systems, package managers (program and database both). `Install` gives the right install command per family, `Brew` says whether Homebrew can work here, `Service` gives systemctl or rc-service. Read once per run under a mutex, never stored |
 | `exec.go` (#60) | `ExecKind`: what a program is built for, from its first bytes (ELF, Mach-O, universal, script) |
-| `read.go` | Parsers: `df` on both systems, memory (`vm_stat`, `/proc/meminfo`), load, battery (`pmset`, `ioreg`, `/sys`), listeners (`lsof`, `ss`) |
+| `broken.go` (#77) | `Broken(path, Machine)`: why a program cannot start, from its header alone. A `#!` interpreter gone or not on PATH, a dead link, a Mach-O `LC_LOAD_DYLIB` path gone (skipping `/usr/lib`, `/System`, `@rpath`), Intel-only without Rosetta, an ELF for another CPU (unless binfmt/qemu) or with a missing loader. `Machine` holds what is injected, so tests run anywhere |
+| `read.go` | Parsers: `df` on both systems, memory (`vm_stat`, `/proc/meminfo`), load, battery (`pmset`, `ioreg`, `/sys`), listeners (`ss`, then `lsof`, then `/proc/net/tcp` with `ParseProcNet` and `/proc/PID/fd`, #74) |
 | `more.go` | Uptime, memory pressure, heat, top processes, Wi-Fi, VPN tunnels, DNS, proxy |
 | `items.go` | Startup items (launchd plists, systemd units), private key files found by content, SSH keys |
-| `drive.go` | Drive health from `smartctl` |
+| `drive.go` | Drive health from `smartctl`. `Gateway`, with `GatewayFromProc` reading `/proc/net/route` when there is no `ip` (#74) |
 
 ### `internal/doctor` and `internal/doctor/checks`
 `doctor.go` is the engine: `Result` (check, group, state, severity, title, hint, fix, muted), the four states (`pass`, `issue`, `skipped`, `error`), `Fix` kinds (`chmod` and `trash` can be undone; `run` cannot and is shown first; `manual` is for the person), `Register`, `Start`/`Wait`, `Score` (decay: critical 0.7, warning 0.9, note 0.98, so a bad machine and a terrible one do not both read 0), `Count`, `Mute` (#69).
@@ -79,10 +81,10 @@ Each check is one file that calls `d.Register` from `init`:
 
 | Group | Checks (ID: file) |
 |---|---|
-| Your shell | `shell.syntax` shell_syntax, `shell.startup` shell_startup, `shell.path` path_entries, `shell.files` open_files (#55), `shell.rosetta` rosetta (#54) |
-| Your tools | `tools.run` tools_run, `tools.build` build_tools (+ Xcode path and licence, #53), `tools.git` git_identity, `tools.gitsetup` git_setup (#56), `tools.python` python_setup, `tools.pip` pip_system (#58), `tools.node` node_setup, `tools.java` java_setup, `tools.brew` brew_setup, `tools.managers` version_managers (#51), `tools.network` network_env (#49) |
-| Keys and secrets | `keys.ssh` ssh_perms, `keys.history` history_secrets, `keys.firewall` firewall |
-| This machine | `machine.disk` disk_free, `machine.memory` memory_swap, `machine.docker` docker_state (+ why it cannot be reached, #52), `machine.startup` startup_items, `machine.linux` linux_system (+ restart_waiting, #50), `machine.caches` caches, `machine.watchers` file_watchers (#48), `machine.clock` clock_sync (#57) |
+| Your shell | `shell.syntax` shell_syntax, `shell.startup` shell_startup, `shell.path` path_entries, `shell.files` open_files (#55), `shell.rosetta` rosetta (#54), `shell.othershell` other_shell (#80: a tool set up only in another shell's files) |
+| Your tools | `tools.run` tools_run, `tools.build` build_tools (+ Xcode path and licence, #53), `tools.git` git_identity, `tools.gitsetup` git_setup (#56), `tools.python` python_setup, `tools.pip` pip_system (#58), `tools.node` node_setup, `tools.java` java_setup, `tools.brew` brew_setup, `tools.managers` version_managers (#51), `tools.network` network_env (#49), `tools.broken` broken_commands (#77: commands on PATH that cannot start), `tools.tls` tls_trust (#78: python.org certificates, git/npm/pip certificate settings) |
+| Keys and secrets | `keys.ssh` ssh_perms, `keys.history` history_secrets, `keys.firewall` firewall, `keys.sshhosts` ssh_hosts (#79: `ssh -G`, `ssh-add -l`, GitHub's old host key) |
+| This machine | `machine.disk` disk_free, `machine.memory` memory_swap, `machine.docker` docker_state (+ why it cannot be reached, #52, + the VM's sparse disk file, #81), `machine.startup` startup_items, `machine.linux` linux_system (+ restart_waiting, #50), `machine.caches` caches, `machine.watchers` file_watchers (#48), `machine.clock` clock_sync (#57) |
 
 ### `internal/run`: running programs
 `Real.Run` and `RunIn` (#61, a folder to start in): `exec.CommandContext`, `Setsid` (its own session, so an interactive shell cannot freeze on SIGTTOU), no stdin (a hidden prompt fails instead of waiting), `WaitDelay` (a daemon holding the pipe cannot hang it), `LC_ALL=C`. `Fake` answers from a table keyed by the command line, which is how every check is tested. `Attached` gives a program the terminal, for sudo and installers only.
@@ -93,7 +95,7 @@ Each check is one file that calls `d.Register` from `init`:
 ### Space: `internal/sweep`, `internal/clean`, `internal/space`, `internal/sysdata`, `internal/trash`
 - **`sweep`** (build artifacts in projects): `Rules` is the table, one line per folder kind, with `Needs` (a marker beside it, patterns allowed since #65), `Inside`, `Cost`, `NeedsGit`. `Scan` walks, `git.go` asks git both `check-ignore` and `ls-files`, `Activity` takes the newest of git state and source files, `DirSize` counts each inode once. `Globals` are caches outside projects.
 - **`clean`**: app caches and old logs that rebuild themselves, skipping open apps (`Running`).
-- **`space`**: where the disk goes, with named landmarks and macOS's own volumes (`ParseAPFS`).
+- **`space`**: where the disk goes, with named landmarks and macOS's own volumes (`ParseAPFS`). `Options.Budget` stops the walk (30 s on screen, none for `--json`), and `Entry.Partial` marks a lower bound, shown as `45.9 GB+` (#84).
 - **`sysdata`**: System Data area by area, each with a `Way`: Trash, Owner (the tool's own command, such as `go clean -modcache` (#66)), Settings, Root (sudo, such as `dnf autoremove` (#67)) or Locked.
 - **`trash`**: moves to the system Trash by rename only (macOS and the freedesktop spec), so a move either happens or does not.
 
@@ -102,17 +104,20 @@ Each check is one file that calls `d.Register` from `init`:
 - **`state`**: `config.json` (name, mascot, declined helpers, muted checks (#69)), health history (one per day, 90 days), snapshots (#63), the last sweep. Under the XDG folders.
 - **`shellpath`**: the one marked PATH line Catalyst may add to a startup file, and its removal.
 
+### `internal/explain` (#82)
+A table of 27 error signatures (`sigs`), each a regexp, a title, a cause, the doctor checks that confirm it, an optional Catalyst command and a fix. `Find` returns at most 3 in table order. `$1` is what the pattern caught (a port, a command name), and `unless` keeps one entry from repeating a better one (a watcher limit is not also a full disk). No match means "not known", never a guess. A test fails if an entry points at a check or command that does not exist.
+
 ### `internal/project` (#61)
-`Check` reads a repository: `Pins` (`.nvmrc`, `.node-version`, `.python-version`, `.ruby-version`, `mise.toml`, `.tool-versions`), versions asked from inside the folder so shims answer for it, `Matches`, the Go toolchain rule, lockfiles and `packageManager`, `.env` names only (`EnvKeys`), `core.hooksPath`.
+`Check` reads a repository: `Pins` (`.nvmrc`, `.node-version`, `.python-version`, `.ruby-version`, `mise.toml`, `.tool-versions`, then `package.json` `engines.node` (#83), read as a range by `Satisfies` in `semver.go`), versions asked from inside the folder so shims answer for it, `Matches`, the Go toolchain rule, lockfiles and `packageManager`, `.env` names only (`EnvKeys`), `core.hooksPath`.
 
 ### `internal/ui` and `internal/kit`
 `ui.go`: colour (off in pipes and with `NO_COLOR`), width fitting (`Fit`, never cutting inside brackets), the result lines (`Ok`, `Note`, `Warn`, `Stop`, `Skip`, `Hint`), `Ask`. `menu.go`: the sweep and system pickers. `step.go`: spinners. `style.go`: bars and the health colours. `kit` draws Kit from sprites with half blocks.
 
 ### Outside `internal`
 - `demo/`: the README images, from an invented machine (`make demo`). Never a real one.
-- `scripts/`: `check-data-guard.sh`, `check-denylist.sh`, `check-personal.py` (the commit guards), `release-build.sh`, `release-notes.sh` (release notes from `feat:`, `fix:` and `security:` subjects), `distro-matrix.sh` (#45: every read-only command in one container image, as root and a user).
+- `scripts/`: `check-data-guard.sh`, `check-denylist.sh`, `check-personal.py` (the commit guards), `release-build.sh`, `release-notes.sh` (release notes from `feat:`, `fix:` and `security:` subjects), `distro-matrix.sh` (#45: every read-only command in one container image, as root and a user), `screens.py` (#75: opens every row of the list in a pseudo-terminal and fails on a stack trace, a screen with no way back, or Esc that does not return).
 - `test/`: `get.sh` against a local server, including a bad checksum.
-- `.github/workflows/`: `ci.yml` (leak scan, lint, tests on Ubuntu and macOS, five distributions as root and user) and `matrix.yml` (#47: 18 images, a real systemd, macOS Intel and Apple silicon, nightly).
+- `.github/workflows/`: `ci.yml` (leak scan, lint, tests on Ubuntu and macOS, five distributions as root and user) `matrix.yml` (#47: 18 images, a real systemd, macOS Intel and Apple silicon, nightly, and since #75 every Mac screen at 100 and 60 columns), and `demo.yml` (#76: `make demo` on a Mac runner, the images kept as an artifact).
 - `get.sh`: the installer. Checks the checksum, installs to `~/.local/bin`, links `kit`, offers the PATH line.
 
 ## Rules, and where the code enforces them
@@ -144,4 +149,7 @@ Each check is one file that calls `d.Register` from `init`:
 - **What stops sweep from deleting someone's work?** Four tests in `sweep.Scan`: a marker file, not a symlink, git says ignored and tracks nothing inside, and 14 idle days by `Activity`.
 - **How does undo work?** Every change writes a `journal.Entry` in a batch before or as it happens; `undo` reverses the last batch (rename back from the Trash, restore a mode, restore a startup file backup).
 - **How is root handled?** `run.Attached("sudo", ...)` gives sudo the terminal. Catalyst never reads a password, and runs directly when it already is root (#45).
+- **How does explain avoid guessing?** It is a table of exact signatures, not a model. Unknown text gets "not known" and exit 1. Each entry has a real-world sample in `explain_test.go`, and a test proves every check it names exists.
+- **How can doctor tell a command is broken without running it?** `host.Broken` reads headers with `debug/macho` and `debug/elf` from the standard library: the `#!` line, `LC_LOAD_DYLIB` paths, `PT_INTERP` and the CPU type. Only the copy the shell would run is judged, and a dead link only when nothing later on PATH has the name, since the shell skips it.
+- **How does the SSH check avoid the network?** `ssh -G` prints the settings ssh would use without connecting, `ssh-add -l` asks the local agent, and `ssh-keygen -F` reads `known_hosts`. A host is judged only when `~/.ssh/config` or a key shows SSH is in use.
 - **What did the platform work change?** `internal/host/platform.go`, and every place that assumed brew or apt: `build_tools.go`, `firewall.go`, `startup_items.go`, `linux_system.go`, `guide.go`, `helpers.go`.

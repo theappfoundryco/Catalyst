@@ -83,6 +83,9 @@ As of 0.1.0, built and run on Apple silicon macOS 15 and ARM64 Linux containers:
 - After the interactive rows: Ports, PATH, SSH, Startup, Doctor guides, Space, the macOS explainer, System Data, Status live, Battery, Disk, Network and an address test, all driven read-only on a real Mac through a pseudo-terminal.
 - In an Ubuntu container: stopping a port from its row, then Esc, lands on Ports measured again without it. System Data ran `sudo apt-get autoremove` after sudo itself asked for the password, as a normal user with a real terminal.
 - The health dot breathes: 31 distinct shades in 3.5 seconds of raw output for a score of 70.
+- Every command and screen end to end (#74): read-only natively on Ubuntu at 80 and 60 columns. In a Debian container as a user without sudo: the list at 100 and 60 columns, plus a real sweep, undo, history, `doctor --fix` and its undo, `ports kill`, `path add`, settings and uninstall.
+- Every row of the list on macOS 15 (Apple silicon and Intel) and the latest runner, driven by `scripts/screens.py` in CI (#75).
+- The new checks (#77 to #81) with planted problems: broken scripts, a dead link, an arm64 binary and a glibc program on Alpine. SSH cases against real openssh, which computed GitHub's old host key fingerprint. A real sparse file for the VM disk. On this Ubuntu machine they find no false alarms, and the full checkup takes about 1.3 s.
 
 ## What has not been verified
 
@@ -96,6 +99,8 @@ As of 0.1.0, built and run on Apple silicon macOS 15 and ARM64 Linux containers:
 - **`catalyst legacy` on a Mac with the old app installed.** The zshrc edit is tested. The Keychain and app paths have not run against a real install.
 - **Other volumes.** Trash on an external disk (`.Trashes`, `.Trash-UID`) is written to the spec but has not run on a real second disk.
 - **Fish and bash as the login shell.** zsh and sh have run. Fish has not.
+- **The new checks on a real Mac** (#77 to #81): a Homebrew library removed for real, python.org's Python without its certificates, Docker Desktop's real `Docker.raw`, keys kept in the macOS keychain. Covered by synthetic files and the CI runners only.
+- **Colima's and OrbStack's VM disks.** Left out of the disk check, since their files do not show the limit.
 - **Notarized macOS downloads.** Not done. `curl` and Homebrew do not quarantine, so `get.sh` is fine. A DMG or browser download would need it.
 
 ## Known gaps and open work
