@@ -40,6 +40,7 @@ type Area struct {
 	About    string   `json:"about"`              // what it is, in plain words
 	Cost     string   `json:"cost,omitempty"`     // what removing it means
 	Command  []string `json:"command,omitempty"`  // with Owner or Root
+	Shows    []string `json:"shows,omitempty"`    // what a person reads for Command, when Command wraps a shell function
 	Settings string   `json:"settings,omitempty"` // with Settings
 	Admin    bool     `json:"-"`                  // its size can only be read in full with admin rights
 }
@@ -265,6 +266,7 @@ func Scan(e *host.Env, sys *space.System, size Measure) Report {
 			}
 		}
 	}
+	out = append(out, versionAreas(e, size)...)
 	sort.SliceStable(out, func(i, j int) bool {
 		if out[i].Way != out[j].Way {
 			return out[i].Way < out[j].Way
@@ -300,6 +302,14 @@ func journalBytes(s string) int64 {
 		}
 	}
 	return int64(n * m)
+}
+
+// Said is the command as a person reads it: Shows when there is one, otherwise Command itself.
+func (a Area) Said() string {
+	if len(a.Shows) > 0 {
+		return strings.Join(a.Shows, " ")
+	}
+	return strings.Join(a.Command, " ")
 }
 
 // Selectable says whether an area can be ticked.
