@@ -661,3 +661,12 @@ func TestFlagProblemInPlainWords(t *testing.T) {
 		}
 	}
 }
+
+// Without a home folder every path would be relative, and history would land in whatever folder this ran in.
+func TestNoHomeFolderRefusesToRun(t *testing.T) {
+	a, b := testApp(t, "linux")
+	a.E.Home = ""
+	if code := a.dispatch([]string{"sweep", "--dry-run"}); code != ExitFailed || !strings.Contains(b.String(), "HOME is not set") {
+		t.Fatalf("%d %q", code, b.String())
+	}
+}

@@ -60,3 +60,11 @@ func TestXDGFolders(t *testing.T) {
 		t.Fatalf("%+v", s)
 	}
 }
+
+func TestRelativeXDGIsIgnored(t *testing.T) {
+	env := map[string]string{"XDG_STATE_HOME": "rel/state", "XDG_CONFIG_HOME": ""}
+	s := New("/home/alex", func(k string) string { return env[k] })
+	if s.Dir != "/home/alex/.local/state/catalyst" || s.ConfigDir != "/home/alex/.config/catalyst" {
+		t.Fatalf("%+v", s)
+	}
+}

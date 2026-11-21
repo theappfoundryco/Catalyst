@@ -6,6 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -99,6 +100,11 @@ func newApp() *App {
 }
 
 func (a *App) dispatch(args []string) int {
+	if !filepath.IsAbs(a.E.Home) {
+		a.U.Stop("Catalyst needs your home folder, and HOME is not set.")
+		a.U.Hint("Set it, then run this again: export HOME=/path/to/your/home")
+		return ExitFailed
+	}
 	var rest []string
 	for _, x := range args {
 		switch x {
