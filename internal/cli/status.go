@@ -144,7 +144,8 @@ func cmdStatus(a *App, args []string) int {
 	a.outcome.Refresh = true
 	a.outcome.Live = 2 * time.Second
 	u.Hdr("Status")
-	u.Row("Machine", name+"  "+u.Dim(a.E.OSName()))
+	osName := a.E.OSName()
+	u.Row("Machine", ui.Fit(name, max(12, u.Width()-21-ui.Visible(osName)))+"  "+u.Dim(osName)) // a long machine name must not push the system onto its own line
 	plat := a.E.Platform()
 	u.Row("Platform", u.Dim(plat.Details()))
 	if len(plat.Managers) > 0 {
