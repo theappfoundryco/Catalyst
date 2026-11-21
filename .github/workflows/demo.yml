@@ -1,0 +1,28 @@
+name: Demo
+# Records the README images with make demo on a Mac, from the invented machine in demo/, and keeps them as an artifact
+# for a person to look at and commit. It never commits anything itself.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths: ["demo/**", ".github/workflows/demo.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  shots:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: make demo
+        run: |
+          python3 -m venv "$RUNNER_TEMP/v"
+          "$RUNNER_TEMP/v/bin/pip" install -q pyte==0.8.2 wcwidth==0.2.13 pillow==11.3.0
+          PATH="$RUNNER_TEMP/v/bin:$PATH" make demo
+      - uses: actions/upload-artifact@v4
+        with:
+          name: readme-images
+          path: .github/assets/
