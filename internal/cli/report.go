@@ -39,7 +39,11 @@ func cmdReport(a *App, args []string) int {
 	for i := range scan.Checks {
 		all = append(all, scan.Wait(i)...)
 	}
-	text := a.Scrub(a.reportText(all))
+	lines := strings.Split(a.Scrub(a.reportText(all)), "\n")
+	for i, l := range lines { // a path with a newline or an escape in it would break the table, or the terminal
+		lines[i] = ui.Printable(l)
+	}
+	text := strings.Join(lines, "\n")
 	if sp != nil {
 		sp.Stop()
 	}

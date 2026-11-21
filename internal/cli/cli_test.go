@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/theappfoundryco/catalyst/internal/doctor"
 	"github.com/theappfoundryco/catalyst/internal/host"
@@ -198,6 +199,42 @@ func TestDryRunMovesNothing(t *testing.T) {
 	}
 	if !host.Exists(filepath.Join(dir, "node_modules")) || !strings.Contains(b.String(), "nothing was moved") {
 		t.Fatal(b.String())
+	}
+}
+
+// A folder in a cloned repository can be named to retitle the terminal or break the screen. Its row is shown escaped,
+// on one line, and still swept and put back like any other.
+func TestSweepShowsHostileNamesEscaped(t *testing.T) {
+	a, b := testApp(t, "linux")
+	project(t, a, "new\nline")
+	project(t, a, "x\x1b]0;PWNED\x07")
+	if code := a.dispatch([]string{"sweep", a.E.Path("Developer"), "--min-size", "0B", "--all", "--yes"}); code != ExitOK {
+		t.Fatal(code)
+	}
+	out := b.String()
+	if strings.Contains(out, "\x1b]") || strings.Contains(out, "\x07") || strings.Contains(out, "new\nline") {
+		t.Fatalf("a control character reached the output: %q", out)
+	}
+	if !strings.Contains(out, `new\nline`) || !strings.Contains(out, `x\x1b]0;PWNED\x07`) {
+		t.Fatalf("the names should still be recognisable: %q", out)
+	}
+	b.Reset()
+	a.dispatch([]string{"undo", "--yes"})
+	if !host.Exists(a.E.Path("Developer", "new\nline", "node_modules")) {
+		t.Fatalf("undo did not put it back: %q", b.String())
+	}
+}
+
+func TestCleanName(t *testing.T) {
+	for in, want := range map[string]string{
+		"  Sam  ":             "Sam",
+		"Sam\x1b]0;PWNED\x07": "Sam]0;PWNED",
+		"Zoë":                 "Zoë",
+		"😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀": "😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀😀",
+	} {
+		if got := cleanName(in); got != want || !utf8.ValidString(got) {
+			t.Errorf("cleanName(%q) = %q, want %q", in, got, want)
+		}
 	}
 }
 

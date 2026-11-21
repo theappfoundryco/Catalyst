@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/theappfoundryco/catalyst/internal/run"
+	"github.com/theappfoundryco/catalyst/internal/ui"
 )
 
 // Env is everything a check needs from the outside world. Tests build their own.
@@ -136,9 +137,9 @@ func (e *Env) Tilde(p string) string {
 		return "~"
 	}
 	if strings.HasPrefix(p, e.Home+"/") {
-		return "~" + p[len(e.Home):]
+		p = "~" + p[len(e.Home):]
 	}
-	return p
+	return ui.Printable(p) // a name can hold a newline or an escape, and this is how paths reach the screen
 }
 
 // Out runs a program with the default time limit and returns its trimmed output and whether it worked.

@@ -147,11 +147,11 @@ func FitPath(p string, width int) string {
 }
 
 // Line writes one line, indented by nothing and never wider than the window.
-func (u *UI) line(s string) { fmt.Fprintln(u.Out, s) }
+func (u *UI) line(s string) { fmt.Fprintln(u.Out, Printable(s)) }
 
 // Say prints a line, wrapped to the window with the indent carried over.
 func (u *UI) Say(s string) {
-	for _, l := range u.Wrap(s, u.Width()) {
+	for _, l := range u.Wrap(Printable(s), u.Width()) {
 		u.line(l)
 	}
 }

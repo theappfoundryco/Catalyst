@@ -1604,12 +1604,9 @@ func cmdConfig(a *App, args []string) int {
 	}
 	switch key := fs.Arg(1); key {
 	case "name":
-		name := strings.TrimSpace(strings.Join(fs.Args()[2:], " "))
+		name := cleanName(strings.Join(fs.Args()[2:], " "))
 		if fs.NArg() == 2 {
-			name = strings.TrimSpace(u.Text("What should I call you? " + u.Dim("(Enter for no name) ")))
-		}
-		if len(name) > 24 {
-			name = name[:24]
+			name = cleanName(u.Text("What should I call you? " + u.Dim("(Enter for no name) ")))
 		}
 		c.Name = &name
 		if name == "" {
