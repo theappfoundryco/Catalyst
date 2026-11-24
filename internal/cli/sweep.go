@@ -121,6 +121,30 @@ func cmdSweep(a *App, args []string) int {
 	return a.sweepOffer(rep, age, *dry, *all)
 }
 
+// showProtected names the folders a sweep kept, a few at a time, so "protected 4 folders" never leaves anyone guessing
+// which. The rest are in --json.
+func (a *App) showProtected(ps []sweep.Protected) {
+	u := a.U
+	const most = 3
+	for i, p := range ps {
+		if i == most && len(ps) > most+1 {
+			u.Hint(fmt.Sprintf("  and %d more. Every one: catalyst sweep --dry-run --json", len(ps)-most))
+			break
+		}
+		why := "git does not confirm it is build output"
+		if p.Why == "recent" {
+			why = "touched " + ui.Ago(p.Active, a.E.Now()) + " ago"
+		}
+		u.Hint("  · " + a.E.Tilde(p.Path) + ", " + why)
+	}
+	for _, p := range ps {
+		if p.Why == "recent" {
+			u.Hint("To include folders used recently: catalyst sweep --older-than 0")
+			break
+		}
+	}
+}
+
 func (a *App) sweepOffer(rep sweep.Report, age time.Duration, dry, pickAll bool) int {
 	u := a.U
 	var skipped []string
@@ -138,6 +162,7 @@ func (a *App) sweepOffer(rep sweep.Report, age time.Duration, dry, pickAll bool)
 		u.Say("  " + u.Bold("Nothing to sweep."))
 		if skipNote != "" {
 			u.Say("  " + u.Dim(skipNote))
+			a.showProtected(rep.Protected)
 		}
 		u.Blank()
 		a.reaction = reaction{kit.Sleep, u.Dim("Nothing to sweep right now.")}
@@ -146,6 +171,7 @@ func (a *App) sweepOffer(rep sweep.Report, age time.Duration, dry, pickAll bool)
 	u.Say("  " + u.Bold(fmt.Sprintf("Found %s to reclaim", ui.Count(len(rep.Items), "folder", "folders"))) + u.Faint("  ·  ") + u.Dim("about "+ui.Size(rep.Total())))
 	if skipNote != "" {
 		u.Say("  " + u.Dim(skipNote))
+		a.showProtected(rep.Protected)
 	}
 	u.Blank()
 	items := make([]ui.Item, len(rep.Items))

@@ -470,6 +470,20 @@ func (a *App) showGuide(r doctor.Result) {
 			u.Say("     " + f)
 		}
 	}
+	if len(r.Items) > 0 {
+		sect("WHICH ONES")
+		const most = 40
+		for i, it := range r.Items {
+			if i == most {
+				u.Say("     " + u.Dim(fmt.Sprintf("and %d more", len(r.Items)-most)))
+				break
+			}
+			u.Say("     " + it)
+		}
+		if r.Look != "" {
+			u.Say("     " + u.Dim("See them yourself: "+r.Look))
+		}
+	}
 	if len(g.where) > 0 {
 		sect("WHERE")
 		for _, w := range g.where {
@@ -516,6 +530,9 @@ func (a *App) showGuide(r doctor.Result) {
 	}
 	if g.settings != "" && a.E.Mac() {
 		*acts = append(*acts, a.urlKey("s", "open Settings", g.settings))
+	}
+	if cmd, _, _ := strings.Cut(r.Look, ", "); g.copy == "" && cmd != "" && !strings.Contains(cmd, "NAME") {
+		g.copy = cmd
 	}
 	if g.copy != "" {
 		*acts = append(*acts, a.copyKey("y", "copy command", g.copy, "the command"))

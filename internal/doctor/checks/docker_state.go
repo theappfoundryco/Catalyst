@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -17,14 +19,6 @@ func init() {
 	d.Register(d.Check{ID: "machine.docker", Group: d.GroupMachine, Name: "Checking Docker", Run: dockerState})
 }
 
-func lines(s string) int {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return 0
-	}
-	return strings.Count(s, "\n") + 1
-}
-
 func dockerState(e *host.Env) []d.Result {
 	if _, err := e.Look("docker"); err != nil {
 		return []d.Result{d.Skip("Docker is not installed")}
@@ -35,20 +29,91 @@ func dockerState(e *host.Env) []d.Result {
 		return append([]d.Result{dockerUnreachable(e, r.Stdout+r.Stderr, ctx)}, disks...) // a full disk is often why it will not start
 	}
 	out := disks
-	if s, ok := e.Out("docker", "ps", "-aq", "-f", "status=exited"); ok {
-		if n := lines(s); n > 0 {
-			out = append(out, d.Note(ui.Count(n, "stopped Docker container is", "stopped Docker containers are")+" still taking up space").Run("docker", "container", "prune", "-f"))
+	if s, ok := e.Out("docker", "ps", "-a", "--filter", "status=exited", "--format", "{{.Names}}\t{{.Image}}\t{{.Status}}"); ok {
+		if items := StoppedContainers(s); len(items) > 0 {
+			out = append(out, d.Note(ui.Count(len(items), "stopped Docker container is", "stopped Docker containers are")+" still taking up space").
+				With("Removing them deletes each one's own files for good. Their images stay.").
+				List(items...).See("docker ps -a --filter status=exited").
+				Run("docker", "container", "prune", "-f"))
 		}
 	}
-	if s, ok := e.Out("docker", "images", "-q", "-f", "dangling=true"); ok {
-		if n := lines(s); n > 0 {
-			out = append(out, d.Note(ui.Count(n, "unused Docker image is", "unused Docker images are")+" still taking up space").Run("docker", "image", "prune", "-f"))
+	if s, ok := e.Out("docker", "images", "--filter", "dangling=true", "--format", "{{.ID}}\t{{.Size}}\t{{.CreatedSince}}"); ok {
+		if items, total := DanglingImages(s); len(items) > 0 {
+			title := ui.Count(len(items), "unused Docker image is", "unused Docker images are") + " still taking up space"
+			if total > 0 {
+				title += " (about " + ui.Size(total) + ")"
+			}
+			out = append(out, d.Note(title).
+				With("These are older builds that a newer one replaced, with no name or tag left. Nothing uses them.").
+				List(items...).See("docker images --filter dangling=true").
+				Run("docker", "image", "prune", "-f"))
 		}
 	}
 	if len(out) == 0 {
 		return []d.Result{d.Pass("Docker is running and tidy")}
 	}
 	return out
+}
+
+// StoppedContainers reads docker ps lines (name, image, status, split by tabs) as one line each for a person: which
+// container, from what, and since when.
+func StoppedContainers(s string) []string {
+	var out []string
+	for _, l := range strings.Split(strings.TrimSpace(s), "\n") {
+		f := strings.Split(l, "\t")
+		if len(f) < 3 || f[0] == "" {
+			continue
+		}
+		from := ui.Printable(f[1])
+		if imageID.MatchString(from) { // its image was rebuilt or retagged since, so only the old one's ID is left
+			from = "an image with no name now, " + from
+		}
+		item := ui.Printable(f[0]) + " (" + from + ")"
+		if st := ui.Printable(f[2]); strings.HasPrefix(st, "Exited (") {
+			code, ago, _ := strings.Cut(strings.TrimPrefix(st, "Exited ("), ") ")
+			item += ", stopped " + ago
+			if code != "0" && code != "" {
+				item += ", exit code " + code
+			}
+		} else if st != "" {
+			item += ", " + strings.ToLower(st[:1]) + st[1:]
+		}
+		out = append(out, item)
+	}
+	return out
+}
+
+var imageID = regexp.MustCompile(`^(sha256:)?[0-9a-f]{12,64}$`)
+
+// DanglingImages reads docker images lines (id, size, age, split by tabs) as one line each, and adds up their sizes.
+// Docker writes sizes in its own units (12.3MB, 1.2GB), which are powers of 1000.
+func DanglingImages(s string) (items []string, total int64) {
+	for _, l := range strings.Split(strings.TrimSpace(s), "\n") {
+		f := strings.Split(l, "\t")
+		if len(f) < 3 || f[0] == "" {
+			continue
+		}
+		items = append(items, ui.Printable(f[0])+", "+ui.Printable(f[1])+", made "+ui.Printable(f[2]))
+		total += dockerSize(f[1])
+	}
+	return items, total
+}
+
+func dockerSize(s string) int64 {
+	s = strings.TrimSpace(s)
+	units := []struct {
+		suffix string
+		mult   float64
+	}{{"TB", 1e12}, {"GB", 1e9}, {"MB", 1e6}, {"kB", 1e3}, {"B", 1}}
+	for _, u := range units {
+		if num, ok := strings.CutSuffix(s, u.suffix); ok {
+			if v, err := strconv.ParseFloat(num, 64); err == nil {
+				return int64(v * u.mult)
+			}
+			return 0
+		}
+	}
+	return 0
 }
 
 // vmDisk is a virtual machine's disk that Docker or Podman keeps as a sparse file: its size is the limit you chose, and

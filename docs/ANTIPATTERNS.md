@@ -43,6 +43,7 @@ Mistakes that already happened in this project or the Mac app before it, so they
 - **A background key reader.** It steals the keys meant for a command's own menu. Wait for input with `select`, and read only when a key is ready.
 - **Raw logs on screen.** Long steps show a spinner. Details appear only when something fails.
 - **A question after a long step has started.** Ask first, then work.
+- **A count with nothing behind it.** "2 stopped Docker containers" left people trying to remember which two. A finding names what it counts with `List` (the first few in the report, every one on its screen and in `--json`) and the tool's own command to look with `See`. Secrets stay line numbers and kinds only.
 - **A result you can only read.** A finding, a port or a folder on screen should offer what you would do next: details, open it, copy it, fix it. Rows carry their own keys, and Esc returns to the screen they came from, measured again if something changed.
 - **A list and a prompt on one screen.** 0.1.0 showed a list you could arrow through with a box to type in, and Enter only obeyed the box. Pick one way to choose. The session is a list.
 - **Kit on every screen.** Repeated Kits stacked up the scrollback and meant nothing. Kit is drawn once, on the home screen, and reacts there.
