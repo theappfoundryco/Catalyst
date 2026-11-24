@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/theappfoundryco/catalyst/internal/host"
+	"github.com/theappfoundryco/catalyst/internal/rcfile"
 )
 
 // State is how a check ended. Only a check that truly ran can pass, which is what keeps a crash from reading as healthy.
@@ -41,6 +42,7 @@ const (
 	FixChmod  FixKind = "chmod"  // change a path's mode; can be undone
 	FixTrash  FixKind = "trash"  // move a path to the Trash; can be undone
 	FixRun    FixKind = "run"    // run a command as you; cannot be undone
+	FixEdit   FixKind = "edit"   // change lines in a startup file, the careful way; can be undone
 	FixManual FixKind = "manual" // only you can do this, here is the command
 )
 
@@ -51,6 +53,11 @@ type Fix struct {
 	Path    string      `json:"path,omitempty"`
 	Mode    fs.FileMode `json:"mode,omitempty"`
 	Command []string    `json:"command,omitempty"`
+	// An edit names the slip it mends, by kind and line. It is worked out again on the file as it is when it runs,
+	// since an earlier fix can move lines, and Edits are what it was when found.
+	Slip  string        `json:"slip,omitempty"`
+	Line  int           `json:"line,omitempty"`
+	Edits []rcfile.Edit `json:"edits,omitempty"`
 }
 
 // Preview is the change written out the way a person would run it.
@@ -60,6 +67,12 @@ func (f Fix) Preview() string {
 		return fmt.Sprintf("chmod %o %s", f.Mode, f.Path)
 	case FixTrash:
 		return "move to the Trash: " + f.Path
+	case FixEdit:
+		if len(f.Edits) == 1 && len(f.Edits[0].Now) <= 2 {
+			e := f.Edits[0]
+			return fmt.Sprintf("in %s, line %d becomes: %s", f.Path, e.Line, strings.Join(e.Now, "  then  "))
+		}
+		return fmt.Sprintf("in %s, change %d lines", f.Path, len(f.Edits))
 	}
 	return strings.Join(f.Command, " ")
 }
@@ -113,6 +126,12 @@ func (r Result) Trash(path string) Result {
 // Run attaches a fix that runs a command.
 func (r Result) Run(command ...string) Result {
 	r.Fix = &Fix{Kind: FixRun, Title: r.Title, Command: command}
+	return r
+}
+
+// Edit attaches a fix that changes lines in a startup file.
+func (r Result) Edit(path, slip string, line int, edits []rcfile.Edit) Result {
+	r.Fix = &Fix{Kind: FixEdit, Title: r.Title, Path: path, Slip: slip, Line: line, Edits: edits}
 	return r
 }
 

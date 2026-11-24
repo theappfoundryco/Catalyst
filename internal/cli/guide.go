@@ -114,6 +114,17 @@ func (a *App) startupFile() string {
 
 var lineNo = regexp.MustCompile(`:(\d+):`)
 
+var slipAt = regexp.MustCompile(`^\S+ line (\d+): `)
+
+// slipLine is the line a startup file finding names in its title, or 0.
+func slipLine(title string) int {
+	if m := slipAt.FindStringSubmatch(title); m != nil {
+		n, _ := strconv.Atoi(m[1])
+		return n
+	}
+	return 0
+}
+
 // guideFor writes the guide for one finding. It reads the machine again where that helps, such as which file sets a
 // variable, so the steps name real files and lines.
 func (a *App) guideFor(r doctor.Result) guide {
@@ -331,6 +342,20 @@ func (a *App) guideFor(r doctor.Result) guide {
 		}
 		g.why = "A shell stops reading a startup file at its first error, so everything after that line never runs."
 		g.steps = []string{"Open the file at the line in the error above, and fix or remove that line.", "Open a new terminal to check."}
+		if n := slipLine(t); n > 0 { // a slip Catalyst found and placed itself
+			g.line = n
+			g.why = strings.ReplaceAll(r.Hint, "\n", " ")
+			if b, err := os.ReadFile(g.file); err == nil {
+				if ls := strings.Split(string(b), "\n"); n <= len(ls) {
+					g.facts = append(g.facts, fmt.Sprintf("Line %d reads: %s", n, visibleLine(ls[n-1])))
+				}
+			}
+			if r.Fix != nil && r.Fix.Kind == doctor.FixEdit {
+				g.steps = []string{"Press f. The lines that change are shown first, the file's own shell checks the result before anything is written, and a copy is kept so Undo puts it back.", "Open a new terminal to check."}
+			} else {
+				g.steps = []string{fmt.Sprintf("Only you can tell what was meant here. Press e to open the file at line %d.", n), "Open a new terminal to check."}
+			}
+		}
 	case "keys.ssh":
 		g.why = "SSH refuses a private key that other users can read, and so should you: anyone on the machine could copy it."
 		g.where = []string{"~/.ssh"}
@@ -505,7 +530,7 @@ func (a *App) showGuide(r doctor.Result) {
 	}
 	if g.fixChange != nil && g.fixFile != "" {
 		file, title, change := g.fixFile, g.fixTitle, g.fixChange
-		*acts = append(*acts, a.page("f", g.fixLabel, "Doctor", func() { a.editFile(file, title, change) }))
+		*acts = append(*acts, a.page("f", g.fixLabel, "Doctor", func() { a.editStartup(startupEdit{Path: file, Title: title, Change: change, Ask: true, Mends: true}) }))
 	}
 	if len(g.install) > 0 {
 		cmd := g.install
@@ -533,24 +558,24 @@ func (a *App) showGuide(r doctor.Result) {
 	}
 }
 
-// dropBlock removes the lines from begin to end, both included.
+// dropBlock removes the lines from begin to end, both included. A begin with no end after it removes nothing: without
+// its end, there is no telling where the block stopped, and guessing would take the rest of the file with it.
 func dropBlock(begin, end string) func([]string) []string {
 	return func(lines []string) []string {
 		var out []string
-		in := false
-		for _, l := range lines {
-			t := strings.TrimSpace(l)
-			if t == begin {
-				in = true
-				continue
-			}
-			if in && t == end {
-				in = false
-				continue
-			}
-			if !in {
+		from := -1
+		for i, l := range lines {
+			switch t := strings.TrimSpace(l); {
+			case from < 0 && t == begin:
+				from = i
+			case from >= 0 && t == end:
+				from = -1
+			case from < 0:
 				out = append(out, l)
 			}
+		}
+		if from >= 0 {
+			return lines
 		}
 		return out
 	}

@@ -29,6 +29,7 @@ internal/trash/       moves to the system Trash, by rename only (macOS and the f
 internal/journal/     records every change, for undo and log
 internal/state/       settings and health history, under the XDG folders
 internal/shellpath/   one marked PATH line in a startup file, removable
+internal/rcfile/      reads startup files for slips (a line glued onto }, Windows endings, curly quotes, PATH reset), each with its line and its edit
 demo/                 records README images from an invented machine
 test/                 get.sh against a local server
 get.sh                the one-line installer
@@ -107,7 +108,15 @@ As of 0.1.0, built and run on Apple silicon macOS 15 and ARM64 Linux containers:
 - Corrupt, half-written and unwritable state files, no HOME, no SHELL, a relative XDG folder, two sweeps at once, a journal that cannot be written (every move was put back, exit 3), a 10 MB paste into explain, TERM=dumb, NO_COLOR and widths from 5 to 100 columns. No stack trace anywhere.
 - Every row of the list driven on a pseudo-terminal at 100 by 40 and 60 by 24, and the welcome at 30 by 12.
 
+### Added on 2026-11-24 (startup files, in Ubuntu 24.04 containers with bash, zsh and dash)
+
+- 30 broken `.bashrc` and `.zshrc` files planted for fresh users: `}export PATH=...` (with and without a final line break, in bash and zsh), two exports run together, Windows line endings, curly quotes, a byte order mark, spaces around = (zsh stops reading there), `~` inside quotes, PATH replaced, `exit`, a function, an `if` and a quote never closed, Catalyst's mark glued onto a brace, and all of them at once. Doctor named each on its line, `doctor --fix` mended each, the shell accepted the result, a new login terminal got the PATH, and two undos gave back every file byte for byte.
+- `path add` refused every file the shell already rejected, and confirmed with a new terminal elsewhere. It explained a later PATH reset and a missing `~/.profile`. A folder, a read-only root-owned file and a link to nothing were refused in plain words; a dotfiles link was followed and kept.
+- The scanner was run over about 980 real shell files on an Ubuntu desktop (bash-completion, zsh functions, profile.d, skeleton files) with no false alarms.
+
 ## What has not been verified
+
+- **Startup-file fixes on a real Mac, and fish.** The slips and fixes ran in Linux containers. zsh on macOS and fish's `-n` were not run.
 
 - **A real Intel Mac by hand.** CI's macos-15-intel runner ran the read-only commands. Nobody has looked at the output on a person's Intel Mac.
 - **A real laptop on Linux.** Linux batteries are covered by recorded output only. Systemd ran for real only in a privileged container.
