@@ -10,6 +10,7 @@ import (
 	"github.com/theappfoundryco/catalyst/internal/host"
 	"github.com/theappfoundryco/catalyst/internal/journal"
 	"github.com/theappfoundryco/catalyst/internal/kit"
+	"github.com/theappfoundryco/catalyst/internal/rcfile"
 	"github.com/theappfoundryco/catalyst/internal/session"
 	"github.com/theappfoundryco/catalyst/internal/state"
 	"github.com/theappfoundryco/catalyst/internal/trash"
@@ -250,7 +251,7 @@ func trendWords(change int, since, now time.Time) string {
 // applyFixes offers each fix in turn. Every one is shown before it runs, and none happens without a yes.
 // undoable is a fix the journal can reverse: a mode change or a move to the Trash.
 func undoable(f *doctor.Fix) bool {
-	return f != nil && (f.Kind == doctor.FixChmod || f.Kind == doctor.FixTrash)
+	return f != nil && (f.Kind == doctor.FixChmod || f.Kind == doctor.FixTrash || f.Kind == doctor.FixEdit)
 }
 
 // applyFixes offers each fix in turn. With allSafe, every fix that can be undone is shown together and asked once,
@@ -307,6 +308,13 @@ func (a *App) applyFixes(all []doctor.Result, allSafe bool) {
 			u.Hint("Only you can do this one: " + f.Preview())
 			continue
 		}
+		if f.Kind == doctor.FixEdit { // shows the lines that change, and asks, itself
+			if a.editStartup(a.slipEdit(f, batch, true)) {
+				u.Ok("Done")
+				changed = true
+			}
+			continue
+		}
 		u.Say("  " + r.Title)
 		u.Hint(f.Preview())
 		if !u.Ask("Do it?") {
@@ -350,6 +358,13 @@ func (a *App) applyFix(f doctor.Fix, batch string) error {
 		return os.Chmod(f.Path, f.Mode)
 	case doctor.FixTrash:
 		return a.moveToTrash(f.Path, f.Title, batch, 0)
+	case doctor.FixEdit:
+		ed := a.slipEdit(f, batch, false)
+		ed.Quiet = true
+		if !a.editStartup(ed) {
+			return fmt.Errorf("it was left as it was")
+		}
+		return nil
 	case doctor.FixRun:
 		r := a.E.Run.Run(5*time.Minute, f.Command[0], f.Command[1:]...)
 		if !r.OK() {
@@ -362,6 +377,23 @@ func (a *App) applyFix(f doctor.Fix, batch string) error {
 		return a.Journal.Add(journal.Entry{Time: now, Batch: batch, Kind: journal.KindRun, Title: f.Title, Command: f.Command})
 	}
 	return fmt.Errorf("this fix cannot be run automatically")
+}
+
+// slipEdit mends one slip in a startup file. The edit is worked out again on the file as it is now, since an earlier fix
+// can have moved its lines or mended it already, and it is never applied to a line that no longer reads the same.
+func (a *App) slipEdit(f doctor.Fix, batch string, ask bool) startupEdit {
+	return startupEdit{Path: f.Path, Title: f.Title, Ask: ask, Batch: batch, Mends: true, Quiet: true,
+		Change: func(lines []string) []string {
+			s, ok := rcfile.Again(f.Path, strings.Join(lines, "\n"), f.Slip, f.Line)
+			if !ok {
+				return lines // mended already
+			}
+			next, ok := rcfile.Apply(lines, s.Edits)
+			if !ok {
+				return lines
+			}
+			return next
+		}}
 }
 
 // moveToTrash is the one path every removal takes. If the journal cannot record it, the move is reversed: nothing may

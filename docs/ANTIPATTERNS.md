@@ -8,7 +8,10 @@ Mistakes that already happened in this project or the Mac app before it, so they
 - **Keeping a password.** The Mac app saved the admin password so people "authenticate once". Catalyst never sees one. If something needs root, show the command, ask, and let `sudo` ask for the password on the terminal itself. Its own few-minute memory is the only "once", and a changed password just means sudo asks again.
 - **Running sudo from a program with no terminal.** `su -c`, a pipe, or `internal/run` (its own session) leaves sudo nowhere to ask. Root steps go through `run.Attached`, in the foreground, and the session ignores the Ctrl-C meant for them.
 - **A delete that skips the Trash.** Every removal goes through `internal/trash`, including small ones like a plist. If the journal cannot record it, the move is put back.
-- **Editing a startup file without a way back.** Back up first, have the shell parse the result, and restore if it objects.
+- **Editing a startup file without a way back.** Back up first, have the shell parse the result, and restore if it objects. Every edit goes through `editStartup`: the file's own shell reads the new text from a scratch copy before the real file is touched, and Undo puts the copy back.
+- **Adding a line to a file the shell already rejects.** A line after a syntax error never runs, and 0.1.3 said "It works in new terminals" anyway. Refuse, say where the error is, and ask a new terminal afterwards instead of promising.
+- **Trusting a hand-rolled shell parser over the shell.** `internal/rcfile` finds slips, but a block it thinks is never closed is only reported when the shell itself rejects the file. If the shell accepts it, the scan misread something.
+- **Undo that overwrites later work.** A startup file edited by hand after Catalyst's edit is left alone unless the person says otherwise, and the copy's path is shown.
 - **Listing `~/.Trash`.** On a Mac, a terminal without Full Disk Access cannot list it, though it can stat a path and rename in and out. Do only those two things.
 - **Copying across disks to trash something.** A rename either happens or does not. A copy can fail halfway through a 20 GB folder.
 

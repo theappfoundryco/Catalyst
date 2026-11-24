@@ -66,14 +66,43 @@ func TestShellSyntaxReportsTheBrokenFile(t *testing.T) {
 	e, _ := env(t, "linux", map[string]string{"zsh": "/bin/zsh"}, nil)
 	rc := e.Path(".zshrc")
 	write(t, rc, "if true\n", 0o644)
-	e.Run.(*run.Fake).Replies = map[string]run.Result{"zsh -n " + rc: {Code: 1, Stderr: "line 2: parse error\nmore\n"}}
+	e.Run.(*run.Fake).Replies = map[string]run.Result{"/bin/zsh -n " + rc: {Code: 1, Stderr: "line 2: parse error\nmore\n"}}
 	r := one(t, shellSyntax(e))
-	if r.Severity != d.Critical || !strings.Contains(r.Hint, "parse error") || strings.Contains(r.Hint, "more") {
+	if r.Severity != d.Critical || !strings.Contains(r.Title, "~/.zshrc line 1: the if block") || !strings.Contains(r.Hint, "(zsh says: line 2: parse error)") || strings.Contains(r.Hint, "more") {
 		t.Fatalf("%+v", r)
 	}
-	e.Run.(*run.Fake).Replies["zsh -n "+rc] = run.Result{}
+	// What the scan cannot place, the shell's own words still report.
+	write(t, rc, "echo ok\n", 0o644)
+	if r := one(t, shellSyntax(e)); r.Severity != d.Critical || r.Title != "~/.zshrc has a syntax error" || r.Hint != "line 2: parse error" {
+		t.Fatalf("%+v", r)
+	}
+	e.Run.(*run.Fake).Replies["/bin/zsh -n "+rc] = run.Result{}
 	if r := one(t, shellSyntax(e)); r.State != d.Passed {
 		t.Fatalf("%+v", r)
+	}
+}
+
+// When several slips are in a broken file, the one that explains the shell's error is the one about how blocks nest,
+// and each slip comes with the edit that mends it.
+func TestShellSyntaxBlamesTheGluedBraceAndOffersEachFix(t *testing.T) {
+	e, _ := env(t, "linux", map[string]string{"bash": "/bin/bash"}, nil)
+	rc := e.Path(".bashrc")
+	write(t, rc, "\ufeffexport A=1\ngreet() {\n  echo hi\n}export PATH=\"$HOME/go/bin:$PATH\"\n", 0o644)
+	e.Run.(*run.Fake).Replies = map[string]run.Result{"/bin/bash -n " + rc: {Code: 2, Stderr: rc + ": line 5: syntax error: unexpected end of file\n"}}
+	rs := shellSyntax(e)
+	if len(rs) != 2 {
+		t.Fatalf("%+v", rs)
+	}
+	if rs[0].Severity != d.Warning || !strings.Contains(rs[0].Title, "line 1: an invisible mark") {
+		t.Fatalf("%+v", rs[0])
+	}
+	if rs[1].Severity != d.Critical || !strings.Contains(rs[1].Title, "~/.bashrc line 4: the } that closes the { block from line 2") || !strings.Contains(rs[1].Hint, "(bash says:") {
+		t.Fatalf("%+v", rs[1])
+	}
+	for _, r := range rs {
+		if r.Fix == nil || r.Fix.Kind != d.FixEdit || r.Fix.Path != rc || len(r.Fix.Edits) == 0 {
+			t.Fatalf("no edit: %+v", r)
+		}
 	}
 }
 

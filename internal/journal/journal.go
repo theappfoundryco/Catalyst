@@ -35,6 +35,7 @@ type Entry struct {
 	OldMode fs.FileMode `json:"old_mode,omitempty"`
 	NewMode fs.FileMode `json:"new_mode,omitempty"`
 	Command []string    `json:"command,omitempty"`
+	Sum     string      `json:"sum,omitempty"` // an edit: the fingerprint of what was written, so Undo can tell if it changed since
 }
 
 // Journal is one file on disk.

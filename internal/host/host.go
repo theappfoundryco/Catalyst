@@ -225,6 +225,24 @@ func (e *Env) SafeTool(name string) (string, bool) {
 	return p, true
 }
 
+// FindShell finds a shell by name. A startup file that sets PATH to one folder takes the shells off the PATH a new
+// terminal gets, and that is exactly when their startup files most need reading, so the usual places are tried too.
+func FindShell(e *Env, name string) (string, bool) {
+	if p, err := e.Look(name); err == nil {
+		return p, true
+	}
+	if e.Getenv == nil { // tests say what is installed through Look alone
+		return "", false
+	}
+	for _, dir := range []string{"/bin", "/usr/bin", "/usr/local/bin", "/opt/homebrew/bin", "/home/linuxbrew/.linuxbrew/bin", "/run/current-system/sw/bin"} {
+		p := filepath.Join(dir, name)
+		if st, err := os.Stat(p); err == nil && st.Mode().IsRegular() && st.Mode().Perm()&0o111 != 0 {
+			return p, true
+		}
+	}
+	return "", false
+}
+
 // RCFiles are the startup files of the shells people use, whether or not they exist.
 func (e *Env) RCFiles() []string {
 	return []string{

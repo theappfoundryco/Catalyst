@@ -1336,6 +1336,9 @@ func cmdPath(a *App, args []string) int {
 	self, _ := os.Executable()
 	a.E.LoadShell()
 	st := shellpath.Check(a.E.Home, a.E.Shell, a.E.OS, os.Getenv("ZDOTDIR"), a.E.Entries, self, a.E.Look)
+	if a.lineStuck(st) {
+		st.State = "stuck"
+	}
 	switch action {
 	case "status":
 		fmt.Fprintf(u.Out, "%s %s\n", st.State, a.E.Tilde(st.RC))
@@ -1344,27 +1347,27 @@ func cmdPath(a *App, args []string) int {
 		switch st.State {
 		case "ready":
 			u.Ok("The catalyst command is already in your terminal.")
+		case "stuck":
+			u.Warn("Catalyst's line is in " + a.E.Tilde(st.RC) + ", but a new terminal does not get it.")
+			if why := a.whyNotOnPath(st.RC); why != "" {
+				u.Hint(why)
+			}
+			return ExitIssues
 		case "clash":
 			u.Warn("Something else called catalyst comes first on your PATH: " + st.Found)
 			u.Hint("It was left alone. Run this copy with its full path: " + self)
 			return ExitIssues
 		default:
-			if err := shellpath.Add(st.RC); err != nil {
-				u.Stop("Could not write to " + a.E.Tilde(st.RC) + ": " + err.Error())
+			fish := strings.HasSuffix(st.RC, ".fish")
+			if !a.editStartup(startupEdit{Path: st.RC, Title: "Add ~/.local/bin to PATH, so new terminals find catalyst",
+				Change: func(l []string) []string { return shellpath.AddLines(l, fish) }, Create: true, Quiet: true}) {
 				return ExitIssues
 			}
-			u.Ok("Added one line to " + a.E.Tilde(st.RC) + ". It works in new terminals.")
+			return a.confirmOnPath(st)
 		}
 		return ExitOK
 	case "remove":
-		changed := false
-		for _, rc := range []string{shellpath.RCFile(a.E.Home, "zsh", a.E.OS, os.Getenv("ZDOTDIR")), shellpath.RCFile(a.E.Home, "bash", a.E.OS, ""), shellpath.RCFile(a.E.Home, "fish", a.E.OS, ""), shellpath.RCFile(a.E.Home, "", a.E.OS, "")} {
-			if did, _ := shellpath.Remove(rc); did {
-				u.Ok("Removed the line from " + a.E.Tilde(rc))
-				changed = true
-			}
-		}
-		if !changed {
+		if !a.removePathLines() {
 			u.Say("  " + u.Dim("There was no Catalyst line to remove."))
 		}
 		return ExitOK

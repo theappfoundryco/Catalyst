@@ -12,12 +12,12 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/theappfoundryco/catalyst/internal/journal"
-	"github.com/theappfoundryco/catalyst/internal/shellpath"
 	"github.com/theappfoundryco/catalyst/internal/ui"
 	"github.com/theappfoundryco/catalyst/internal/version"
 )
@@ -217,11 +217,7 @@ func cmdUninstall(a *App, args []string) int {
 	if !u.Ask("Remove Catalyst?") {
 		return ExitOK
 	}
-	for _, rc := range []string{shellpath.RCFile(a.E.Home, "zsh", a.E.OS, os.Getenv("ZDOTDIR")), shellpath.RCFile(a.E.Home, "bash", a.E.OS, ""), shellpath.RCFile(a.E.Home, "fish", a.E.OS, ""), shellpath.RCFile(a.E.Home, "", a.E.OS, "")} {
-		if did, _ := shellpath.Remove(rc); did {
-			u.Ok("Took the line out of " + a.E.Tilde(rc))
-		}
-	}
+	a.removePathLines()
 	if a.ownKit(filepath.Join(filepath.Dir(self), "kit")) {
 		os.Remove(filepath.Join(filepath.Dir(self), "kit"))
 	}
@@ -284,13 +280,11 @@ func cmdLegacy(a *App, args []string) int {
 	if b, err := os.ReadFile(rc); err == nil && strings.Contains(string(b), legacySource) {
 		found++
 		u.Say("  The line in ~/.zshrc that loads ~/" + legacySource)
-		u.Hint("A backup is made first, and your .zshrc is checked afterwards.")
-		if u.Ask("Remove that line?") {
-			if err := a.removeSourceLine(rc, string(b)); err != nil {
-				u.Stop(err.Error())
-			} else {
-				u.Ok("Removed. A backup is at ~/.zshrc.catalyst-backup")
-			}
+		if a.editStartup(startupEdit{Path: rc, Title: "Remove the line that loads ~/" + legacySource, Change: dropSourceLines, Ask: true, Batch: batch, Mends: true, Quiet: true}) {
+			u.Ok("Removed. Undo puts it back.")
+		}
+		for _, n := range sharedSourceLines(string(b)) {
+			u.Note(fmt.Sprintf("Line %d of ~/.zshrc loads ~/%s along with other commands, so it was left for you to edit.", n, legacySource))
 		}
 	}
 	trashIt(a.E.Path(legacySource), "~/"+legacySource+", which holds aliases and shortcuts the app wrote. Look through it first if you made any you want to keep")
@@ -321,34 +315,31 @@ func cmdLegacy(a *App, args []string) int {
 	return ExitOK
 }
 
-// removeSourceLine edits .zshrc the careful way: back up, write, have zsh check it, and put it back if zsh objects.
-func (a *App) removeSourceLine(rc, text string) error {
-	backup := rc + ".catalyst-backup"
-	mode := os.FileMode(0o644)
-	if st, err := os.Stat(rc); err == nil {
-		mode = st.Mode().Perm()
-	}
-	if err := os.WriteFile(backup, []byte(text), 0o600); err != nil {
-		return err
-	}
-	var keep []string
-	for _, l := range strings.Split(text, "\n") {
-		if !strings.Contains(l, legacySource) {
-			keep = append(keep, l)
+// sourceLine is a line that does nothing but load the old app's file: source ~/.zshrc_catalyst, . "$HOME/...", or
+// either after a test that the file is there. A line that does more than that is never removed whole.
+var sourceLine = regexp.MustCompile(`^\s*((\[\[?|test)\s+-[fers]\s+\S*` + regexp.QuoteMeta(legacySource) + `\S*\s*(\]\]?)?\s*&&\s*)?(source|\.)\s+\S*` + regexp.QuoteMeta(legacySource) + `\S*\s*(#.*)?$`)
+
+// dropSourceLines removes the lines that only load the old app's file.
+func dropSourceLines(lines []string) []string {
+	var out []string
+	for _, l := range lines {
+		if !sourceLine.MatchString(strings.TrimRight(l, "\r")) {
+			out = append(out, l)
 		}
 	}
-	if err := os.WriteFile(rc, []byte(strings.Join(keep, "\n")), mode); err != nil {
-		return err
-	}
-	if _, err := a.E.Look("zsh"); err == nil {
-		if r := a.E.Run.Run(0, "zsh", "-n", rc); !r.OK() {
-			if werr := os.WriteFile(rc, []byte(text), mode); werr != nil {
-				return fmt.Errorf("zsh rejected the result, and restoring failed: %v. Your backup is at %s", werr, backup)
-			}
-			return fmt.Errorf("zsh rejected the result, so your .zshrc was put back as it was")
+	return out
+}
+
+// sharedSourceLines are the lines that load the old app's file among other commands, by line number.
+func sharedSourceLines(text string) []int {
+	var out []int
+	for i, l := range strings.Split(text, "\n") {
+		t := strings.TrimSpace(l)
+		if strings.Contains(l, legacySource) && !strings.HasPrefix(t, "#") && !sourceLine.MatchString(strings.TrimRight(l, "\r")) {
+			out = append(out, i+1)
 		}
 	}
-	return nil
+	return out
 }
 
 // The kit command is a link to catalyst, in the same folder, so either name runs the same program.
