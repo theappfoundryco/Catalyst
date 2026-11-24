@@ -63,7 +63,7 @@ func cmdSweep(a *App, args []string) int {
 	minSize := fs.String("min-size", "10MB", "")
 	deep := fs.Bool("deep", false, "")
 	all := fs.Bool("all", false, "")
-	dry := fs.Bool("dry-run", false, "")
+	dry := &a.U.DryRun
 	asJSON := fs.Bool("json", false, "")
 	yes := fs.Bool("yes", false, "")
 	if code, ok := a.parse(fs, args); !ok {
@@ -249,7 +249,7 @@ func (a *App) sweepApply(rep sweep.Report, picked []ui.Item) int {
 }
 
 func cmdUndo(a *App, args []string) int {
-	fs := a.flags("undo", "[--yes]")
+	fs := a.flags("undo", "[--dry-run] [--yes]")
 	yes := fs.Bool("yes", false, "")
 	if code, ok := a.parse(fs, args); !ok {
 		return code
@@ -285,7 +285,9 @@ func cmdUndo(a *App, args []string) int {
 		}
 	}
 	if !u.Ask("Undo this?") {
-		u.Say("  " + u.Dim("Left as it is."))
+		if !u.DryRun {
+			u.Say("  " + u.Dim("Left as it is."))
+		}
 		return ExitOK
 	}
 	failed, kept, restored := 0, 0, 0

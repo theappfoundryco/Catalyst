@@ -125,8 +125,12 @@ func lastLines(s string, n int) string {
 	return strings.Join(lines, "\n")
 }
 
-// Ask asks a yes or no question where Enter means no. Never yes without a person or --yes.
+// Ask asks a yes or no question where Enter means no. Never yes without a person or --yes, and never in a dry run.
 func (u *UI) Ask(q string) bool {
+	if u.DryRun {
+		u.dryAnswer(q)
+		return false
+	}
 	if u.Yes {
 		return true
 	}
@@ -142,6 +146,10 @@ func (u *UI) Ask(q string) bool {
 
 // AskYes asks about something most people want, where Enter means yes. It is still never yes without a person.
 func (u *UI) AskYes(q string) bool {
+	if u.DryRun {
+		u.dryAnswer(q)
+		return false
+	}
 	if u.Yes {
 		return true
 	}
@@ -153,6 +161,13 @@ func (u *UI) AskYes(q string) bool {
 		return false
 	}
 	return true
+}
+
+// dryAnswer shows the question a dry run stops at, so the person sees exactly where a real run would ask.
+func (u *UI) dryAnswer(q string) {
+	for _, l := range u.Wrap("  "+Printable(q)+"  "+u.Dim("(dry run: not asked, and nothing changes)"), u.Width()) {
+		fmt.Fprintln(u.Out, l)
+	}
 }
 
 // Text asks for a line of text, such as an address to test. It is "" without a person.

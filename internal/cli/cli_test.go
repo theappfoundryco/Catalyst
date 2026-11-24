@@ -845,3 +845,85 @@ func TestNoHomeFolderRefusesToRun(t *testing.T) {
 		}
 	}
 }
+
+// A dry run must never change anything, whatever else is asked for: --yes included, every command the same way.
+func TestDryRunChangesNothingAnywhere(t *testing.T) {
+	a, out := carefulApp(t) // --yes is on
+	look := a.E.Look
+	a.E.Look = func(n string) (string, error) {
+		if n == "catalyst" {
+			return "", exec.ErrNotFound
+		}
+		return look(n)
+	}
+	rc := a.E.Path(".profile") // no shell is named here, so this is the file path add writes to
+	put(t, rc, "alias a=b\n")
+	if code := cmdPath(a, []string{"add", "--dry-run"}); code != ExitOK {
+		t.Fatal(code, out.String())
+	}
+	if b, _ := os.ReadFile(rc); string(b) != "alias a=b\n" || !strings.Contains(out.String(), "+ "+shellpath.Line) || !strings.Contains(out.String(), "Dry run: nothing was written.") {
+		t.Fatalf("%q\n%s", b, out.String())
+	}
+	if a.U.DryRun = false; a.U.DryRun {
+		t.Fatal()
+	}
+	// The flag is per command: the next one without it is real.
+	out.Reset()
+	if cmdPath(a, []string{"add"}); !strings.Contains(string(must(os.ReadFile(rc))), shellpath.Mark) {
+		t.Fatal("a command after a dry run stayed dry:", out.String())
+	}
+	before := string(must(os.ReadFile(rc)))
+	cmdUndo(a, []string{"--dry-run"})
+	if string(must(os.ReadFile(rc))) != before || len(a.Journal.LastUndoable()) != 1 || !strings.Contains(out.String(), "(dry run: not asked, and nothing changes)") {
+		t.Fatal("undo --dry-run undid it:", out.String())
+	}
+	cmdPath(a, []string{"remove", "--dry-run"})
+	if string(must(os.ReadFile(rc))) != before {
+		t.Fatal("path remove --dry-run removed the line")
+	}
+	cmdConfig(a, []string{"set", "mascot", "off", "--dry-run"})
+	if !a.Store.LoadConfig().MascotOn() {
+		t.Fatal("config --dry-run saved the setting")
+	}
+	key := a.E.Path(".ssh", "id_ed25519")
+	put(t, key, "key")
+	os.Chmod(key, 0o644)
+	a.U.DryRun = true
+	a.applyFixes([]doctor.Result{doctor.Crit("key is readable").Chmod(key, 0o600)}, true)
+	if st, _ := os.Stat(key); st.Mode().Perm() != 0o644 {
+		t.Fatal("doctor --fix --dry-run changed a mode")
+	}
+	a.decline("smartmontools")
+	if a.Store.LoadConfig().Declined("smartmontools") {
+		t.Fatal("a dry run's no was remembered")
+	}
+}
+
+// Taking Catalyst's PATH line out also takes ~/.local/bin off the PATH, and with it every other tool kept there.
+func TestPathRemoveSaysWhatElseNewTerminalsWouldLose(t *testing.T) {
+	a, out := carefulApp(t)
+	a.U.Yes = false // no person to answer: the guard must hold
+	bin := a.E.Path(".local", "bin")
+	for _, n := range []string{"catalyst", "kit", "pipx", "poetry"} {
+		put(t, filepath.Join(bin, n), "#!/bin/sh\n")
+		os.Chmod(filepath.Join(bin, n), 0o755)
+	}
+	a.E.Entries = []string{bin, "/usr/bin"}
+	rc := a.E.Path(".bashrc")
+	text := "alias a=b\n\n" + shellpath.Mark + "\n" + shellpath.Line + "\n"
+	put(t, rc, text)
+	if got := a.lostWithoutLine(bin); strings.Join(got, ",") != "pipx,poetry" {
+		t.Fatal(got)
+	}
+	cmdPath(a, []string{"remove"})
+	if string(must(os.ReadFile(rc))) != text || !strings.Contains(out.String(), "would also stop finding 2 other commands") || !strings.Contains(out.String(), "· pipx") {
+		t.Fatal("removed it without a yes:", out.String())
+	}
+	// Ubuntu's own ~/.profile adds the folder too, so nothing is lost.
+	put(t, a.E.Path(".profile"), "if [ -d \"$HOME/.local/bin\" ] ; then\n    PATH=\"$HOME/.local/bin:$PATH\"\nfi\n")
+	if got := a.lostWithoutLine(bin); len(got) != 0 {
+		t.Fatal(got)
+	}
+}
+
+func must(b []byte, _ error) []byte { return b }

@@ -13,6 +13,7 @@ import (
 	"github.com/theappfoundryco/catalyst/internal/journal"
 	"github.com/theappfoundryco/catalyst/internal/rcfile"
 	"github.com/theappfoundryco/catalyst/internal/shellpath"
+	"github.com/theappfoundryco/catalyst/internal/ui"
 )
 
 // startupEdit is one change to a shell startup file.
@@ -42,6 +43,7 @@ type startupEdit struct {
 func (a *App) editStartup(ed startupEdit) bool {
 	u := a.U
 	name := a.E.Tilde(ed.Path)
+	ed.DryRun = ed.DryRun || u.DryRun
 	real, text, ok := a.readStartup(ed.Path, ed.Create)
 	if !ok {
 		return false
@@ -391,26 +393,85 @@ func (a *App) pathRCFiles() []string {
 }
 
 // removePathLines takes Catalyst's PATH line out of every startup file that has it, the careful way. A line changed
-// by hand under the mark is someone's own now, so it stays, and they are told.
+// by hand under the mark is someone's own now, so it stays, and they are told. It reports whether there was a line.
 func (a *App) removePathLines() bool {
 	u := a.U
-	changed := false
+	found := false
 	for _, rc := range a.pathRCFiles() {
 		b, err := os.ReadFile(rc)
 		if err != nil || !shellpath.Has(string(b)) {
 			continue
 		}
+		found = true
 		kept := ""
 		if a.editStartup(startupEdit{Path: rc, Title: "Take Catalyst's PATH line out", Mends: true, Quiet: true,
 			Change: func(l []string) []string { out, k := shellpath.RemoveLines(l); kept = k; return out }}) {
 			u.Ok("Took Catalyst's line out of " + a.E.Tilde(rc))
-			changed = true
 		}
 		if kept != "" {
 			u.Note("The line under Catalyst's note was changed by hand, so it stays: " + kept)
 		}
 	}
-	return changed
+	return found
+}
+
+// lostWithoutLine is what taking Catalyst's PATH line out would cost: the commands in bin, other than Catalyst's own,
+// that no other folder on the PATH has. Nothing is lost when another line in the startup files adds bin as well, such
+// as the one Debian and Ubuntu put in ~/.profile.
+func (a *App) lostWithoutLine(bin string) []string {
+	needles := []string{bin, strings.Replace(bin, a.E.Home, "$HOME", 1), a.E.Tilde(bin)}
+	ours := false
+	for _, rc := range a.E.RCFiles() {
+		b, err := os.ReadFile(rc)
+		if err != nil {
+			continue
+		}
+		prev := ""
+		for _, l := range strings.Split(string(b), "\n") {
+			t := strings.TrimRight(l, "\r")
+			mine := strings.HasSuffix(strings.TrimSpace(prev), shellpath.Mark) && (t == shellpath.Line || t == shellpath.Fish)
+			prev = t
+			if mine {
+				ours = true
+				continue
+			}
+			if !strings.HasPrefix(strings.TrimSpace(t), "#") && namesAny(t, needles) && !onlyTests(t) {
+				return nil
+			}
+		}
+	}
+	if !ours {
+		return nil
+	}
+	ents, err := os.ReadDir(bin)
+	if err != nil {
+		return nil
+	}
+	var lost []string
+	for _, en := range ents {
+		n := en.Name()
+		if n == "catalyst" || n == "kit" {
+			continue
+		}
+		st, err := os.Stat(filepath.Join(bin, n))
+		if err != nil || st.IsDir() || st.Mode()&0o111 == 0 {
+			continue
+		}
+		elsewhere := false
+		for _, dir := range a.E.Entries {
+			if filepath.Clean(dir) == bin {
+				continue
+			}
+			if st, err := os.Stat(filepath.Join(dir, n)); err == nil && !st.IsDir() && st.Mode()&0o111 != 0 {
+				elsewhere = true
+				break
+			}
+		}
+		if !elsewhere {
+			lost = append(lost, ui.Printable(n))
+		}
+	}
+	return lost
 }
 
 // lineStuck is Catalyst's line sitting in the startup file while a new terminal, asked just now, does not get it. Only

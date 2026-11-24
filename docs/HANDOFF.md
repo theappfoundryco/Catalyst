@@ -114,6 +114,10 @@ As of 0.1.0, built and run on Apple silicon macOS 15 and ARM64 Linux containers:
 - `path add` refused every file the shell already rejected, and confirmed with a new terminal elsewhere. It explained a later PATH reset and a missing `~/.profile`. A folder, a read-only root-owned file and a link to nothing were refused in plain words; a dotfiles link was followed and kept.
 - The scanner was run over about 980 real shell files on an Ubuntu desktop (bash-completion, zsh functions, profile.d, skeleton files) with no false alarms.
 
+### Added on 2026-11-24 (--dry-run on every command)
+
+- In an Ubuntu container as a normal user: `doctor`, `doctor --fix --all-safe --yes`, `path add` and `remove`, `undo --yes`, `ports kill --yes`, `sweep`, `clean`, `uninstall --yes`, `helpers install --yes`, `config set`, `doctor --mute`, `report --out` and `setup`, each with `--dry-run`. Every file and mode in the home folder was the same afterwards, the port was still served, and the only file written was Catalyst's own record of what the sweep found, which it always keeps. `path remove` named the two other tools new terminals would lose.
+
 ## What has not been verified
 
 - **Startup-file fixes on a real Mac, and fish.** The slips and fixes ran in Linux containers. zsh on macOS and fish's `-n` were not run.

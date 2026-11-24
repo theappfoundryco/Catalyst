@@ -521,7 +521,7 @@ func (a *App) showGuide(r doctor.Result) {
 	}
 	if r.Fix != nil && r.Fix.Kind != doctor.FixManual {
 		u.Blank()
-		u.Say("  " + u.Soft("Catalyst can do this for you, showing the change first: ") + r.Fix.Preview())
+		u.Say("  " + u.Soft("Catalyst can do this for you, showing the change first: ") + a.preview(*r.Fix))
 	}
 	u.Blank()
 	acts := &a.outcome.Actions

@@ -103,7 +103,7 @@ func (a *App) brew() string {
 func isFile(p string) bool { st, err := os.Stat(p); return err == nil && !st.IsDir() }
 
 func cmdHelpers(a *App, args []string) int {
-	fs := a.flags("helpers", "[install NAME]")
+	fs := a.flags("helpers", "[install NAME] [--dry-run]")
 	yes := fs.Bool("yes", false, "")
 	if code, ok := a.parse(fs, args); !ok {
 		return code
@@ -230,6 +230,9 @@ func (a *App) helperArrived(h helper) bool {
 }
 
 func (a *App) decline(tool string) {
+	if a.U.DryRun { // a dry run answers no without asking anyone, and that is not a no to remember
+		return
+	}
 	c := a.Store.LoadConfig()
 	if !c.Declined(tool) {
 		c.NoHelpers = append(c.NoHelpers, tool)
@@ -263,8 +266,16 @@ func cleanName(s string) string {
 }
 
 // cmdSetup is the first-run welcome: what to call the person, and the helpers worth having.
-func cmdSetup(a *App, _ []string) int {
+func cmdSetup(a *App, args []string) int {
+	fs := a.flags("setup", "")
+	if code, ok := a.parse(fs, args); !ok {
+		return code
+	}
 	u := a.U
+	if u.DryRun {
+		u.Say("  " + u.Dim("Setup saves each answer as it goes, so it has no dry run. Run catalyst setup to go through it, or catalyst helpers to only look."))
+		return ExitOK
+	}
 	c := a.Store.LoadConfig()
 	u.Say("  " + u.Bold("Hi, I'm Catalyst.") + u.Dim(" I check your dev setup and free space safely. Nothing changes without asking."))
 	u.Blank()

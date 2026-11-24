@@ -32,7 +32,7 @@ type doctorReport struct {
 }
 
 func cmdDoctor(a *App, args []string) int {
-	fs := a.flags("doctor", "[--fix [--all-safe]] [--only group] [--json] [-v] [--mute CHECK | --unmute CHECK]")
+	fs := a.flags("doctor", "[--fix [--all-safe]] [--dry-run] [--only group] [--json] [-v] [--mute CHECK | --unmute CHECK]")
 	fix := fs.Bool("fix", false, "")
 	allSafe := fs.Bool("all-safe", false, "")
 	asJSON := fs.Bool("json", false, "")
@@ -46,6 +46,9 @@ func cmdDoctor(a *App, args []string) int {
 	}
 	if *mute != "" || *unmute != "" {
 		return a.setMuted(*mute, *unmute)
+	}
+	if a.U.DryRun { // a dry run of doctor is one of its fixes: show each, change none
+		*fix = true
 	}
 	a.U.Yes = a.U.Yes || *yes
 	var filter []string
@@ -272,10 +275,14 @@ func (a *App) applyFixes(all []doctor.Result, allSafe bool) {
 			u.Sect("Fixes that can be undone")
 			for _, i := range safe {
 				u.Say("  " + all[i].Title)
-				u.Hint(all[i].Fix.Preview())
+				u.Hint(a.preview(*all[i].Fix))
 			}
 			u.Blank()
-			if u.Ask(fmt.Sprintf("Make %s? Undo reverses them all at once.", ui.Count(len(safe), "this change", "these changes"))) {
+			q := "Make this change? Undo reverses it."
+			if len(safe) > 1 {
+				q = fmt.Sprintf("Make these %d changes? Undo reverses them all at once.", len(safe))
+			}
+			if u.Ask(q) {
 				for _, i := range safe {
 					if err := a.applyFix(*all[i].Fix, batch); err != nil {
 						u.Stop(all[i].Title + ": that did not work: " + err.Error())
@@ -316,7 +323,7 @@ func (a *App) applyFixes(all []doctor.Result, allSafe bool) {
 			continue
 		}
 		u.Say("  " + r.Title)
-		u.Hint(f.Preview())
+		u.Hint(a.preview(f))
 		if !u.Ask("Do it?") {
 			continue
 		}
@@ -377,6 +384,11 @@ func (a *App) applyFix(f doctor.Fix, batch string) error {
 		return a.Journal.Add(journal.Entry{Time: now, Batch: batch, Kind: journal.KindRun, Title: f.Title, Command: f.Command})
 	}
 	return fmt.Errorf("this fix cannot be run automatically")
+}
+
+// preview is a fix written out for reading, with the home folder said as ~, the way the rest of Catalyst says it.
+func (a *App) preview(f doctor.Fix) string {
+	return ui.Printable(strings.ReplaceAll(f.Preview(), a.E.Home+"/", "~/"))
 }
 
 // slipEdit mends one slip in a startup file. The edit is worked out again on the file as it is now, since an earlier fix
@@ -441,6 +453,10 @@ func (a *App) setMuted(mute, unmute string) int {
 		keep = append(keep, id)
 	}
 	c.Muted = keep
+	if u.DryRun {
+		u.Say("  " + u.Dim("Dry run: "+id+" was not muted or unmuted."))
+		return ExitOK
+	}
 	if err := a.Store.SaveConfig(c); err != nil {
 		u.Stop("Could not save the setting: " + err.Error())
 		return ExitFailed

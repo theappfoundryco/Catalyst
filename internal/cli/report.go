@@ -23,7 +23,7 @@ var reportTools = []struct{ name, flag string }{
 // doctor finding. Home folder, user name and machine name are replaced before anything is written, and it goes to the
 // terminal or a file, never anywhere else.
 func cmdReport(a *App, args []string) int {
-	fs := a.flags("report", "[--out FILE]")
+	fs := a.flags("report", "[--out FILE] [--dry-run]")
 	out := fs.String("out", "", "")
 	if code, ok := a.parse(fs, args); !ok {
 		return code
@@ -49,6 +49,10 @@ func cmdReport(a *App, args []string) int {
 	}
 	if *out == "" {
 		fmt.Fprint(u.Out, text)
+		return ExitOK
+	}
+	if u.DryRun {
+		u.Say("  " + u.Dim("Dry run: "+*out+" was not written. Without --out, the report prints here instead."))
 		return ExitOK
 	}
 	if err := os.WriteFile(*out, []byte(text), 0o644); err != nil {

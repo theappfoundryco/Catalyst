@@ -64,7 +64,7 @@ func fetch(url string, limit int64) ([]byte, error) {
 }
 
 func cmdUpdate(a *App, args []string) int {
-	fs := a.flags("update", "[--check] [--yes]")
+	fs := a.flags("update", "[--check] [--dry-run] [--yes]")
 	check := fs.Bool("check", false, "")
 	yes := fs.Bool("yes", false, "")
 	if code, ok := a.parse(fs, args); !ok {
@@ -190,7 +190,7 @@ func extractBinary(archive []byte) ([]byte, error) {
 }
 
 func cmdUninstall(a *App, args []string) int {
-	fs := a.flags("uninstall", "[--yes]")
+	fs := a.flags("uninstall", "[--dry-run] [--yes]")
 	yes := fs.Bool("yes", false, "")
 	if code, ok := a.parse(fs, args); !ok {
 		return code
@@ -244,7 +244,7 @@ const (
 
 // cmdLegacy cleans up after the old Mac app. It shows each thing first and removes it only with a yes.
 func cmdLegacy(a *App, args []string) int {
-	fs := a.flags("legacy", "[--yes]")
+	fs := a.flags("legacy", "[--dry-run] [--yes]")
 	yes := fs.Bool("yes", false, "")
 	if code, ok := a.parse(fs, args); !ok {
 		return code
