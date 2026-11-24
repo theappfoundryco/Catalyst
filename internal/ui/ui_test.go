@@ -322,3 +322,15 @@ func TestKeyBarKeepsEnterAndEsc(t *testing.T) {
 		t.Fatalf("%q", bar)
 	}
 }
+
+func TestDryRunAnswersNoEvenWithYes(t *testing.T) {
+	var b bytes.Buffer
+	u := Plain(&b, 80)
+	u.Yes, u.DryRun = true, true
+	if u.Ask("Remove it?") || u.AskYes("Update now?") {
+		t.Fatal("a dry run said yes")
+	}
+	if !strings.Contains(b.String(), "Remove it?  (dry run: not asked, and nothing changes)") {
+		t.Fatal(b.String())
+	}
+}

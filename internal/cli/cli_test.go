@@ -16,8 +16,10 @@ import (
 	"github.com/theappfoundryco/catalyst/internal/host"
 	"github.com/theappfoundryco/catalyst/internal/journal"
 	"github.com/theappfoundryco/catalyst/internal/kit"
+	"github.com/theappfoundryco/catalyst/internal/rcfile"
 	"github.com/theappfoundryco/catalyst/internal/run"
 	"github.com/theappfoundryco/catalyst/internal/session"
+	"github.com/theappfoundryco/catalyst/internal/shellpath"
 	"github.com/theappfoundryco/catalyst/internal/state"
 	"github.com/theappfoundryco/catalyst/internal/ui"
 )
@@ -318,39 +320,196 @@ func TestManualFixesNeverRun(t *testing.T) {
 	}
 }
 
-func TestLegacyEditKeepsAGoodZshrcAndBacksUp(t *testing.T) {
-	a, _ := testApp(t, "darwin")
+func TestLegacyTakesOnlyTheLinesThatJustLoadTheOldFile(t *testing.T) {
+	a, out := testApp(t, "darwin")
+	a.U.Yes = true
 	rc := a.E.Path(".zshrc")
-	text := "export A=1\n[[ -f ~/.zshrc_catalyst ]] && source ~/.zshrc_catalyst\nalias b=c\n"
+	text := "export A=1\n[[ -f ~/.zshrc_catalyst ]] && source ~/.zshrc_catalyst\n. \"$HOME/.zshrc_catalyst\"\n}source ~/.zshrc_catalyst\nsource ~/.zshrc_catalyst; export B=2\nalias b=c\n"
 	put(t, rc, text)
-	if err := a.removeSourceLine(rc, text); err != nil {
-		t.Fatal(err)
-	}
+	cmdLegacy(a, nil)
 	got, _ := os.ReadFile(rc)
-	if strings.Contains(string(got), "catalyst") || !strings.Contains(string(got), "alias b=c") {
+	want := "export A=1\n}source ~/.zshrc_catalyst\nsource ~/.zshrc_catalyst; export B=2\nalias b=c\n"
+	if string(got) != want {
 		t.Fatalf("%q", got)
 	}
-	back, _ := os.ReadFile(rc + ".catalyst-backup")
-	if string(back) != text {
-		t.Fatalf("%q", back)
+	for _, n := range []string{"Line 4 of ~/.zshrc", "Line 5 of ~/.zshrc"} {
+		if !strings.Contains(out.String(), n) {
+			t.Fatalf("did not point at %s: %s", n, out.String())
+		}
+	}
+	cmdUndo(a, []string{"--yes"})
+	if back, _ := os.ReadFile(rc); string(back) != text {
+		t.Fatalf("undo left %q", back)
 	}
 }
 
-func TestLegacyEditPutsItBackWhenZshObjects(t *testing.T) {
-	a, _ := testApp(t, "darwin")
-	f := &run.Fake{Replies: map[string]run.Result{}}
-	a.E.Run = f
-	a.E.Look = func(string) (string, error) { return "/bin/zsh", nil }
-	rc := a.E.Path(".zshrc")
-	text := "if x; then\n[[ -f ~/.zshrc_catalyst ]] && source ~/.zshrc_catalyst\nfi\n"
-	put(t, rc, text)
-	f.Replies["zsh -n "+rc] = run.Result{Code: 1}
-	if err := a.removeSourceLine(rc, text); err == nil {
-		t.Fatal("no error")
+// shellCheck answers "SHELL -n FILE" with the real bash's verdict on FILE, which is on every machine the tests run on,
+// so the careful edit can be tested against a real parser whatever shell the file is for.
+type shellCheck struct{ run.Runner }
+
+func (s shellCheck) Run(t time.Duration, name string, args ...string) run.Result {
+	if len(args) == 2 && args[0] == "-n" {
+		return run.Real{}.Run(t, "bash", "-n", args[1])
 	}
-	got, _ := os.ReadFile(rc)
-	if string(got) != text {
-		t.Fatalf("%q", got)
+	return s.Runner.Run(t, name, args...)
+}
+
+func carefulApp(t *testing.T) (*App, *bytes.Buffer) {
+	a, out := testApp(t, "linux")
+	a.E.Run = shellCheck{run.Real{}}
+	a.E.Look = func(n string) (string, error) { return "/bin/" + n, nil }
+	a.U.Yes = true
+	return a, out
+}
+
+func TestCarefulEditNeverBreaksAFileTheShellAccepted(t *testing.T) {
+	a, out := carefulApp(t)
+	rc := a.E.Path(".bashrc")
+	text := "greet() {\n  echo hi\n}\n"
+	put(t, rc, text)
+	if a.editStartup(startupEdit{Path: rc, Title: "t", Change: func(l []string) []string { return append(l[:2], "", "x=1") }, Mends: true}) {
+		t.Fatal("wrote a change that breaks the file")
+	}
+	if b, _ := os.ReadFile(rc); string(b) != text || !strings.Contains(out.String(), "would leave ~/.bashrc with a syntax error") {
+		t.Fatalf("%q\n%s", b, out.String())
+	}
+	if len(a.Journal.LastUndoable()) != 0 {
+		t.Fatal("recorded a change that never happened")
+	}
+}
+
+func TestPathAddRefusesAFileTheShellAlreadyRejects(t *testing.T) {
+	for _, text := range []string{
+		"greet() {\n  echo hi\n}export PATH=\"$HOME/go/bin:$PATH\"\n", // the one from a real machine
+		"greet() {\n  echo hi\n",                                 // never closed
+		"export PATH=\"$HOME/go/bin:$PATH\nalias ll=\"ls -l\"\n", // a quote never closed
+	} {
+		a, out := carefulApp(t)
+		a.E.Shell = ""
+		rc := a.E.Path(".bashrc")
+		put(t, rc, text)
+		if a.editStartup(startupEdit{Path: rc, Title: "add", Change: func(l []string) []string { return shellpath.AddLines(l, false) }, Create: true}) {
+			t.Fatalf("added a line after a syntax error in %q", text)
+		}
+		if b, _ := os.ReadFile(rc); string(b) != text {
+			t.Fatalf("changed %q", b)
+		}
+		if !strings.Contains(out.String(), "already has a syntax error, so a line added to it would never run") || !strings.Contains(out.String(), "catalyst doctor --only shell.syntax --fix") {
+			t.Fatal(out.String())
+		}
+	}
+}
+
+func TestCarefulEditStopsAtFoldersLinksToNothingAndFilesItCannotWrite(t *testing.T) {
+	if os.Getuid() == 0 {
+		t.Skip("root can write anything")
+	}
+	add := func(l []string) []string { return shellpath.AddLines(l, false) }
+	cases := map[string]func(a *App, rc string){
+		"is a folder, not a file":   func(a *App, rc string) { os.MkdirAll(rc, 0o755) },
+		"which is not there":        func(a *App, rc string) { os.Symlink(filepath.Join(a.E.Home, "gone", "bashrc"), rc) },
+		"cannot be changed by you":  func(a *App, rc string) { put(t, rc, "alias a=b\n"); os.Chmod(rc, 0o444) },
+		"does not look like a text": func(a *App, rc string) { put(t, rc, "\x00\x01binary") },
+	}
+	for want, plant := range cases {
+		a, out := carefulApp(t)
+		rc := a.E.Path(".bashrc")
+		plant(a, rc)
+		if a.editStartup(startupEdit{Path: rc, Title: "add", Change: add, Create: true}) || !strings.Contains(out.String(), want) {
+			t.Errorf("%s: %s", want, out.String())
+		}
+	}
+	// A link into a dotfiles folder is followed, and the link itself stays a link.
+	a, _ := carefulApp(t)
+	real := filepath.Join(a.E.Home, "dotfiles", "bashrc")
+	put(t, real, "alias a=b\n")
+	rc := a.E.Path(".bashrc")
+	os.Symlink(real, rc)
+	if !a.editStartup(startupEdit{Path: rc, Title: "add", Change: add}) {
+		t.Fatal("did not follow the link")
+	}
+	if st, _ := os.Lstat(rc); st.Mode()&os.ModeSymlink == 0 {
+		t.Fatal("replaced the link with a file")
+	}
+	if b, _ := os.ReadFile(real); !strings.Contains(string(b), shellpath.Mark) {
+		t.Fatalf("%q", b)
+	}
+}
+
+func TestDryRunShowsTheChangeAndWritesNothing(t *testing.T) {
+	a, out := carefulApp(t)
+	rc := a.E.Path(".bashrc")
+	put(t, rc, "alias a=b\n")
+	if a.editStartup(startupEdit{Path: rc, Title: "Add the line", Change: func(l []string) []string { return shellpath.AddLines(l, false) }, DryRun: true}) {
+		t.Fatal("reported a change")
+	}
+	if b, _ := os.ReadFile(rc); string(b) != "alias a=b\n" {
+		t.Fatalf("wrote %q", b)
+	}
+	for _, want := range []string{"+ " + shellpath.Line, "Dry run: nothing was written. bash reads the result without complaint."} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("missing %q in %s", want, out.String())
+		}
+	}
+}
+
+// Undo must not throw away what someone wrote after Catalyst's edit without saying so.
+func TestUndoLeavesAFileChangedSinceUnlessAsked(t *testing.T) {
+	a, out := carefulApp(t)
+	rc := a.E.Path(".bashrc")
+	put(t, rc, "alias a=b\n")
+	if !a.editStartup(startupEdit{Path: rc, Title: "add", Change: func(l []string) []string { return shellpath.AddLines(l, false) }}) {
+		t.Fatal(out.String())
+	}
+	b, _ := os.ReadFile(rc)
+	later := string(b) + "alias mine=yes\n"
+	put(t, rc, later)
+	cmdUndo(a, []string{"--yes"})
+	if now, _ := os.ReadFile(rc); string(now) != later {
+		t.Fatalf("undo threw away the later edit: %q", now)
+	}
+	if !strings.Contains(out.String(), "was changed again after Catalyst edited it") || !strings.Contains(out.String(), "The copy from before is at") {
+		t.Fatal(out.String())
+	}
+	if len(a.Journal.LastUndoable()) != 1 {
+		t.Fatal("the change is no longer offered for undo")
+	}
+}
+
+// Two fixes to one file in one run are undone together, newest first, with no warning that the file changed since.
+func TestDoctorFixesToOneFileUndoTogether(t *testing.T) {
+	a, out := carefulApp(t)
+	rc := a.E.Path(".bashrc")
+	orig := "greet() {\n  echo hi\n\n}export PATH=\"$HOME/go/bin:$PATH\""
+	put(t, rc, orig)
+	f1 := doctor.Fix{Kind: doctor.FixEdit, Title: "glued", Path: rc, Slip: rcfile.GluedClose, Line: 4}
+	f2 := doctor.Fix{Kind: doctor.FixEdit, Title: "newline", Path: rc, Slip: rcfile.NoNewline, Line: 4}
+	batch := journal.NewBatch(a.E.Now())
+	for _, f := range []doctor.Fix{f1, f2} {
+		if err := a.applyFix(f, batch); err != nil {
+			t.Fatal(err, out.String())
+		}
+	}
+	if b, _ := os.ReadFile(rc); string(b) != "greet() {\n  echo hi\n\n}\nexport PATH=\"$HOME/go/bin:$PATH\"\n" {
+		t.Fatalf("%q", b)
+	}
+	out.Reset()
+	cmdUndo(a, []string{"--yes"})
+	if b, _ := os.ReadFile(rc); string(b) != orig || strings.Contains(out.String(), "changed again") {
+		t.Fatalf("%q\n%s", b, out.String())
+	}
+}
+
+func TestPathRemoveKeepsALineChangedByHandAndSaysSo(t *testing.T) {
+	a, out := carefulApp(t)
+	rc := a.E.Path(".bashrc")
+	mine := `export PATH="$HOME/.local/bin:$HOME/go/bin:$PATH"`
+	put(t, rc, shellpath.Mark+"\n"+mine+"\n")
+	if !a.removePathLines() {
+		t.Fatal(out.String())
+	}
+	if b, _ := os.ReadFile(rc); string(b) != mine+"\n" || !strings.Contains(out.String(), "changed by hand, so it stays") {
+		t.Fatalf("%q\n%s", b, out.String())
 	}
 }
 
@@ -587,7 +746,7 @@ func TestStartupFileEditIsShownKeptAndUndone(t *testing.T) {
 	rc := filepath.Join(a.E.Home, ".zshrc_catalyst")
 	before := "alias ll='ls -l'\n# CATALYST_BEGIN path-order\nexport PATH=\"/usr/bin:/bin:/opt/homebrew/bin\"\n# CATALYST_END path-order\nalias gs='git status'\n"
 	put(t, rc, before)
-	if !a.editFile(rc, "Remove the old app's PATH block", dropBlock("# CATALYST_BEGIN path-order", "# CATALYST_END path-order")) {
+	if !a.editStartup(startupEdit{Path: rc, Title: "Remove the old app's PATH block", Change: dropBlock("# CATALYST_BEGIN path-order", "# CATALYST_END path-order"), Ask: true, Mends: true}) {
 		t.Fatal(out.String())
 	}
 	b, _ := os.ReadFile(rc)
@@ -603,6 +762,17 @@ func TestStartupFileEditIsShownKeptAndUndone(t *testing.T) {
 	cmdUndo(a, []string{"--yes"})
 	if b, _ := os.ReadFile(rc); string(b) != before {
 		t.Fatalf("undo left %q", b)
+	}
+}
+
+func TestDropBlockWithoutItsEndRemovesNothing(t *testing.T) {
+	drop := dropBlock("# BEGIN", "# END")
+	lines := []string{"a", "# BEGIN", "x", "b", "c"}
+	if got := drop(append([]string{}, lines...)); strings.Join(got, "|") != strings.Join(lines, "|") {
+		t.Fatalf("took %v", got)
+	}
+	if got := drop([]string{"a", "# BEGIN", "x", "# END", "b", "# BEGIN", "y", "# END"}); strings.Join(got, "|") != "a|b" {
+		t.Fatal(got)
 	}
 }
 
@@ -675,3 +845,85 @@ func TestNoHomeFolderRefusesToRun(t *testing.T) {
 		}
 	}
 }
+
+// A dry run must never change anything, whatever else is asked for: --yes included, every command the same way.
+func TestDryRunChangesNothingAnywhere(t *testing.T) {
+	a, out := carefulApp(t) // --yes is on
+	look := a.E.Look
+	a.E.Look = func(n string) (string, error) {
+		if n == "catalyst" {
+			return "", exec.ErrNotFound
+		}
+		return look(n)
+	}
+	rc := a.E.Path(".profile") // no shell is named here, so this is the file path add writes to
+	put(t, rc, "alias a=b\n")
+	if code := cmdPath(a, []string{"add", "--dry-run"}); code != ExitOK {
+		t.Fatal(code, out.String())
+	}
+	if b, _ := os.ReadFile(rc); string(b) != "alias a=b\n" || !strings.Contains(out.String(), "+ "+shellpath.Line) || !strings.Contains(out.String(), "Dry run: nothing was written.") {
+		t.Fatalf("%q\n%s", b, out.String())
+	}
+	if a.U.DryRun = false; a.U.DryRun {
+		t.Fatal()
+	}
+	// The flag is per command: the next one without it is real.
+	out.Reset()
+	if cmdPath(a, []string{"add"}); !strings.Contains(string(must(os.ReadFile(rc))), shellpath.Mark) {
+		t.Fatal("a command after a dry run stayed dry:", out.String())
+	}
+	before := string(must(os.ReadFile(rc)))
+	cmdUndo(a, []string{"--dry-run"})
+	if string(must(os.ReadFile(rc))) != before || len(a.Journal.LastUndoable()) != 1 || !strings.Contains(out.String(), "(dry run: not asked, and nothing changes)") {
+		t.Fatal("undo --dry-run undid it:", out.String())
+	}
+	cmdPath(a, []string{"remove", "--dry-run"})
+	if string(must(os.ReadFile(rc))) != before {
+		t.Fatal("path remove --dry-run removed the line")
+	}
+	cmdConfig(a, []string{"set", "mascot", "off", "--dry-run"})
+	if !a.Store.LoadConfig().MascotOn() {
+		t.Fatal("config --dry-run saved the setting")
+	}
+	key := a.E.Path(".ssh", "id_ed25519")
+	put(t, key, "key")
+	os.Chmod(key, 0o644)
+	a.U.DryRun = true
+	a.applyFixes([]doctor.Result{doctor.Crit("key is readable").Chmod(key, 0o600)}, true)
+	if st, _ := os.Stat(key); st.Mode().Perm() != 0o644 {
+		t.Fatal("doctor --fix --dry-run changed a mode")
+	}
+	a.decline("smartmontools")
+	if a.Store.LoadConfig().Declined("smartmontools") {
+		t.Fatal("a dry run's no was remembered")
+	}
+}
+
+// Taking Catalyst's PATH line out also takes ~/.local/bin off the PATH, and with it every other tool kept there.
+func TestPathRemoveSaysWhatElseNewTerminalsWouldLose(t *testing.T) {
+	a, out := carefulApp(t)
+	a.U.Yes = false // no person to answer: the guard must hold
+	bin := a.E.Path(".local", "bin")
+	for _, n := range []string{"catalyst", "kit", "pipx", "poetry"} {
+		put(t, filepath.Join(bin, n), "#!/bin/sh\n")
+		os.Chmod(filepath.Join(bin, n), 0o755)
+	}
+	a.E.Entries = []string{bin, "/usr/bin"}
+	rc := a.E.Path(".bashrc")
+	text := "alias a=b\n\n" + shellpath.Mark + "\n" + shellpath.Line + "\n"
+	put(t, rc, text)
+	if got := a.lostWithoutLine(bin); strings.Join(got, ",") != "pipx,poetry" {
+		t.Fatal(got)
+	}
+	cmdPath(a, []string{"remove"})
+	if string(must(os.ReadFile(rc))) != text || !strings.Contains(out.String(), "would also stop finding 2 other commands") || !strings.Contains(out.String(), "· pipx") {
+		t.Fatal("removed it without a yes:", out.String())
+	}
+	// Ubuntu's own ~/.profile adds the folder too, so nothing is lost.
+	put(t, a.E.Path(".profile"), "if [ -d \"$HOME/.local/bin\" ] ; then\n    PATH=\"$HOME/.local/bin:$PATH\"\nfi\n")
+	if got := a.lostWithoutLine(bin); len(got) != 0 {
+		t.Fatal(got)
+	}
+}
+
+func must(b []byte, _ error) []byte { return b }

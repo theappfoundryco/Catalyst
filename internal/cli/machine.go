@@ -685,7 +685,7 @@ func localIP() string {
 var protectedProcs = map[string]bool{"launchd": true, "loginwindow": true, "systemd": true, "sshd": true, "ControlCenter": true, "Finder": true, "Dock": true, "init": true, "tailscaled": true, "mDNSResponder": true, "rapportd": true}
 
 func cmdPorts(a *App, args []string) int {
-	fs := a.flags("ports", "[stop | kill PORT] [--yes] [--json]")
+	fs := a.flags("ports", "[stop | kill PORT] [--dry-run] [--yes] [--json]")
 	asJSON := fs.Bool("json", false, "")
 	yes := fs.Bool("yes", false, "")
 	if code, ok := a.parse(fs, args); !ok {
@@ -969,7 +969,7 @@ func (a *App) killPort(port int) int {
 }
 
 func cmdStartup(a *App, args []string) int {
-	fs := a.flags("startup", "[disable NAME | enable NAME] [--json] [--yes]")
+	fs := a.flags("startup", "[disable NAME | enable NAME] [--dry-run] [--json] [--yes]")
 	asJSON := fs.Bool("json", false, "")
 	yes := fs.Bool("yes", false, "")
 	if code, ok := a.parse(fs, args); !ok {
@@ -1321,7 +1321,7 @@ func sshHosts(config, home string, k host.SSHKey) []string {
 }
 
 func cmdPath(a *App, args []string) int {
-	fs := a.flags("path", "[add | remove | status]")
+	fs := a.flags("path", "[add | remove | status] [--dry-run]")
 	if code, ok := a.parse(fs, args); !ok {
 		return code
 	}
@@ -1336,6 +1336,9 @@ func cmdPath(a *App, args []string) int {
 	self, _ := os.Executable()
 	a.E.LoadShell()
 	st := shellpath.Check(a.E.Home, a.E.Shell, a.E.OS, os.Getenv("ZDOTDIR"), a.E.Entries, self, a.E.Look)
+	if a.lineStuck(st) {
+		st.State = "stuck"
+	}
 	switch action {
 	case "status":
 		fmt.Fprintf(u.Out, "%s %s\n", st.State, a.E.Tilde(st.RC))
@@ -1344,27 +1347,47 @@ func cmdPath(a *App, args []string) int {
 		switch st.State {
 		case "ready":
 			u.Ok("The catalyst command is already in your terminal.")
+		case "stuck":
+			u.Warn("Catalyst's line is in " + a.E.Tilde(st.RC) + ", but a new terminal does not get it.")
+			if why := a.whyNotOnPath(st.RC); why != "" {
+				u.Hint(why)
+			}
+			return ExitIssues
 		case "clash":
 			u.Warn("Something else called catalyst comes first on your PATH: " + st.Found)
 			u.Hint("It was left alone. Run this copy with its full path: " + self)
 			return ExitIssues
 		default:
-			if err := shellpath.Add(st.RC); err != nil {
-				u.Stop("Could not write to " + a.E.Tilde(st.RC) + ": " + err.Error())
+			fish := strings.HasSuffix(st.RC, ".fish")
+			if !a.editStartup(startupEdit{Path: st.RC, Title: "Add ~/.local/bin to PATH, so new terminals find catalyst",
+				Change: func(l []string) []string { return shellpath.AddLines(l, fish) }, Create: true, Quiet: true}) {
+				if u.DryRun {
+					return ExitOK
+				}
 				return ExitIssues
 			}
-			u.Ok("Added one line to " + a.E.Tilde(st.RC) + ". It works in new terminals.")
+			return a.confirmOnPath(st)
 		}
 		return ExitOK
 	case "remove":
-		changed := false
-		for _, rc := range []string{shellpath.RCFile(a.E.Home, "zsh", a.E.OS, os.Getenv("ZDOTDIR")), shellpath.RCFile(a.E.Home, "bash", a.E.OS, ""), shellpath.RCFile(a.E.Home, "fish", a.E.OS, ""), shellpath.RCFile(a.E.Home, "", a.E.OS, "")} {
-			if did, _ := shellpath.Remove(rc); did {
-				u.Ok("Removed the line from " + a.E.Tilde(rc))
-				changed = true
+		if lost := a.lostWithoutLine(st.BinDir); len(lost) > 0 {
+			u.Warn("New terminals would also stop finding " + ui.Count(len(lost), "other command", "other commands") + ", which only " + a.E.Tilde(st.BinDir) + " holds:")
+			for i, n := range lost {
+				if i == 6 && len(lost) > 7 {
+					u.Hint(fmt.Sprintf("  and %d more", len(lost)-6))
+					break
+				}
+				u.Hint("  · " + n)
+			}
+			u.Hint("Another tool may have counted on Catalyst's line. To keep them, keep the line, or add " + a.E.Tilde(st.BinDir) + " to PATH yourself first.")
+			if !u.Ask("Take the line out anyway?") {
+				if !u.DryRun {
+					u.Say("  " + u.Dim("Left as it is."))
+				}
+				return ExitOK
 			}
 		}
-		if !changed {
+		if !a.removePathLines() {
 			u.Say("  " + u.Dim("There was no Catalyst line to remove."))
 		}
 		return ExitOK
@@ -1607,7 +1630,7 @@ func (a *App) shadows() []shadow {
 }
 
 func cmdConfig(a *App, args []string) int {
-	fs := a.flags("config", "[set name NAME | set mascot on|off | set animations on|off]")
+	fs := a.flags("config", "[set name NAME | set mascot on|off | set animations on|off] [--dry-run]")
 	if code, ok := a.parse(fs, args); !ok {
 		return code
 	}
@@ -1640,6 +1663,10 @@ func cmdConfig(a *App, args []string) int {
 		fs.Usage()
 		return ExitUsage
 	}
+	done := u.Ok
+	if u.DryRun {
+		done = func(s string) { u.Say("  " + u.Dim("Dry run, so not saved: "+s)) }
+	}
 	switch key := fs.Arg(1); key {
 	case "name":
 		name := cleanName(strings.Join(fs.Args()[2:], " "))
@@ -1648,9 +1675,9 @@ func cmdConfig(a *App, args []string) int {
 		}
 		c.Name = &name
 		if name == "" {
-			u.Ok("No name. Catalyst just says hello.")
+			done("No name. Catalyst just says hello.")
 		} else {
-			u.Ok("Hello, " + name + ".")
+			done("Hello, " + name + ".")
 		}
 	case "mascot", "animations":
 		if fs.NArg() != 3 || (fs.Arg(2) != "on" && fs.Arg(2) != "off") {
@@ -1660,14 +1687,17 @@ func cmdConfig(a *App, args []string) int {
 		on := fs.Arg(2) == "on"
 		if key == "mascot" {
 			c.Mascot = &on
-			u.Ok("Kit is " + fs.Arg(2) + ".")
+			done("Kit is " + fs.Arg(2) + ".")
 		} else {
 			c.Motion = &on
-			u.Ok("Animations are " + fs.Arg(2) + ". This takes effect the next time Catalyst opens.")
+			done("Animations are " + fs.Arg(2) + ". This takes effect the next time Catalyst opens.")
 		}
 	default:
 		fs.Usage()
 		return ExitUsage
+	}
+	if u.DryRun {
+		return ExitOK
 	}
 	if err := a.Store.SaveConfig(c); err != nil {
 		u.Stop(err.Error())

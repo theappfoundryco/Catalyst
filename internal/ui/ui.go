@@ -29,8 +29,11 @@ type UI struct {
 	Colors256 bool
 	Mascot    bool
 	Yes       bool // --yes: answer yes to every question
-	FixedW    int  // set by tests and demos
-	titled    bool // Title already named this screen, so the command's own first heading would only repeat it
+	// DryRun is --dry-run: every question that leads to a change is shown, and answered no, whatever --yes says. The
+	// command still shows everything it would do up to that point, and nothing changes.
+	DryRun bool
+	FixedW int  // set by tests and demos
+	titled bool // Title already named this screen, so the command's own first heading would only repeat it
 
 	// Echo, when set, is told what a person typed at a question. The terminal shows it already, but a screen that is
 	// redrawn later, such as the session's scrolling view of a result, only knows what was written.

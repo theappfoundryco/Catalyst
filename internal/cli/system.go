@@ -18,7 +18,7 @@ import (
 // supported way out, shows each command before it runs, and lets sudo ask for the password itself.
 func cmdSystem(a *App, args []string) int {
 	fs := a.flags("system", "[--dry-run] [--admin] [--json]")
-	dry := fs.Bool("dry-run", false, "")
+	dry := &a.U.DryRun
 	asJSON := fs.Bool("json", false, "")
 	admin := fs.Bool("admin", false, "")
 	if code, ok := a.parse(fs, args); !ok {

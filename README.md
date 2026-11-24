@@ -136,6 +136,16 @@ Uninstalling leaves Homebrew and anything installed with it alone, and what Cata
 
 Coming from the old Catalyst Mac app? `catalyst legacy` shows what the app left behind (its shell line, the password it saved in your Keychain, its helper tool) and removes each one only when you say yes.
 
+## Try anything first
+
+Every command that changes something takes `--dry-run`. It shows exactly what would change, down to the lines of a startup file and whether the shell accepts them, and stops at the first question without asking it, even with `--yes`.
+
+```bash
+catalyst doctor --dry-run           # every fix, shown and not made
+catalyst path remove --dry-run      # and which other commands new terminals would lose
+catalyst ports kill 3000 --dry-run  # who holds the port, and nothing stopped
+```
+
 ## For scripts and CI
 
 ```bash

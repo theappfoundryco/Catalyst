@@ -63,7 +63,7 @@ func cmdSweep(a *App, args []string) int {
 	minSize := fs.String("min-size", "10MB", "")
 	deep := fs.Bool("deep", false, "")
 	all := fs.Bool("all", false, "")
-	dry := fs.Bool("dry-run", false, "")
+	dry := &a.U.DryRun
 	asJSON := fs.Bool("json", false, "")
 	yes := fs.Bool("yes", false, "")
 	if code, ok := a.parse(fs, args); !ok {
@@ -249,7 +249,7 @@ func (a *App) sweepApply(rep sweep.Report, picked []ui.Item) int {
 }
 
 func cmdUndo(a *App, args []string) int {
-	fs := a.flags("undo", "[--yes]")
+	fs := a.flags("undo", "[--dry-run] [--yes]")
 	yes := fs.Bool("yes", false, "")
 	if code, ok := a.parse(fs, args); !ok {
 		return code
@@ -264,7 +264,13 @@ func cmdUndo(a *App, args []string) int {
 		return ExitOK
 	}
 	u.Sect("The last change, from " + ui.When(batch[0].Time))
-	for _, e := range batch {
+	lastEdit := map[string]int{} // an earlier edit of a file in the batch is compared when its turn comes
+	for i, e := range batch {
+		if e.Kind == journal.KindEdit {
+			lastEdit[e.From] = i
+		}
+	}
+	for i, e := range batch {
 		u.Say("  " + e.Title)
 		switch e.Kind {
 		case journal.KindTrash:
@@ -273,13 +279,18 @@ func cmdUndo(a *App, args []string) int {
 			u.Hint(fmt.Sprintf("back to mode %o on %s", e.OldMode, a.E.Tilde(e.From)))
 		case journal.KindEdit:
 			u.Hint(a.E.Tilde(e.From) + " back to how it was before")
+			if lastEdit[e.From] == i && changedSince(e) {
+				u.Warn(a.E.Tilde(e.From) + " was changed again after Catalyst edited it. Putting the old copy back would lose those later changes too.")
+			}
 		}
 	}
 	if !u.Ask("Undo this?") {
-		u.Say("  " + u.Dim("Left as it is."))
+		if !u.DryRun {
+			u.Say("  " + u.Dim("Left as it is."))
+		}
 		return ExitOK
 	}
-	failed := 0
+	failed, kept, restored := 0, 0, 0
 	for i := len(batch) - 1; i >= 0; i-- {
 		e := batch[i]
 		var err error
@@ -289,6 +300,12 @@ func cmdUndo(a *App, args []string) int {
 		case journal.KindChmod:
 			err = os.Chmod(e.From, e.OldMode)
 		case journal.KindEdit:
+			if changedSince(e) && (u.Yes || !u.Ask("Put the old copy of "+a.E.Tilde(e.From)+" back anyway, losing the later changes?")) {
+				u.Say("  " + u.Dim("Left "+a.E.Tilde(e.From)+" as it is now."))
+				u.Hint("The copy from before is at " + a.E.Tilde(e.To))
+				kept++
+				continue
+			}
 			err = restoreCopy(e.To, e.From)
 		}
 		if err != nil {
@@ -296,6 +313,7 @@ func cmdUndo(a *App, args []string) int {
 			failed++
 			continue
 		}
+		restored++
 		switch e.Kind {
 		case journal.KindChmod:
 			u.Ok(fmt.Sprintf("%s is back to mode %o", a.E.Tilde(e.From), e.OldMode))
@@ -305,10 +323,17 @@ func cmdUndo(a *App, args []string) int {
 			u.Ok("Put back " + a.E.Tilde(e.From))
 		}
 	}
+	if restored == 0 && failed == 0 { // nothing was put back, so Undo can still offer it
+		u.Blank()
+		return ExitOK
+	}
 	a.Journal.Add(journal.Entry{Time: a.E.Now(), Batch: batch[0].Batch, Kind: journal.KindUndo, Title: "Undone"})
 	u.Blank()
 	if failed > 0 {
 		return ExitFailed
+	}
+	if kept > 0 {
+		return ExitOK
 	}
 	a.reaction.line = u.Dim("Everything is back where it was.")
 	return ExitOK

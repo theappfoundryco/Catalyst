@@ -15,7 +15,7 @@ import (
 
 func cmdClean(a *App, args []string) int {
 	fs := a.flags("clean", "[--dry-run] [--json] [--yes]")
-	dry := fs.Bool("dry-run", false, "")
+	dry := &a.U.DryRun
 	asJSON := fs.Bool("json", false, "")
 	yes := fs.Bool("yes", false, "")
 	if code, ok := a.parse(fs, args); !ok {

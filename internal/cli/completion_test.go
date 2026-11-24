@@ -15,7 +15,7 @@ func TestCompletionsCoverEveryCommand(t *testing.T) {
 			t.Errorf("%s is missing from a completion script", c.Name)
 		}
 	}
-	if !strings.Contains(bash, `path) words="add remove status"`) || !strings.Contains(bash, `config) words="set"`) {
+	if !strings.Contains(bash, `path) words="add remove status --dry-run"`) || !strings.Contains(bash, `config) words="set --dry-run"`) {
 		t.Errorf("subcommands:\n%s", bash)
 	}
 	if strings.Contains(bash, "paths") || strings.Contains(bash, " host") {

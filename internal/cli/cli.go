@@ -52,32 +52,32 @@ type command struct {
 
 func commands() []command {
 	return []command{
-		{"doctor", "[--fix] [--only group] [--json] [-v]", "find what is wrong and fix what is safe", cmdDoctor},
+		{"doctor", "[--fix] [--dry-run] [--only group] [--json] [-v]", "find what is wrong and fix what is safe", cmdDoctor},
 		{"sweep", "[paths] [--older-than 14d] [--deep] [--dry-run] [--json]", "reclaim space from build artifacts", cmdSweep},
 		{"clean", "[--dry-run] [--json] [--yes]", "app caches and old logs, which rebuild themselves", cmdClean},
 		{"status", "[--json]", "one-glance health of this machine", cmdStatus},
 		{"project", "[DIR] [--json]", "your repository: pinned versions, lockfiles, .env and hooks", cmdProject},
 		{"space", "[--in PATH] [--json]", "where your storage goes, and what can go", cmdSpace},
 		{"system", "[--dry-run] [--admin] [--json]", "what macOS calls System Data, and what can safely go", cmdSystem},
-		{"undo", "[--yes]", "reverse the last change Catalyst made", cmdUndo},
+		{"undo", "[--dry-run] [--yes]", "reverse the last change Catalyst made", cmdUndo},
 		{"log", "[-n 20]", "everything Catalyst has changed", cmdLog},
-		{"report", "[--out FILE]", "a summary of this machine to share, with your names taken out", cmdReport},
+		{"report", "[--out FILE] [--dry-run]", "a summary of this machine to share, with your names taken out", cmdReport},
 		{"changes", "[--json]", "what changed in your tools since an earlier day", cmdChanges},
 		{"disk", "[--folders] [--json]", "volumes, drive health and wear", cmdDisk},
 		{"battery", "[--json]", "charge, cycles and condition", cmdBattery},
 		{"net", "[host]", "connection, DNS and latency", cmdNet},
-		{"ports", "[kill PORT] [--json]", "what is listening, and stop it safely", cmdPorts},
-		{"startup", "[disable NAME | enable NAME] [--json]", "what starts by itself", cmdStartup},
+		{"ports", "[kill PORT] [--dry-run] [--json]", "what is listening, and stop it safely", cmdPorts},
+		{"startup", "[disable NAME | enable NAME] [--dry-run] [--json]", "what starts by itself", cmdStartup},
 		{"ssh", "[--json]", "your keys and whether they are safe", cmdSSH},
-		{"path", "[add | remove | status]", "your PATH: dead folders, repeats and shadows", cmdPath},
+		{"path", "[add | remove | status] [--dry-run]", "your PATH: dead folders, repeats and shadows", cmdPath},
 		{"why", "NAME [--json]", "which copy of a program runs, and why that one", cmdWhy},
 		{"explain", "[ERROR] [--json]", "paste an error, and see its cause and fix", cmdExplain},
-		{"config", "[set name NAME | set mascot on|off | set animations on|off]", "show or change settings", cmdConfig},
-		{"helpers", "[install NAME]", "tools that let Catalyst see more, such as smartmontools", cmdHelpers},
+		{"config", "[set name NAME | set mascot on|off | set animations on|off] [--dry-run]", "show or change settings", cmdConfig},
+		{"helpers", "[install NAME] [--dry-run]", "tools that let Catalyst see more, such as smartmontools", cmdHelpers},
 		{"setup", "", "the welcome: your name, and helpers worth having", cmdSetup},
-		{"legacy", "[--yes]", "clean up after the old Catalyst Mac app", cmdLegacy},
-		{"update", "[--check]", "move to the newest release", cmdUpdate},
-		{"uninstall", "[--yes]", "remove Catalyst from this machine", cmdUninstall},
+		{"legacy", "[--dry-run] [--yes]", "clean up after the old Catalyst Mac app", cmdLegacy},
+		{"update", "[--check] [--dry-run]", "move to the newest release", cmdUpdate},
+		{"uninstall", "[--dry-run] [--yes]", "remove Catalyst from this machine", cmdUninstall},
 		{"completion", "bash|zsh|fish", "tab completion for your shell", cmdCompletion},
 		{"version", "", "show the version", cmdVersion},
 		{"help", "", "show this list", cmdHelp},
@@ -274,6 +274,10 @@ func (a *App) oldAppPresent() bool {
 func (a *App) flags(name, usage string) *flag.FlagSet {
 	fs := flag.NewFlagSet(name, flag.ContinueOnError)
 	fs.SetOutput(discard{})
+	// Every command takes --dry-run, the same way: it shows what it would change and stops at the first question.
+	// Commands that only read change nothing either way, so it is accepted there too rather than refused.
+	a.U.DryRun = false
+	fs.Bool("dry-run", false, "")
 	fs.Usage = func() { a.U.Say("  Usage:  catalyst " + name + " " + usage) }
 	return fs
 }
@@ -307,6 +311,9 @@ func (a *App) parse(fs *flag.FlagSet, args []string) (code int, ok bool) {
 	fs.Usage = func() {} // flag calls it on every error, before the problem is said; it is shown once, after
 	err := fs.Parse(append(flags, plain...))
 	fs.Usage = usage
+	if f := fs.Lookup("dry-run"); f != nil {
+		a.U.DryRun = f.Value.String() == "true"
+	}
 	if err != nil {
 		if err == flag.ErrHelp {
 			fs.Usage()
