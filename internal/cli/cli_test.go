@@ -581,6 +581,45 @@ LISTEN 0 128 0.0.0.0:22 0.0.0.0:* users:(("sshd",pid=1,fd=3))`},
 	}
 }
 
+func TestPortsNamesHiddenProgramsOnceAndKeepsColumnsInLine(t *testing.T) {
+	a, out := testApp(t, "linux")
+	a.E.Look = func(string) (string, error) { return "/usr/bin/ss", nil }
+	a.E.Run = &run.Fake{Replies: map[string]run.Result{
+		"ss -tlnpH": {Stdout: `LISTEN 0 4096 0.0.0.0:22 0.0.0.0:*
+LISTEN 0 4096 127.0.0.1:631 0.0.0.0:*
+LISTEN 0 128 127.0.0.1:3000 0.0.0.0:* users:(("node",pid=4242,fd=20))
+LISTEN 0 128 127.0.0.1:7781 0.0.0.0:* users:(("a-program-with-a-very-long-name",pid=4243,fd=3))`},
+	}}
+	cmdPorts(a, nil)
+	got := out.String()
+	if strings.Contains(got, "another user's") || strings.Count(got, "hidden") != 3 { // two rows and the note
+		t.Fatal(got)
+	}
+	if !strings.Contains(got, "2 programs are hidden") || !strings.Contains(got, "sudo ss -tlnp") {
+		t.Fatal(got)
+	}
+	at := -1
+	for _, line := range strings.Split(got, "\n") {
+		i := strings.Index(line, "●")
+		if i < 0 || !strings.Contains(line, "this machine only") && !strings.Contains(line, "your whole network") {
+			continue
+		}
+		if col := ui.Visible(line[:i]); at < 0 {
+			at = col
+		} else if col != at {
+			t.Fatalf("the reach column moved from %d to %d:\n%s", at, col, got)
+		}
+	}
+	if at < 0 {
+		t.Fatal(got)
+	}
+	out.Reset()
+	a.portDetails(host.Listener{Port: 631, Address: "127.0.0.1"})
+	if got := out.String(); !strings.Contains(got, "hidden, because root or another user runs it") || strings.Contains(got, "unknown") {
+		t.Fatal(got)
+	}
+}
+
 func TestStartupFileEditIsShownKeptAndUndone(t *testing.T) {
 	a, out := testApp(t, "darwin")
 	a.U.Yes = true

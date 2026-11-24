@@ -750,14 +750,14 @@ func cmdPorts(a *App, args []string) int {
 	}
 	u.Say("  " + head)
 	u.Blank()
-	const anotherUser = "(another user's)"
-	nameW := 8
+	// Without root, only this user's programs have a name. One short word on those rows, explained once below the
+	// table, reads better than a long label repeated down the whole column.
+	const hidden = "hidden"
+	nameW, hiddenN := 8, 0
 	for _, l := range list {
-		name := l.Command
-		if name == "" {
-			name = anotherUser
-		}
-		if n := len(name); n > nameW {
+		if l.Command == "" {
+			hiddenN++
+		} else if n := ui.Visible(l.Command); n > nameW {
 			nameW = n
 		}
 	}
@@ -767,10 +767,11 @@ func cmdPorts(a *App, args []string) int {
 	u.Say("  " + u.Faint(fmt.Sprintf("%-7s %-*s  %-7s %s", "PORT", nameW, "PROGRAM", "PID", "REACHABLE FROM")))
 	for _, l := range list {
 		l := l
-		name := l.Command
-		if name == "" {
-			name = anotherUser
+		name := ui.Fit(l.Command, nameW)
+		if l.Command == "" {
+			name = u.Faint(hidden)
 		}
+		name += strings.Repeat(" ", max(0, nameW-ui.Visible(name))) // by columns, since … and wide names are not one byte each
 		reach := u.Faint("● ") + u.Dim("this machine only")
 		if wide(l) {
 			reach = u.Orange("● your whole network")
@@ -787,9 +788,16 @@ func cmdPorts(a *App, args []string) int {
 			keys = append(keys, goTo("s", "stop it", "Ports", "ports", "kill", strconv.Itoa(l.Port)))
 		}
 		keys = append(keys, a.urlKey("w", "open in browser", fmt.Sprintf("http://localhost:%d", l.Port)))
-		u.Say(fmt.Sprintf("  %s%s %s  %s %s", a.row(keys...), u.Accent(fmt.Sprintf("%-7d", l.Port)), fmt.Sprintf("%-*s", nameW, ui.Fit(name, nameW)), u.Faint(fmt.Sprintf("%-7s", pid)), reach))
+		u.Say(fmt.Sprintf("  %s%s %s  %s %s", a.row(keys...), u.Accent(fmt.Sprintf("%-7d", l.Port)), name, u.Faint(fmt.Sprintf("%-7s", pid)), reach))
 	}
 	u.Blank()
+	if hiddenN > 0 {
+		see := "sudo lsof -nP -iTCP -sTCP:LISTEN"
+		if a.E.Linux() && a.has("ss") {
+			see = "sudo ss -tlnp"
+		}
+		u.Note(ui.Count(hiddenN, "program is", "programs are") + " hidden because root or another user runs them, and only root can read their names. To see them: " + see)
+	}
 	if stoppable > 0 {
 		u.Warn("Stopping a port stops the program behind it. Unsaved work in it can be lost, and apps that rely on it may misbehave until it starts again.")
 	}
@@ -810,7 +818,11 @@ func cmdPorts(a *App, args []string) int {
 func (a *App) portDetails(l host.Listener) {
 	u := a.U
 	u.Hdr(fmt.Sprintf("Port %d", l.Port))
-	u.Row("Program", u.Bold(orDash(l.Command)))
+	if l.Command != "" {
+		u.Row("Program", u.Bold(l.Command))
+	} else {
+		u.Row("Program", u.Dim("hidden, because root or another user runs it"))
+	}
 	if l.PID > 0 {
 		u.Row("Process", strconv.Itoa(l.PID))
 	}
@@ -846,13 +858,6 @@ func (a *App) portDetails(l host.Listener) {
 	a.outcome.Actions = append(a.outcome.Actions, a.urlKey("w", "open in browser", fmt.Sprintf("http://localhost:%d", l.Port)),
 		a.copyKey("y", "copy address", fmt.Sprintf("localhost:%d", l.Port), "the address"))
 	u.Blank()
-}
-
-func orDash(s string) string {
-	if s == "" {
-		return "unknown"
-	}
-	return s
 }
 
 // wide says whether a listener answers on every network the machine is on, not only to itself.
