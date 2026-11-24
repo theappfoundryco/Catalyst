@@ -91,10 +91,11 @@ func brokenCommands(e *host.Env) []d.Result {
 		if i == shown {
 			rest := make([]string, 0, len(bad)-shown)
 			for _, x := range bad[shown:] {
-				rest = append(rest, x.name)
+				rest = append(rest, x.name+": "+e.Tilde(x.path)+", "+x.why)
 			}
 			out = append(out, d.Warn(ui.Count(len(rest), "more command on your PATH cannot start", "more commands on your PATH cannot start")).
-				With(strings.Join(firstN(rest, 8), ", ")+". See why for each: catalyst why NAME"))
+				With("Reinstall each with the tool that installed it, or remove it if you no longer use it.").
+				List(rest...).See("catalyst why NAME, for any one of them"))
 			break
 		}
 		out = append(out, d.Warn(b.name+" is on your PATH but cannot start").
@@ -102,7 +103,8 @@ func brokenCommands(e *host.Env) []d.Result {
 	}
 	if len(intel) > 0 {
 		out = append(out, d.Note(ui.Count(len(intel), "command is", "commands are")+" built only for Intel, and run through Rosetta").
-			With(strings.Join(firstN(intel, 6), ", ")+". Apple has said Rosetta stays fully available only through macOS 27, so look for Apple silicon versions."))
+			With("Apple has said Rosetta stays fully available only through macOS 27, so look for Apple silicon versions.").
+			List(intel...).See("file $(command -v NAME), which says x86_64 for these"))
 	}
 	if len(out) == 0 {
 		if checked == 0 {
@@ -150,11 +152,4 @@ func MachineOf(e *host.Env) host.Machine {
 func linuxEmulates(arch string) bool {
 	name := map[string]string{"arm64": "aarch64", "amd64": "x86_64", "arm": "arm", "riscv64": "riscv64", "386": "i386"}[arch]
 	return name != "" && host.Exists("/proc/sys/fs/binfmt_misc/qemu-"+name)
-}
-
-func firstN(xs []string, n int) []string {
-	if len(xs) > n {
-		return append(xs[:n:n], "and "+ui.Count(len(xs)-n, "more", "more"))
-	}
-	return xs
 }

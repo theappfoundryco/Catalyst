@@ -73,6 +73,10 @@ type Result struct {
 	Title    string   `json:"title"`
 	Hint     string   `json:"hint,omitempty"`
 	Fix      *Fix     `json:"fix,omitempty"`
+	// Items are what a count is made of, named the way a person would look for them: a container, a folder, a file and
+	// line. Never a secret's value. Look is the command that shows them in their own tool's words.
+	Items []string `json:"items,omitempty"`
+	Look  string   `json:"look,omitempty"`
 	// Muted is an issue the person chose to stop hearing about. It is still an issue, and still reported, but it does
 	// not count against the score or the exit code.
 	Muted bool `json:"muted,omitempty"`
@@ -97,6 +101,12 @@ func Err(why string) Result    { return Result{State: Failed, Title: why} }
 
 // With adds a hint.
 func (r Result) With(hint string) Result { r.Hint = hint; return r }
+
+// List names what the finding counts, so nobody has to remember or go looking for which ones.
+func (r Result) List(items ...string) Result { r.Items = items; return r }
+
+// See gives the command that lists them in their own tool's words.
+func (r Result) See(command string) Result { r.Look = command; return r }
 
 // Chmod attaches a fix that changes a path's mode.
 func (r Result) Chmod(path string, mode fs.FileMode) Result {

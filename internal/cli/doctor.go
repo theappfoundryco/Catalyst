@@ -186,6 +186,38 @@ func (a *App) printResult(r doctor.Result, verbose bool, took time.Duration, fir
 	if r.Hint != "" {
 		u.Hint(r.Hint)
 	}
+	a.printItems(r, verbose)
+}
+
+// shownItems is how many of a finding's items the report lists. The rest are one key away, on the finding's own screen.
+const shownItems = 3
+
+// printItems names what a finding counts, so nobody has to remember which containers or folders it means.
+func (a *App) printItems(r doctor.Result, all bool) {
+	u := a.U
+	n := len(r.Items)
+	if n == 0 {
+		return
+	}
+	show := n
+	if !all && n > shownItems+1 { // "and 1 more" takes the room of the one it hides
+		show = shownItems
+	}
+	for _, it := range r.Items[:show] {
+		u.Hint("  · " + it)
+	}
+	if show < n {
+		more := fmt.Sprintf("  and %d more", n-show)
+		if a.inSession {
+			more += ". Press Enter on it for every one."
+		} else {
+			more += ". Every one: catalyst doctor --only " + r.Check + " -v"
+		}
+		u.Hint(more)
+	}
+	if r.Look != "" {
+		u.Hint("See them yourself: " + r.Look)
+	}
 }
 
 func (a *App) verdict(all []doctor.Result, score int, c doctor.Counts, fixing bool) {

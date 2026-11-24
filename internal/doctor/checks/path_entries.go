@@ -15,7 +15,7 @@ func init() {
 }
 
 func pathEntries(e *host.Env) []d.Result {
-	dead, dupes := 0, 0
+	var dead, dupes []string
 	seen := map[string]bool{}
 	var out []d.Result
 	for _, p := range e.Entries {
@@ -24,19 +24,23 @@ func pathEntries(e *host.Env) []d.Result {
 			continue
 		}
 		clean := filepath.Clean(p)
-		if seen[clean] {
-			dupes++
+		if seen[clean] && !slices.Contains(dupes, e.Tilde(clean)) {
+			dupes = append(dupes, e.Tilde(clean))
 		}
 		seen[clean] = true
 		if st, err := os.Stat(p); err != nil || !st.IsDir() {
-			dead++
+			dead = append(dead, e.Tilde(p))
 		}
 	}
-	if dead > 0 {
-		out = append(out, d.Note("Your PATH has "+ui.Count(dead, "folder that does not exist", "folders that do not exist")).With("See which, and which file adds them: catalyst path"))
+	if len(dead) > 0 {
+		out = append(out, d.Note("Your PATH has "+ui.Count(len(dead), "folder that does not exist", "folders that do not exist")).
+			With("Usually left by a tool that was removed. Harmless, but each one is searched for every command.").
+			List(dead...).See("catalyst path, which shows the file and line that adds each one"))
 	}
-	if dupes > 0 {
-		out = append(out, d.Note("Your PATH lists "+ui.Count(dupes, "folder", "folders")+" twice").With("Harmless, but often a sign of a startup file running more than once: catalyst path"))
+	if len(dupes) > 0 {
+		out = append(out, d.Note("Your PATH lists "+ui.Count(len(dupes), "folder", "folders")+" twice").
+			With("Harmless, but often a sign of a startup file running more than once.").
+			List(dupes...).See("catalyst path"))
 	}
 	if e.Mac() {
 		brew := slices.Index(e.Entries, "/opt/homebrew/bin")

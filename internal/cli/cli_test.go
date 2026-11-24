@@ -606,6 +606,43 @@ func TestStartupFileEditIsShownKeptAndUndone(t *testing.T) {
 	}
 }
 
+// A count is never left on its own: the report names the first few, says how to see every one, and the finding's own
+// screen lists them all, with the tool's own command to look for yourself.
+func TestFindingsNameWhatTheyCount(t *testing.T) {
+	a, out := testApp(t, "linux")
+	r := doctor.Note("5 stopped Docker containers are still taking up space").
+		List("web-1 (nginx:alpine), stopped 3 weeks ago", "db (postgres:16), stopped 2 days ago", "c", "d", "e").
+		See("docker ps -a --filter status=exited")
+	r.Check = "machine.docker"
+	a.printResult(r, false, 0, false)
+	got := out.String()
+	for _, want := range []string{"· web-1 (nginx:alpine), stopped 3 weeks ago", "· c", "and 2 more. Every one: catalyst doctor --only machine.docker -v", "See them yourself: docker ps -a --filter status=exited"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("missing %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "· e") {
+		t.Fatal("listed more than the first few")
+	}
+	out.Reset()
+	a.printResult(r, true, 0, false)
+	if !strings.Contains(out.String(), "· e") || strings.Contains(out.String(), "more") {
+		t.Fatal("-v should list every one:", out.String())
+	}
+	// Four is shown whole: "and 1 more" would take the room of the one it hides.
+	out.Reset()
+	r.Items = r.Items[:4]
+	a.printResult(r, false, 0, false)
+	if !strings.Contains(out.String(), "· d") || strings.Contains(out.String(), "more") {
+		t.Fatal(out.String())
+	}
+	out.Reset()
+	a.showGuide(r)
+	if !strings.Contains(out.String(), "WHICH ONES") || !strings.Contains(out.String(), "db (postgres:16)") {
+		t.Fatal(out.String())
+	}
+}
+
 func TestReplaceLineOnlyWhenItStillReadsTheSame(t *testing.T) {
 	lines := []string{"a", "export JAVA_HOME=/gone", "b"}
 	got := replaceLine(2, "export JAVA_HOME=/gone", "# off")(append([]string{}, lines...))

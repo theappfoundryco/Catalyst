@@ -140,6 +140,16 @@ type Report struct {
 	SkippedGit    int    `json:"skipped_tracked"`
 	SkippedSmall  int    `json:"skipped_small"`
 	Scanned       int    `json:"scanned"`
+	// Protected names what the skipped counts are made of, newest first, so a person can see what was kept and why.
+	Protected []Protected `json:"protected,omitempty"`
+}
+
+// Protected is one folder a sweep left alone: "recent" (touched inside the age limit, Active says when) or "git" (git
+// did not confirm it is a build output).
+type Protected struct {
+	Path   string    `json:"path"`
+	Why    string    `json:"why"`
+	Active time.Time `json:"active,omitempty"`
 }
 
 // Total is the size of all items.
@@ -221,8 +231,10 @@ func Scan(o Options) Report {
 				rep.Items = append(rep.Items, item)
 			case "recent":
 				rep.SkippedRecent++
+				rep.Protected = append(rep.Protected, Protected{Path: c.path, Why: why, Active: item.Active})
 			case "git":
 				rep.SkippedGit++
+				rep.Protected = append(rep.Protected, Protected{Path: c.path, Why: why})
 			case "small":
 				rep.SkippedSmall++
 			}
@@ -235,6 +247,12 @@ func Scan(o Options) Report {
 	}
 	// Biggest first: where the space is matters more than where the folder is.
 	sort.Slice(rep.Items, func(i, j int) bool { return rep.Items[i].Size > rep.Items[j].Size })
+	sort.Slice(rep.Protected, func(i, j int) bool {
+		if !rep.Protected[i].Active.Equal(rep.Protected[j].Active) {
+			return rep.Protected[i].Active.After(rep.Protected[j].Active)
+		}
+		return rep.Protected[i].Path < rep.Protected[j].Path
+	})
 	return rep
 }
 
@@ -319,7 +337,7 @@ func assess(c candidate, repos *repoCache, o Options, seen *Seen, now time.Time)
 	}
 	active := Activity(parent, repo, c.rule.Dir)
 	if o.OlderThan > 0 && now.Sub(active) < o.OlderThan {
-		return Item{}, "recent"
+		return Item{Active: active}, "recent"
 	}
 	size := DirSize(c.path, seen)
 	if size < o.MinSize {

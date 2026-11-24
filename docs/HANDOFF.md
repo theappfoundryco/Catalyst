@@ -107,6 +107,11 @@ As of 0.1.0, built and run on Apple silicon macOS 15 and ARM64 Linux containers:
 - Corrupt, half-written and unwritable state files, no HOME, no SHELL, a relative XDG folder, two sweeps at once, a journal that cannot be written (every move was put back, exit 3), a 10 MB paste into explain, TERM=dumb, NO_COLOR and widths from 5 to 100 columns. No stack trace anywhere.
 - Every row of the list driven on a pseudo-terminal at 100 by 40 and 60 by 24, and the welcome at 30 by 12.
 
+### Added on 2026-11-24 (details under findings)
+
+- Read-only on this x86_64 Ubuntu desktop: the Docker finding named both stopped containers, their images (one with no name left) and when each stopped; the PATH finding named each repeated folder.
+- In an Ubuntu container: missing PATH folders, five broken scripts (three on their own, two under "2 more", each with why), a GitHub token and an AWS key in history (named by line and kind; none of the values in the text or `--json`), and sweep naming the folder it protected and when it was touched.
+
 ## What has not been verified
 
 - **A real Intel Mac by hand.** CI's macos-15-intel runner ran the read-only commands. Nobody has looked at the output on a person's Intel Mac.

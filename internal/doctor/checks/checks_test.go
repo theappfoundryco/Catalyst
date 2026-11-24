@@ -374,13 +374,20 @@ func TestDocker(t *testing.T) {
 		t.Fatalf("%+v", r)
 	}
 	e, _ = env(t, "linux", map[string]string{"docker": "/x/docker"}, map[string]run.Result{
-		"docker info --format {{.ServerVersion}}": {Stdout: "29.0"},
-		"docker ps -aq -f status=exited":          {Stdout: "aa\nbb\n"},
-		"docker images -q -f dangling=true":       {Stdout: ""},
+		"docker info --format {{.ServerVersion}}":                                             {Stdout: "29.0"},
+		"docker ps -a --filter status=exited --format {{.Names}}\t{{.Image}}\t{{.Status}}":    {Stdout: "web-1\tnginx:alpine\tExited (0) 3 weeks ago\ndb\tpostgres:16\tExited (137) 2 days ago\nold\taa943ce41142\tExited (0) 5 weeks ago\n"},
+		"docker images --filter dangling=true --format {{.ID}}\t{{.Size}}\t{{.CreatedSince}}": {Stdout: ""},
 	})
 	r := one(t, dockerState(e))
-	if !strings.HasPrefix(r.Title, "2 stopped") || r.Fix == nil || r.Fix.Kind != d.FixRun {
+	if !strings.HasPrefix(r.Title, "3 stopped") || r.Fix == nil || r.Fix.Kind != d.FixRun || r.Look != "docker ps -a --filter status=exited" {
 		t.Fatalf("%+v", r)
+	}
+	if want := []string{"web-1 (nginx:alpine), stopped 3 weeks ago", "db (postgres:16), stopped 2 days ago, exit code 137", "old (an image with no name now, aa943ce41142), stopped 5 weeks ago"}; strings.Join(r.Items, "|") != strings.Join(want, "|") {
+		t.Fatalf("%q", r.Items)
+	}
+	items, total := DanglingImages("a1b2c3d4e5f6\t1.2GB\t2 months ago\n0f9e8d7c6b5a\t350MB\t3 weeks ago\n")
+	if len(items) != 2 || items[0] != "a1b2c3d4e5f6, 1.2GB, made 2 months ago" || total != 1_550_000_000 {
+		t.Fatal(items, total)
 	}
 }
 

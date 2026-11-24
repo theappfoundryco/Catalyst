@@ -108,7 +108,7 @@ func TestNeverOffersAFolderGitTracks(t *testing.T) {
 	if has(r, "build") {
 		t.Fatalf("offered tracked files: %+v", r)
 	}
-	if r.SkippedGit != 1 {
+	if r.SkippedGit != 1 || len(r.Protected) != 1 || r.Protected[0].Why != "git" || filepath.Base(r.Protected[0].Path) != "build" {
 		t.Fatalf("%+v", r)
 	}
 }
@@ -213,6 +213,9 @@ func TestRecentWorkProtectsAProject(t *testing.T) {
 	r := f.scan("p")
 	if has(r, "node_modules") || r.SkippedRecent != 1 {
 		t.Fatalf("%+v", r)
+	}
+	if p := r.Protected; len(p) != 1 || p[0].Why != "recent" || filepath.Base(p[0].Path) != "node_modules" || time.Since(p[0].Active) > time.Hour {
+		t.Fatalf("%+v", p)
 	}
 }
 
